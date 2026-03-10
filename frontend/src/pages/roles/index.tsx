@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { setPageTitle } from '@/lib/page-title';
-import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
+import { Button } from '@/components/ui/button';
 import { createRoleColumns } from './columns';
 import { rolesApi, type Role } from '@/lib/api';
 import { usePermission } from '@/hooks/usePermission';
@@ -95,24 +95,20 @@ export default function RolesPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-4 p-6">
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <h2 className="text-base font-semibold">Roles</h2>
-          <p className="text-sm text-muted-foreground">Manage roles and permissions</p>
-        </div>
-        {hasPermission('roles.create') && (
-          <Button onClick={() => navigate('/roles/create')} size="sm">
-            <Plus className="mr-2 h-4 w-4" />
-            Add Role
-          </Button>
-        )}
-      </div>
+    <div className="flex flex-1 min-h-0 flex-col gap-4 p-4">
       <DataTable
         columns={columns}
         data={roles}
         searchPlaceholder="Search roles by name or description..."
         pageSize={10}
+        toolbarActions={
+          hasPermission('roles.create') ? (
+            <Button onClick={() => navigate('/roles/create')}>
+              <Plus className="h-4 w-4" />
+              Add Role
+            </Button>
+          ) : undefined
+        }
       />
 
       <ConfirmDialog

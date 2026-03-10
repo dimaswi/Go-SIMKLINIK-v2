@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { usersApi, rolesApi } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, Loader2, User, Shield } from 'lucide-react';
+import { Loader2, User, Shield } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
 
 export default function UserEdit() {
@@ -86,91 +86,81 @@ export default function UserEdit() {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-4 p-6">
-      <div className="flex items-center gap-4">
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => navigate("/users")}
-          className="h-9 w-9"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div>
-          <h2 className="text-base font-semibold">Informasi User</h2>
-          <p className="text-sm text-muted-foreground">Update detail informasi user</p>
+    <div className="p-6">
+      <form onSubmit={handleSubmit} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="space-y-6">
+          <section className="space-y-5 rounded-lg border border-border/80 p-5">
+            <div className="space-y-2">
+              <Label htmlFor="full_name" className="text-xs font-medium flex items-center gap-2">
+                <User className="h-3.5 w-3.5 text-muted-foreground" />
+                Nama Lengkap
+              </Label>
+              <Input
+                id="full_name"
+                required
+                placeholder="Masukkan nama lengkap"
+                value={formData.full_name}
+                onChange={e => setFormData({ ...formData, full_name: e.target.value })}
+                className="h-10 text-sm"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="role_id" className="text-xs font-medium flex items-center gap-2">
+                <Shield className="h-3.5 w-3.5 text-muted-foreground" />
+                Role
+              </Label>
+              <select
+                id="role_id"
+                required
+                value={formData.role_id}
+                onChange={e => setFormData({ ...formData, role_id: e.target.value })}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                {roles.map(role => (
+                  <option key={role.id} value={role.id}>
+                    {role.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center justify-between rounded-md border p-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="is_active" className="text-xs font-medium cursor-pointer">Status Akun</Label>
+                <p className="text-xs text-muted-foreground">{formData.is_active ? 'Akun aktif' : 'Akun tidak aktif'}</p>
+              </div>
+              <Switch
+                id="is_active"
+                checked={formData.is_active}
+                onCheckedChange={checked => setFormData({ ...formData, is_active: checked })}
+              />
+            </div>
+          </section>
         </div>
-      </div>
-      <form onSubmit={handleSubmit} className="space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="full_name" className="text-xs font-medium flex items-center gap-2">
-                  <User className="h-3.5 w-3.5 text-muted-foreground" />
-                  Nama Lengkap
-                </Label>
-                <Input
-                  id="full_name"
-                  required
-                  placeholder="Masukkan nama lengkap"
-                  value={formData.full_name}
-                  onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                  className="h-9 text-sm"
-                />
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="role_id" className="text-xs font-medium flex items-center gap-2">
-                  <Shield className="h-3.5 w-3.5 text-muted-foreground" />
-                  Role
-                </Label>
-                <select
-                  id="role_id"
-                  required
-                  value={formData.role_id}
-                  onChange={(e) => setFormData({ ...formData, role_id: e.target.value })}
-                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {roles.map((role) => (
-                    <option key={role.id} value={role.id}>
-                      {role.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+        <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
+          <div className="rounded-lg border border-border/80 p-4 text-sm">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Ringkasan</p>
+            <div className="space-y-1">
+              <p className="font-medium">{formData.full_name || '-'}</p>
+              <p className="text-muted-foreground">Role: {roles.find(r => String(r.id) === formData.role_id)?.name || '-'}</p>
+              <p className="text-muted-foreground">Status: {formData.is_active ? 'Aktif' : 'Nonaktif'}</p>
+            </div>
+          </div>
 
-              <div className="flex items-center justify-between rounded-lg border p-4">
-                <div className="space-y-0.5">
-                  <Label htmlFor="is_active" className="text-xs font-medium cursor-pointer">
-                    Status Akun
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    {formData.is_active ? 'Akun aktif' : 'Akun tidak aktif'}
-                  </p>
-                </div>
-                <Switch
-                  id="is_active"
-                  checked={formData.is_active}
-                  onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
-                />
-              </div>
-
-              <div className="flex gap-3 justify-end">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => navigate('/users')}
-                  className="h-9 text-sm"
-                >
-                  Batal
-                </Button>
-                <Button 
-                  type="submit" 
-                  disabled={loading}
-                  className="h-9 text-sm min-w-24"
-                >
-                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Update
-                </Button>
-              </div>
+          <div className="rounded-lg border border-border/80 p-3">
+            <div className="flex flex-col gap-2">
+              <Button type="submit" disabled={loading} className="h-10">
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Update User
+              </Button>
+              <Button type="button" variant="outline" onClick={() => navigate('/users')} className="h-10">
+                Batal
+              </Button>
+            </div>
+          </div>
+        </aside>
       </form>
     </div>
   );

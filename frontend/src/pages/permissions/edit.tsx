@@ -6,19 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -27,8 +14,7 @@ import {
 } from "@/components/ui/select";
 import { permissionsApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Loader2, Lock, FileText, Package, Tag, Check, ChevronsUpDown } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Loader2, Key, FileText, Package, Tag } from "lucide-react";
 
 export default function PermissionEdit() {
   const navigate = useNavigate();
@@ -43,28 +29,6 @@ export default function PermissionEdit() {
     description: "",
     action: "", // Single action instead of array
   });
-
-  const [openModule, setOpenModule] = useState(false);
-  const [openCategory, setOpenCategory] = useState(false);
-
-  // Predefined modules and categories for consistency
-  const moduleOptions = [
-    "User Management",
-    "Role Management", 
-    "Permission Management",
-    "Dashboard",
-    "System Settings",
-    "Profile Management"
-  ];
-
-  const categoryOptions = [
-    "Users",
-    "Roles", 
-    "Permissions",
-    "Analytics",
-    "Settings",
-    "Account"
-  ];
 
   const actionOptions = [
     { id: 'view', label: 'View', description: 'Melihat/membaca data' },
@@ -172,209 +136,117 @@ export default function PermissionEdit() {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-4 p-6">
-      <div className="flex items-center gap-4">
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => navigate("/permissions")}
-          className="h-9 w-9"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div>
-          <h2 className="text-base font-semibold">Informasi Permission</h2>
-          <p className="text-sm text-muted-foreground">Edit detail informasi permission</p>
-        </div>
-      </div>
-      <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium flex items-center gap-2">
-                    <Package className="h-4 w-4 text-muted-foreground" />
-                    Module
-                  </Label>
-                  <Popover open={openModule} onOpenChange={setOpenModule}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={openModule}
-                        className="w-full justify-between h-10"
-                      >
-                        {formData.module || "Pilih atau ketik module..."}
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[--radix-popover-trigger-width] min-w-[320px] p-0">
-                      <Command>
-                        <CommandInput 
-                          placeholder="Cari atau ketik module baru..." 
-                          value={formData.module}
-                          onValueChange={(value) => setFormData({ ...formData, module: value })}
-                        />
-                        <CommandList>
-                          <CommandEmpty>Tidak ada module ditemukan. Tekan Enter untuk menambah module baru.</CommandEmpty>
-                          <CommandGroup>
-                            {moduleOptions.map((module) => (
-                              <CommandItem
-                                key={module}
-                                value={module}
-                                onSelect={(currentValue) => {
-                                  setFormData({ ...formData, module: currentValue });
-                                  setOpenModule(false);
-                                }}
-                              >
-                                <Check
-                                  className={cn(
-                                    "mr-2 h-4 w-4",
-                                    formData.module === module ? "opacity-100" : "opacity-0"
-                                  )}
-                                />
-                                {module}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                </div>
+    <div className="p-6">
+      <form onSubmit={handleSubmit} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="space-y-6">
+          <section className="space-y-5 rounded-lg border border-border/80 p-5">
+            <div className="space-y-2">
+              <Label htmlFor="name" className="text-sm font-medium flex items-center gap-2">
+                <Key className="h-4 w-4 text-muted-foreground" />
+                Nama Permission
+              </Label>
+              <Input
+                id="name"
+                required
+                placeholder="e.g., users.update"
+                value={formData.name}
+                onChange={e => setFormData({ ...formData, name: e.target.value })}
+                className="h-10"
+              />
+            </div>
 
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium flex items-center gap-2">
-                    <Tag className="h-4 w-4 text-muted-foreground" />
-                    Category
-                  </Label>
-                  <Popover open={openCategory} onOpenChange={setOpenCategory}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={openCategory}
-                        className="w-full justify-between h-10"
-                      >
-                        {formData.category || "Pilih atau ketik category..."}
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[--radix-popover-trigger-width] min-w-[320px] p-0">
-                      <Command>
-                        <CommandInput 
-                          placeholder="Cari atau ketik category baru..." 
-                          value={formData.category}
-                          onValueChange={(value) => setFormData({ ...formData, category: value })}
-                        />
-                        <CommandList>
-                          <CommandEmpty>Tidak ada category ditemukan. Tekan Enter untuk menambah category baru.</CommandEmpty>
-                          <CommandGroup>
-                            {categoryOptions.map((category) => (
-                              <CommandItem
-                                key={category}
-                                value={category}
-                                onSelect={(currentValue) => {
-                                  setFormData({ ...formData, category: currentValue });
-                                  setOpenCategory(false);
-                                }}
-                              >
-                                <Check
-                                  className={cn(
-                                    "mr-2 h-4 w-4",
-                                    formData.category === category ? "opacity-100" : "opacity-0"
-                                  )}
-                                />
-                                {category}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              </div>
-
+            <div className="grid gap-5 md:grid-cols-2">
               <div className="space-y-2">
-                <Label className="text-sm font-medium flex items-center gap-2">
-                  <Lock className="h-4 w-4 text-muted-foreground" />
-                  Action
-                </Label>
-                <Select
-                  value={formData.action}
-                  onValueChange={(value) => setFormData({ ...formData, action: value })}
-                >
-                  <SelectTrigger className="h-10">
-                    <SelectValue placeholder="Pilih action" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {actionOptions.map((action) => (
-                      <SelectItem key={action.id} value={action.id}>
-                        <div className="flex flex-col">
-                          <div className="font-medium text-left">{action.label}</div>
-                          <div className="text-xs text-muted-foreground">{action.description}</div>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label
-                  htmlFor="name"
-                  className="text-sm font-medium flex items-center gap-2"
-                >
-                  <FileText className="h-4 w-4 text-muted-foreground" />
-                  Nama Permission (Auto-generated, bisa diedit)
+                <Label htmlFor="module" className="text-sm font-medium flex items-center gap-2">
+                  <Package className="h-4 w-4 text-muted-foreground" />
+                  Module
                 </Label>
                 <Input
-                  id="name"
+                  id="module"
                   required
-                  placeholder="e.g., users.view"
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
+                  placeholder="e.g., users"
+                  value={formData.module}
+                  onChange={e => setFormData({ ...formData, module: e.target.value })}
                   className="h-10"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label
-                  htmlFor="description"
-                  className="text-sm font-medium"
-                >
-                  Description (Optional)
+                <Label htmlFor="category" className="text-sm font-medium flex items-center gap-2">
+                  <Tag className="h-4 w-4 text-muted-foreground" />
+                  Category
                 </Label>
-                <Textarea
-                  id="description"
-                  placeholder="Deskripsi permission..."
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
-                  }
-                  className="min-h-[80px]"
+                <Input
+                  id="category"
+                  required
+                  placeholder="e.g., management"
+                  value={formData.category}
+                  onChange={e => setFormData({ ...formData, category: e.target.value })}
+                  className="h-10"
                 />
               </div>
+            </div>
 
-              <div className="flex gap-3 justify-end pt-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => navigate("/permissions")}
-                  className="h-10"
-                >
-                  Batal
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={loading}
-                  className="h-10 min-w-24"
-                >
-                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Update
-                </Button>
-              </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Action</Label>
+              <Select
+                value={formData.action}
+                onValueChange={value => setFormData({ ...formData, action: value })}
+              >
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="Pilih action" />
+                </SelectTrigger>
+                <SelectContent>
+                  {actionOptions.map(action => (
+                    <SelectItem key={action.id} value={action.id}>
+                      <div className="flex flex-col text-left">
+                        <span className="font-medium">{action.label}</span>
+                        <span className="text-xs text-muted-foreground">{action.description}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="description" className="text-sm font-medium flex items-center gap-2">
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                Deskripsi
+              </Label>
+              <Textarea
+                id="description"
+                placeholder="Deskripsi permission..."
+                value={formData.description}
+                onChange={e => setFormData({ ...formData, description: e.target.value })}
+                className="min-h-[110px]"
+              />
+            </div>
+          </section>
+        </div>
+
+        <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
+          <div className="rounded-lg border border-border/80 p-4 text-sm">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Permission Preview</p>
+            <p className="font-medium">{formData.name || 'Nama permission belum diisi'}</p>
+            <p className="mt-2 text-muted-foreground">Module: {formData.module || '-'}</p>
+            <p className="text-muted-foreground">Category: {formData.category || '-'}</p>
+            <p className="text-muted-foreground">Action: {formData.action || '-'}</p>
+            <p className="mt-2 text-muted-foreground line-clamp-4">{formData.description || 'Deskripsi permission belum diisi.'}</p>
+          </div>
+
+          <div className="rounded-lg border border-border/80 p-3">
+            <div className="flex flex-col gap-2">
+              <Button type="submit" disabled={loading} className="h-10">
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Update Permission
+              </Button>
+              <Button type="button" variant="outline" onClick={() => navigate('/permissions')} className="h-10">
+                Batal
+              </Button>
+            </div>
+          </div>
+        </aside>
       </form>
     </div>
   );

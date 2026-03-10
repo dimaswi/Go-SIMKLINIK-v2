@@ -178,8 +178,8 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="flex flex-1 flex-col gap-4 p-6 max-w-full">
-      <div className="flex items-center gap-4">
+    <div className="flex flex-1 flex-col gap-4 p-4 max-w-full">
+      <div>
         <Button
           variant="ghost"
           size="icon"
@@ -188,12 +188,6 @@ export default function SettingsPage() {
         >
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage application preferences
-          </p>
-        </div>
       </div>
 
       <div className="space-y-4 max-w-full">

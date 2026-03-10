@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
+import { Button } from '@/components/ui/button';
 import { createUserColumns } from './columns';
 import { usersApi, type User } from '@/lib/api';
 import { usePermission } from '@/hooks/usePermission';
@@ -95,24 +95,20 @@ export default function UsersPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-4 p-6">
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <h2 className="text-base font-semibold">Users</h2>
-          <p className="text-sm text-muted-foreground">Manage system users and their permissions</p>
-        </div>
-        {hasPermission('users.create') && (
-          <Button onClick={() => navigate('/users/create')} size="sm">
-            <Plus className="mr-2 h-4 w-4" />
-            Add User
-          </Button>
-        )}
-      </div>
+    <div className="flex flex-1 min-h-0 flex-col gap-4 p-4">
       <DataTable
         columns={columns}
         data={users}
         searchPlaceholder="Search users by name, username, or email..."
         pageSize={10}
+        toolbarActions={
+          hasPermission('users.create') ? (
+            <Button onClick={() => navigate('/users/create')}>
+              <Plus className="h-4 w-4" />
+              Add User
+            </Button>
+          ) : undefined
+        }
       />
 
       <ConfirmDialog

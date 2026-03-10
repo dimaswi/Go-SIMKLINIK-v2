@@ -112,7 +112,7 @@ export default function AccountPage() {
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6 max-w-full">
-      <div className="flex items-center gap-4">
+      <div>
         <Button 
           variant="ghost" 
           size="icon" 
@@ -121,10 +121,6 @@ export default function AccountPage() {
         >
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Account Settings</h1>
-          <p className="text-sm text-muted-foreground">Manage your account information and security</p>
-        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">

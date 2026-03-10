@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { setPageTitle } from '@/lib/page-title';
-import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
+import { Button } from '@/components/ui/button';
 import { createPermissionColumns } from './columns';
 import { permissionsApi, type Permission } from '@/lib/api';
 import { usePermission } from '@/hooks/usePermission';
@@ -95,24 +95,20 @@ export default function PermissionsPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-4 p-6">
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <h2 className="text-base font-semibold">Permissions</h2>
-          <p className="text-sm text-muted-foreground">Manage system permissions</p>
-        </div>
-        {hasPermission('permissions.create') && (
-          <Button onClick={() => navigate('/permissions/create')} size="sm">
-            <Plus className="mr-2 h-4 w-4" />
-            Add Permission
-          </Button>
-        )}
-      </div>
+    <div className="flex flex-1 min-h-0 flex-col gap-4 p-4">
       <DataTable
         columns={columns}
         data={permissions}
         searchPlaceholder="Search permissions by name or description..."
         pageSize={10}
+        toolbarActions={
+          hasPermission('permissions.create') ? (
+            <Button onClick={() => navigate('/permissions/create')}>
+              <Plus className="h-4 w-4" />
+              Add Permission
+            </Button>
+          ) : undefined
+        }
       />
 
       <ConfirmDialog

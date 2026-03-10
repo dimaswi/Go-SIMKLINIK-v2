@@ -67,6 +67,12 @@ const menuItems: MenuItem[] = [
   },
 ];
 
+function isPathActive(currentPath: string, targetPath: string): boolean {
+  if (!targetPath) return false;
+  if (targetPath === '/') return currentPath === '/';
+  return currentPath === targetPath || currentPath.startsWith(`${targetPath}/`);
+}
+
 export function AppSidebar() {
   const { user, logout } = useAuthStore();
   const { state } = useSidebar();
@@ -211,8 +217,8 @@ function CollapsedMenuItem({ item }: { item: MenuItem }) {
   const location = useLocation();
   const Icon = item.icon;
   const hasSubmenu = item.submenu && item.submenu.length > 0;
-  const isActive = location.pathname === item.path ||
-    (hasSubmenu && item.submenu!.some(sub => location.pathname === sub.path));
+  const isActive = isPathActive(location.pathname, item.path) ||
+    (hasSubmenu && item.submenu!.some(sub => isPathActive(location.pathname, sub.path)));
 
   if (hasSubmenu) {
     return (
@@ -237,7 +243,7 @@ function CollapsedMenuItem({ item }: { item: MenuItem }) {
         <DropdownMenuContent side="right" align="start" className="min-w-44">
           {item.submenu!.map((sub) => {
             const SubIcon = sub.icon;
-            const isSubActive = location.pathname === sub.path;
+            const isSubActive = isPathActive(location.pathname, sub.path);
             return (
               <DropdownMenuItem key={sub.path} asChild>
                 <Link to={sub.path} className={cn(isSubActive && "bg-accent")}>
@@ -279,8 +285,8 @@ function ExpandedMenuItem({ item }: { item: MenuItem }) {
   const location = useLocation();
   const Icon = item.icon;
   const hasSubmenu = item.submenu && item.submenu.length > 0;
-  const isActive = location.pathname === item.path ||
-    (hasSubmenu && item.submenu!.some(sub => location.pathname === sub.path));
+  const isActive = isPathActive(location.pathname, item.path) ||
+    (hasSubmenu && item.submenu!.some(sub => isPathActive(location.pathname, sub.path)));
   const [expanded, setExpanded] = useState(isActive);
 
   useEffect(() => {
@@ -317,7 +323,7 @@ function ExpandedMenuItem({ item }: { item: MenuItem }) {
         {expanded && (
           <div className="relative">
             {item.submenu!.map((sub) => {
-              const isSubActive = location.pathname === sub.path;
+              const isSubActive = isPathActive(location.pathname, sub.path);
 
               return (
                 <div key={sub.path} className="relative flex items-center h-[34px]">
