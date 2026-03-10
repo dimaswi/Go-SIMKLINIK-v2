@@ -130,11 +130,9 @@ export default function RoleShow() {
 
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="text-xl font-semibold leading-none tracking-tight">{role.name}</h1>
                     <Badge className="h-6 rounded-md border-0 bg-sky-500 px-2 text-[11px] font-semibold text-white">ID #{role.id}</Badge>
                     <Badge className={permissionCountBadgeClass}>{permissionCount} Permission</Badge>
                   </div>
-                  <p className="mt-1.5 text-sm text-muted-foreground">Tinjau deskripsi role, hak akses, dan metadata pengelolaan.</p>
                 </div>
               </div>
             </div>

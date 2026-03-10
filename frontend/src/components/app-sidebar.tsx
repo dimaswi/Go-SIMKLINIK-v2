@@ -11,6 +11,22 @@ import {
   Settings,
   ChevronsUpDown,
   User,
+  Stethoscope,
+  Pill,
+  Layers,
+  Ruler,
+  HeartPulse,
+  FolderTree,
+  CreditCard,
+  Truck,
+  Hospital,
+  ShoppingCart,
+  PackageSearch,
+  ClipboardList,
+  UserPlus,
+  Users2,
+  Monitor,
+  FileText,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { usePermission } from '@/hooks/usePermission';
@@ -54,6 +70,43 @@ interface MenuItem {
 
 const menuItems: MenuItem[] = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard.view' },
+  {
+    path: '/registration',
+    label: 'Front Office',
+    icon: ClipboardList,
+    submenu: [
+      { path: '/queue', label: 'Antrian', icon: Monitor, permission: 'queue.view' },
+      { path: '/registration', label: 'Pendaftaran', icon: UserPlus, permission: 'visits.view' },
+      { path: '/emr', label: 'Rekam Medis', icon: FileText, permission: 'medical_records.view' },
+      { path: '/patients', label: 'Data Pasien', icon: Users2, permission: 'patients.view' },
+    ]
+  },
+  {
+    path: '/polyclinics',
+    label: 'Master Data',
+    icon: Hospital,
+    permission: 'polyclinics.view',
+    submenu: [
+      { path: '/polyclinics', label: 'Poliklinik', icon: Hospital, permission: 'polyclinics.view' },
+      { path: '/doctors', label: 'Dokter', icon: Stethoscope, permission: 'doctors.view' },
+      { path: '/medicine-categories', label: 'Kategori Obat', icon: FolderTree, permission: 'medicine_categories.view' },
+      { path: '/units', label: 'Satuan', icon: Ruler, permission: 'units.view' },
+      { path: '/medicines', label: 'Obat', icon: Pill, permission: 'medicines.view' },
+      { path: '/service-categories', label: 'Kategori Layanan', icon: Layers, permission: 'service_categories.view' },
+      { path: '/medical-services', label: 'Layanan Medis', icon: HeartPulse, permission: 'medical_services.view' },
+      { path: '/payment-methods', label: 'Metode Pembayaran', icon: CreditCard, permission: 'payment_methods.view' },
+      { path: '/suppliers', label: 'Supplier', icon: Truck, permission: 'suppliers.view' },
+    ]
+  },
+  {
+    path: '/purchasing',
+    label: 'Pembelian',
+    icon: ShoppingCart,
+    permission: 'purchase_orders.view',
+    submenu: [
+      { path: '/purchasing', label: 'Purchase Order', icon: PackageSearch, permission: 'purchase_orders.view' },
+    ]
+  },
   {
     path: '/users',
     label: 'User Management',

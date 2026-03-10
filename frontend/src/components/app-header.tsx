@@ -35,6 +35,10 @@ const MODULE_META: Record<string, { title: string; subtitle: string }> = {
     title: 'Settings',
     subtitle: 'Konfigurasi preferensi aplikasi',
   },
+  emr: {
+    title: 'Rekam Medis',
+    subtitle: 'Kelola catatan klinis, diagnosis, resep, dan tindakan pasien',
+  },
 };
 
 function getThemeFromDom(): 'light' | 'dark' {

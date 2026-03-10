@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { usersApi, rolesApi } from "@/lib/api";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, User, Mail, Lock, Shield } from "lucide-react";
 import { setPageTitle } from "@/lib/page-title";
@@ -136,20 +137,15 @@ export default function UserCreate() {
                 <Shield className="h-3.5 w-3.5 text-muted-foreground" />
                 Role
               </Label>
-              <select
-                id="role_id"
-                required
+              <SearchableSelect
+                options={roles.map(r => ({ value: String(r.id), label: r.name }))}
                 value={formData.role_id}
-                onChange={e => setFormData({ ...formData, role_id: e.target.value })}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              >
-                <option value="">Pilih role</option>
-                {roles.map(role => (
-                  <option key={role.id} value={role.id}>
-                    {role.name}
-                  </option>
-                ))}
-              </select>
+                onValueChange={value => setFormData({ ...formData, role_id: value })}
+                placeholder="Pilih role..."
+                searchPlaceholder="Cari role..."
+                emptyText="Role tidak ditemukan."
+                noneLabel="Pilih role"
+              />
             </div>
           </section>
         </div>

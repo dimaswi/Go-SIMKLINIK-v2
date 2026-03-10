@@ -144,12 +144,10 @@ export default function PermissionShow() {
 
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="text-lg font-semibold leading-none tracking-tight md:text-xl">{permission.name}</h1>
                     <Badge className="h-6 rounded-md border-0 bg-sky-500 px-2 text-[11px] font-semibold text-white">ID #{permission.id}</Badge>
                     <Badge className={moduleBadgeClass}>{permissionModule}</Badge>
                     <Badge className={actionBadgeClass}>{permissionAction}</Badge>
                   </div>
-                  <p className="mt-1.5 text-sm text-muted-foreground">Verifikasi scope, aksi, dan konteks penggunaan permission.</p>
                 </div>
               </div>
             </div>

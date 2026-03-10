@@ -26,6 +26,44 @@ export default function RoleEdit() {
     description: '',
     permission_ids: [] as number[],
   });
+
+  useEffect(() => {
+    setPageTitle('Edit Role');
+    loadData();
+  }, [id]);
+
+  const loadData = async () => {
+    try {
+      const [roleRes, permRes] = await Promise.all([rolesApi.getById(Number(id)), permissionsApi.getAll()]);
+      const role = roleRes.data.data;
+      setFormData({ name: role.name, description: role.description, permission_ids: role.permissions?.map((p: any) => p.id) || [] });
+      const grouped = permRes.data.data.reduce((acc: Record<string, any[]>, permission: any) => {
+        const module = permission.module || 'Other';
+        if (!acc[module]) acc[module] = [];
+        acc[module].push(permission);
+        return acc;
+      }, {});
+      setGroupedPermissions(grouped);
+    } catch { toast({ variant: "destructive", title: "Error!" }); }
+    finally { setFetching(false); }
+  };
+
+  const handlePermissionToggle = (permId: number) => {
+    setFormData(prev => ({ ...prev, permission_ids: prev.permission_ids.includes(permId) ? prev.permission_ids.filter(id => id !== permId) : [...prev.permission_ids, permId] }));
+  };
+
+  const handleShowPermissionInfo = (permission: any) => { setSelectedPermission(permission); setShowPermissionModal(true); };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault(); setLoading(true);
+    try { await rolesApi.update(Number(id), formData); toast({ variant: "success", title: "Berhasil!" }); setTimeout(() => navigate(`/roles/${id}`), 500); }
+    catch (e: any) { toast({ variant: "destructive", title: "Error!", description: e.response?.data?.error || "Gagal." }); }
+    finally { setLoading(false); }
+  };
+
+  if (fetching) return <div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+
+  return (
     <div className="p-6">
       <form onSubmit={handleSubmit} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="space-y-6">
@@ -174,96 +212,6 @@ export default function RoleEdit() {
         permission={selectedPermission}
         isOpen={showPermissionModal}
         onClose={() => setShowPermissionModal(false)}
-      />
-    </div>
-                                  permission_ids: prev.permission_ids.filter(id => !modulePermIds.includes(id))
-                                }));
-                              } else {
-                                setFormData(prev => ({
-                                  ...prev,
-                                  permission_ids: [...new Set([...prev.permission_ids, ...modulePermIds])]
-                                }));
-                              }
-                            }}
-                            className="text-xs"
-                          >
-                            {modulePermissions.every(p => formData.permission_ids.includes(p.id)) ? 'Deselect All' : 'Select All'}
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="p-3 space-y-2">
-                        {modulePermissions.map((perm) => (
-                          <div 
-                            key={perm.id} 
-                            className="flex items-center space-x-3 p-2 rounded-md hover:bg-muted/50 border transition-colors"
-                          >
-                            <Checkbox
-                              id={`perm-${perm.id}`}
-                              checked={formData.permission_ids.includes(perm.id)}
-                              onCheckedChange={() => handlePermissionToggle(perm.id)}
-                            />
-                            <div className="flex-1 flex items-center justify-between">
-                              <div className="space-y-1">
-                                <label
-                                  htmlFor={`perm-${perm.id}`}
-                                  className="text-sm font-medium leading-none cursor-pointer flex items-center gap-2"
-                                >
-                                  {perm.name}
-                                  <Badge variant="secondary" className="text-xs">
-                                    {perm.category}
-                                  </Badge>
-                                </label>
-                                {perm.description && (
-                                  <p className="text-xs text-muted-foreground">{perm.description}</p>
-                                )}
-                              </div>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleShowPermissionInfo(perm)}
-                                className="h-6 w-6 p-0"
-                              >
-                                <Info className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  {Object.keys(groupedPermissions).length === 0 && (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <p className="text-sm">Tidak ada permission tersedia.</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 border-t pt-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => navigate('/roles')}
-                  className="h-10"
-                >
-                  Batal
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={loading}
-                  className="h-10 min-w-24"
-                >
-                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Update
-                </Button>
-              </div>
-      </form>
-
-      <PermissionDetailModal 
-          permission={selectedPermission}
-          isOpen={showPermissionModal}
-          onClose={() => setShowPermissionModal(false)}
       />
     </div>
   );

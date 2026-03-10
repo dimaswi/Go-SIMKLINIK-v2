@@ -130,14 +130,12 @@ export default function UserShow() {
                 </Button>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="text-xl font-semibold leading-none tracking-tight">{user.full_name}</h1>
                     <Badge className="h-6 rounded-md border-0 bg-sky-500 px-2 text-[11px] font-semibold text-white">ID #{user.id}</Badge>
                     <Badge className={user.is_active ? 'h-6 rounded-md border-0 bg-emerald-500 px-2 text-[11px] font-semibold text-white' : 'h-6 rounded-md border-0 bg-rose-500 px-2 text-[11px] font-semibold text-white'}>
                       {user.is_active ? 'AKTIF' : 'NONAKTIF'}
                     </Badge>
                     <Badge className={roleBadgeClass}>{user.role?.name || 'Tanpa Role'}</Badge>
                   </div>
-                  <p className="mt-1.5 text-sm text-muted-foreground">Kelola data user, role, dan status aktivitas akun.</p>
                 </div>
               </div>
             </div>

@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import { ProtectedRoute as PermissionGuard } from '@/components/protected-route';
 import { lazy } from 'react';
 

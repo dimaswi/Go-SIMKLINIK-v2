@@ -2,62 +2,62 @@ version: '3.8'
 
 services:
   # PostgreSQL Database
-  postgres:
+  simklinik-database:
     image: postgres:15-alpine
-    container_name: pos-postgres
+    container_name: simklinik-database
     environment:
-      POSTGRES_USER: dimas
-      POSTGRES_PASSWORD: dimas123
-      POSTGRES_DB: pos
+      POSTGRES_USER: simklinik
+      POSTGRES_PASSWORD: simklinik123
+      POSTGRES_DB: simklinik
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
       - "5434:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - simklinik_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dimas -d pos"]
+      test: ["CMD-SHELL", "pg_isready -U simklinik -d simklinik"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - pos-network
+      - simklinik-network
 
   # Backend API (Go)
-  backend:
+  simklinik-backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: pos-backend
+    container_name: simklinik-backend
     environment:
-      DATABASE_DSN: "host=postgres user=dimas password=dimas123 dbname=pos port=5434 sslmode=disable"
-      JWT_SECRET: "your-secret-key-change-in-production"
+      DATABASE_DSN: "host=simklinik-database user=simklinik password=simklinik123 dbname=simklinik port=5432 sslmode=disable"
+      JWT_SECRET: "simklinik-secret-key-change-in-production"
       SERVER_PORT: "8080"
     ports:
       - "8080:8080"
     depends_on:
-      postgres:
+      simklinik-database:
         condition: service_healthy
     networks:
-      - pos-network
+      - simklinik-network
     restart: unless-stopped
 
   # Frontend (React)
-  frontend:
+  simklinik-frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: pos-frontend
+    container_name: simklinik-frontend
     ports:
       - "3000:80"
     depends_on:
-      - backend
+      - simklinik-backend
     networks:
-      - pos-network
+      - simklinik-network
     restart: unless-stopped
 
 volumes:
-  postgres_data:
+  simklinik_postgres_data:
 
 networks:
-  pos-network:
+  simklinik-network:
     driver: bridge
