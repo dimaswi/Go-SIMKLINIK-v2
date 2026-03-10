@@ -1,0 +1,73 @@
+name: Monorepo CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+# Mencegah dua workflow untuk branch yang sama berjalan bersamaan.
+concurrency:
+  group: monorepo-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend Build
+    runs-on: ubuntu-latest
+
+    # Semua perintah shell pada job ini dijalankan dari folder backend.
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Download Go dependencies
+        run: go mod download
+
+      - name: Build backend
+        run: go build ./...
+
+      # Tetap dijalankan walau belum ada test file.
+      - name: Test backend
+        run: go test ./...
+
+  frontend:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+
+    # Semua perintah shell pada job ini dijalankan dari folder frontend.
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
