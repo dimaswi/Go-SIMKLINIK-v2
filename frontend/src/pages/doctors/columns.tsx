@@ -39,6 +39,16 @@ export function createDoctorColumns({
       },
     },
     {
+      accessorKey: "nip_number",
+      header: ({ column }) => (
+        <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} className="h-8 p-0 hover:bg-transparent">
+          NIP
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        </Button>
+      ),
+      cell: ({ row }) => <span>{row.getValue("nip_number") || '-'}</span>,
+    },
+    {
       accessorKey: "sip_number",
       header: ({ column }) => (
         <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} className="h-8 p-0 hover:bg-transparent">
@@ -63,6 +73,25 @@ export function createDoctorColumns({
             {polyclinics.map(p => (
               <Badge key={p.id} variant="outline" className="text-[11px]">{p.name}</Badge>
             ))}
+          </div>
+        )
+      },
+    },
+    {
+      id: "satusehat",
+      header: "SATUSEHAT",
+      cell: ({ row }) => {
+        const practitionerId = row.original.satusehat_practitioner_id
+        const syncedAt = row.original.satusehat_synced_at
+
+        return (
+          <div className="flex flex-col gap-1">
+            <Badge variant={practitionerId ? "default" : "outline"} className="w-fit rounded-none">
+              {practitionerId ? 'Practitioner Sync' : 'Belum Sync'}
+            </Badge>
+            <span className="text-xs text-muted-foreground">
+              {practitionerId ? (syncedAt ? `Sync ${new Date(syncedAt).toLocaleDateString('id-ID')}` : 'ID SATUSEHAT tersedia') : 'Buka detail dokter untuk preview dan sync'}
+            </span>
           </div>
         )
       },

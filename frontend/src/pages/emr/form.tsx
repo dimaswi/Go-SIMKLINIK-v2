@@ -1,892 +1,509 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { FilePlus2, Loader2, Lock, Save } from 'lucide-react';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
-import { SearchableSelect } from '@/components/ui/searchable-select';
-import {
-  medicalRecordsApi,
-  icd10Api,
-  medicinesApi,
-  medicalServicesApi,
-  type MedicalRecord,
-  type ICD10,
-  type Medicine,
-  type MedicalService,
-  type MedicalRecordDiagnosis,
-  type Prescription,
-  type MedicalActionItem,
-} from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
-import { setPageTitle } from '@/lib/page-title';
 import {
-  Activity,
-  AlertTriangle,
-  ArrowLeft,
-  CalendarDays,
-  ClipboardList,
-  FileText,
-  HeartPulse,
-  History,
-  Loader2,
-  Lock,
-  Plus,
-  Save,
-  Stethoscope,
-  Trash2,
-  User,
-} from 'lucide-react';
+  type FinalizeVisitPayload,
+  medicalRecordsApi,
+  type MedicalActionMutationPayload,
+  type MedicalRecord,
+  type MedicalRecordSectionType,
+  type SatusehatVisitAutoSyncResult,
+} from '@/lib/api';
+import { setPageTitle } from '@/lib/page-title';
+import { SECTION_CONFIGS, getSectionConfig } from './constants';
+import { EntryTimeline } from './components/entry-timeline';
+import { FinalizeVisitDialog } from './components/finalize-visit-dialog';
+import { FinalizedVisitActions } from './components/finalized-visit-actions';
+import { openPdfDocumentInNewWindow } from './print-document';
+import { SectionEditorBody } from './components/section-editor-body';
+import { StickyVisitHeader } from './components/sticky-visit-header';
+import { buildDraft, buildSatusehatAutoSyncSummary, getCompletedCoreSections, getFinalizeVisitBlockingOrders, getLatestRecordForSection, groupRecordsBySection } from './utils';
+import { useEmrReferences } from './use-emr-references';
+import { useVisitEmr } from './use-visit-emr';
+import { useVisitOdontogramEntries } from './use-visit-odontogram';
+import type { MedicalRecordDraft } from './types';
 
-type TabKey = 'subjective' | 'objective' | 'assessment' | 'plan';
-
-type EMRFormState = {
-  chief_complaint: string;
-  history_of_present_illness: string;
-  clinical_alert: string;
-  allergy_notes: string;
-  subjective: string;
-  bp_systolic: number;
-  bp_diastolic: number;
-  heart_rate: number;
-  temperature: number;
-  respiratory_rate: number;
-  spo2: number;
-  pain_scale: number;
-  consciousness: string;
-  height: number;
-  weight: number;
-  physical_examination: string;
-  assessment: string;
-  plan: string;
-  follow_up_instruction: string;
-  follow_up_at: string;
-  notes: string;
-};
-
-const TABS: Array<{
-  key: TabKey;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-}> = [
-  { key: 'subjective', label: 'Subjective', icon: User },
-  { key: 'objective', label: 'Objective', icon: Activity },
-  { key: 'assessment', label: 'Assessment', icon: Stethoscope },
-  { key: 'plan', label: 'Plan', icon: ClipboardList },
-];
-
-const INITIAL_FORM: EMRFormState = {
-  chief_complaint: '',
-  history_of_present_illness: '',
-  clinical_alert: '',
-  allergy_notes: '',
-  subjective: '',
-  bp_systolic: 0,
-  bp_diastolic: 0,
-  heart_rate: 0,
-  temperature: 0,
-  respiratory_rate: 0,
-  spo2: 0,
-  pain_scale: 0,
-  consciousness: 'compos mentis',
-  height: 0,
-  weight: 0,
-  physical_examination: '',
-  assessment: '',
-  plan: '',
-  follow_up_instruction: '',
-  follow_up_at: '',
-  notes: '',
-};
-
-function formatDateTimeLocal(value?: string) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return offsetDate.toISOString().slice(0, 16);
+function isSectionType(value: string | undefined): value is MedicalRecordSectionType {
+  return SECTION_CONFIGS.some((section) => section.key === value);
 }
 
-function formatDate(value?: string) {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleDateString('id-ID', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
-}
-
-function formatFullDate(value?: string) {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleDateString('id-ID', {
-    weekday: 'long',
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-  });
-}
-
-function calculateAge(value?: string) {
-  if (!value) return null;
-  const birthDate = new Date(value);
-  if (Number.isNaN(birthDate.getTime())) return null;
-  const today = new Date();
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const monthDiff = today.getMonth() - birthDate.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-    age -= 1;
-  }
-  return age;
-}
-
-function getBMI(weight: number, height: number) {
-  if (weight <= 0 || height <= 0) return 0;
-  const heightM = height / 100;
-  return Number((weight / (heightM * heightM)).toFixed(1));
-}
-
-function getBMIStatus(bmi: number) {
-  if (!bmi) return 'Belum dihitung';
-  if (bmi < 18.5) return 'Kurus';
-  if (bmi < 25) return 'Normal';
-  if (bmi < 30) return 'Berlebih';
-  return 'Obesitas';
-}
-
-function DenseStat({ label, value, alert = false }: { label: string; value: string; alert?: boolean }) {
-  return (
-    <div className="rounded-lg border px-3 py-2">
-      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={alert ? 'mt-1 text-sm font-semibold text-destructive' : 'mt-1 text-sm font-semibold'}>{value}</p>
-    </div>
-  );
-}
-
-function SectionTitle({ title, helper }: { title: string; helper?: string }) {
-  return (
-    <div className="mb-3">
-      <h3 className="text-sm font-semibold">{title}</h3>
-      {helper && <p className="mt-1 text-xs text-muted-foreground">{helper}</p>}
-    </div>
-  );
-}
-
-function SubjectivePane({
-  chiefComplaint,
-  historyOfPresentIllness,
-  clinicalAlert,
-  allergyNotes,
-  subjective,
-  complaint,
-  patientAllergies,
-  onChange,
-  readOnly,
-}: {
-  chiefComplaint: string;
-  historyOfPresentIllness: string;
-  clinicalAlert: string;
-  allergyNotes: string;
-  subjective: string;
-  complaint: string;
-  patientAllergies: string;
-  onChange: (field: 'chief_complaint' | 'history_of_present_illness' | 'clinical_alert' | 'allergy_notes' | 'subjective', value: string) => void;
-  readOnly: boolean;
-}) {
-  return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
-      <div className="space-y-4">
-        <div className="grid gap-4 xl:grid-cols-2">
-          <div>
-            <SectionTitle title="Keluhan Utama" helper="Masalah utama yang membawa pasien datang hari ini." />
-            <Textarea
-              value={chiefComplaint}
-              onChange={(event) => onChange('chief_complaint', event.target.value)}
-              placeholder="Contoh: demam 3 hari, batuk berdahak, nyeri tenggorokan."
-              rows={4}
-              disabled={readOnly}
-            />
-          </div>
-          <div>
-            <SectionTitle title="Alert Klinis" helper="Red flag, komorbid penting, risiko tinggi, atau perhatian khusus." />
-            <Textarea
-              value={clinicalAlert}
-              onChange={(event) => onChange('clinical_alert', event.target.value)}
-              placeholder="Contoh: riwayat asma, hamil trimester 2, alergi berat penisilin."
-              rows={4}
-              disabled={readOnly}
-            />
-          </div>
-        </div>
-
-        <div>
-          <SectionTitle title="Riwayat Penyakit Sekarang" helper="Kronologi keluhan, gejala penyerta, terapi sebelumnya, dan responsnya." />
-          <Textarea
-            value={historyOfPresentIllness}
-            onChange={(event) => onChange('history_of_present_illness', event.target.value)}
-            placeholder="Tuliskan onset, durasi, progresivitas, faktor pencetus/peringan, terapi yang sudah dicoba, dan red flags yang disangkal."
-            rows={8}
-            disabled={readOnly}
-          />
-        </div>
-
-        <div>
-          <SectionTitle title="Catatan Subjektif Tambahan" helper="Keluhan penyerta, riwayat obat, riwayat penyakit dahulu, kebiasaan, dan konteks lain." />
-          <Textarea
-            value={subjective}
-            onChange={(event) => onChange('subjective', event.target.value)}
-            placeholder="Tambahkan konteks subjektif lain yang tidak masuk di riwayat penyakit sekarang."
-            rows={8}
-            disabled={readOnly}
-          />
-        </div>
-
-        <div>
-          <SectionTitle title="Alergi / Reaksi Obat" helper="Khusus untuk kunjungan ini bila ada detail yang perlu ditegaskan." />
-          <Textarea
-            value={allergyNotes}
-            onChange={(event) => onChange('allergy_notes', event.target.value)}
-            placeholder="Contoh: amoksisilin menyebabkan gatal menyeluruh, NSAID memperberat gastritis."
-            rows={4}
-            disabled={readOnly}
-          />
-        </div>
-      </div>
-
-      <div className="space-y-3">
-        <div className="rounded-lg border bg-muted/20 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Keluhan Pendaftaran</p>
-          <p className="mt-2 text-sm leading-6">{complaint || 'Tidak ada keluhan awal.'}</p>
-        </div>
-        <div className="rounded-lg border bg-muted/20 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Alergi Pasien</p>
-          <p className="mt-2 text-sm leading-6">{patientAllergies || 'Belum ada alergi pada master pasien.'}</p>
-        </div>
-        <div className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">
-          <p className="font-medium text-foreground">Checklist cepat</p>
-          <ul className="mt-2 space-y-2">
-            <li>Keluhan utama sudah tegas</li>
-            <li>Riwayat penyakit sekarang lengkap</li>
-            <li>Alergi dan red flags sudah dicek</li>
-            <li>Riwayat obat / terapi sebelumnya tercatat</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ObjectivePane({
-  form,
-  onChange,
-  readOnly,
-}: {
-  form: EMRFormState;
-  onChange: (field: keyof EMRFormState, value: number | string) => void;
-  readOnly: boolean;
-}) {
-  const bmi = getBMI(form.weight, form.height);
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <SectionTitle title="Tanda Vital" helper="Isi seperlunya. Tidak perlu dipisah ke banyak panel." />
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-          <div>
-            <Label className="text-xs">TD Sistolik</Label>
-            <Input type="number" value={form.bp_systolic || ''} onChange={(event) => onChange('bp_systolic', parseInt(event.target.value, 10) || 0)} disabled={readOnly} />
-          </div>
-          <div>
-            <Label className="text-xs">TD Diastolik</Label>
-            <Input type="number" value={form.bp_diastolic || ''} onChange={(event) => onChange('bp_diastolic', parseInt(event.target.value, 10) || 0)} disabled={readOnly} />
-          </div>
-          <div>
-            <Label className="text-xs">Nadi</Label>
-            <Input type="number" value={form.heart_rate || ''} onChange={(event) => onChange('heart_rate', parseInt(event.target.value, 10) || 0)} disabled={readOnly} />
-          </div>
-          <div>
-            <Label className="text-xs">Suhu</Label>
-            <Input type="number" step="0.1" value={form.temperature || ''} onChange={(event) => onChange('temperature', parseFloat(event.target.value) || 0)} disabled={readOnly} />
-          </div>
-          <div>
-            <Label className="text-xs">RR</Label>
-            <Input type="number" value={form.respiratory_rate || ''} onChange={(event) => onChange('respiratory_rate', parseInt(event.target.value, 10) || 0)} disabled={readOnly} />
-          </div>
-          <div>
-            <Label className="text-xs">SpO2</Label>
-            <Input type="number" step="0.1" value={form.spo2 || ''} onChange={(event) => onChange('spo2', parseFloat(event.target.value) || 0)} disabled={readOnly} />
-          </div>
-          <div>
-            <Label className="text-xs">Skala Nyeri</Label>
-            <Input type="number" min={0} max={10} value={form.pain_scale || ''} onChange={(event) => onChange('pain_scale', parseInt(event.target.value, 10) || 0)} disabled={readOnly} />
-          </div>
-          <div>
-            <Label className="text-xs">Kesadaran</Label>
-            <SearchableSelect
-              options={[
-                { value: 'compos mentis', label: 'Compos Mentis' },
-                { value: 'somnolen', label: 'Somnolen' },
-                { value: 'sopor', label: 'Sopor' },
-                { value: 'coma', label: 'Coma' },
-              ]}
-              value={form.consciousness}
-              onValueChange={(value) => onChange('consciousness', value)}
-              placeholder="Pilih kesadaran"
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
-        <div>
-          <SectionTitle title="Pemeriksaan Fisik" />
-          <Textarea
-            value={form.physical_examination}
-            onChange={(event) => onChange('physical_examination', event.target.value)}
-            placeholder="Tulis temuan pemeriksaan fisik yang relevan."
-            rows={12}
-            disabled={readOnly}
-          />
-        </div>
-        <div className="space-y-3 rounded-lg border p-3">
-          <SectionTitle title="Antropometri" />
-          <div>
-            <Label className="text-xs">Tinggi Badan (cm)</Label>
-            <Input type="number" step="0.1" value={form.height || ''} onChange={(event) => onChange('height', parseFloat(event.target.value) || 0)} disabled={readOnly} />
-          </div>
-          <div>
-            <Label className="text-xs">Berat Badan (kg)</Label>
-            <Input type="number" step="0.1" value={form.weight || ''} onChange={(event) => onChange('weight', parseFloat(event.target.value) || 0)} disabled={readOnly} />
-          </div>
-          <Separator />
-          <DenseStat label="BMI" value={bmi ? String(bmi) : '-'} alert={bmi >= 30} />
-          <DenseStat label="Status" value={getBMIStatus(bmi)} alert={bmi >= 30} />
-          <DenseStat label="Nyeri" value={form.pain_scale ? `${form.pain_scale}/10` : '-'} alert={form.pain_scale >= 7} />
-          <DenseStat label="Kesadaran" value={form.consciousness || '-'} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AssessmentPane({
-  assessment,
-  diagnoses,
-  icd10List,
-  onAssessmentChange,
-  onAddDiagnosis,
-  onDeleteDiagnosis,
-  readOnly,
-}: {
-  assessment: string;
-  diagnoses: MedicalRecordDiagnosis[];
-  icd10List: ICD10[];
-  onAssessmentChange: (value: string) => void;
-  onAddDiagnosis: (icd10Id: number, type: 'primer' | 'sekunder') => void;
-  onDeleteDiagnosis: (id: number) => void;
-  readOnly: boolean;
-}) {
-  const [selectedICD, setSelectedICD] = useState('');
-  const [diagType, setDiagType] = useState<'primer' | 'sekunder'>('primer');
-
-  const icdOptions = icd10List.map((item) => ({
-    value: String(item.id),
-    label: `${item.code} — ${item.name_id || item.name}`,
-  }));
-
-  const handleAdd = () => {
-    if (!selectedICD) return;
-    onAddDiagnosis(parseInt(selectedICD, 10), diagType);
-    setSelectedICD('');
-  };
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <SectionTitle title="Penilaian Klinis" helper="Isi kesimpulan klinis dan differential diagnosis bila perlu." />
-        <Textarea
-          value={assessment}
-          onChange={(event) => onAssessmentChange(event.target.value)}
-          placeholder="Contoh: ISPA, dd bronkitis akut, kondisi umum baik, tidak ada tanda distress napas."
-          rows={8}
-          disabled={readOnly}
-        />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div>
-          <SectionTitle title="Diagnosis Tercatat" />
-          <div className="space-y-2">
-            {diagnoses.length === 0 ? (
-              <div className="rounded-lg border border-dashed px-3 py-4 text-sm text-muted-foreground">Belum ada diagnosis.</div>
-            ) : (
-              diagnoses.map((diagnosis) => (
-                <div key={diagnosis.id} className="flex items-start justify-between gap-3 rounded-lg border px-3 py-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant={diagnosis.diagnosis_type === 'primer' ? 'default' : 'secondary'}>
-                        {diagnosis.diagnosis_type === 'primer' ? 'Primer' : 'Sekunder'}
-                      </Badge>
-                      <span className="font-mono text-xs text-muted-foreground">{diagnosis.icd10?.code || '-'}</span>
-                    </div>
-                    <p className="mt-2 text-sm font-medium">{diagnosis.icd10?.name_id || diagnosis.icd10?.name || '-'}</p>
-                  </div>
-                  {!readOnly && (
-                    <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => onDeleteDiagnosis(diagnosis.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-lg border p-3">
-          <SectionTitle title="Tambah Diagnosis" />
-          <div className="space-y-3">
-            <div>
-              <Label className="text-xs">Cari ICD-10</Label>
-              <SearchableSelect
-                options={icdOptions}
-                value={selectedICD}
-                onValueChange={setSelectedICD}
-                placeholder="Cari diagnosis..."
-                searchPlaceholder="Kode atau nama diagnosis"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Tipe</Label>
-              <SearchableSelect
-                options={[
-                  { value: 'primer', label: 'Primer' },
-                  { value: 'sekunder', label: 'Sekunder' },
-                ]}
-                value={diagType}
-                onValueChange={(value) => setDiagType((value as 'primer' | 'sekunder') || 'primer')}
-                placeholder="Pilih tipe"
-              />
-            </div>
-            <Button className="w-full gap-1.5" size="sm" onClick={handleAdd} disabled={!selectedICD || readOnly}>
-              <Plus className="h-4 w-4" /> Tambah Diagnosis
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PlanPane({
-  plan,
-  followUpInstruction,
-  followUpAt,
-  notes,
-  prescriptions,
-  actions,
-  medicineList,
-  serviceList,
-  onPlanChange,
-  onFollowUpInstructionChange,
-  onFollowUpAtChange,
-  onNotesChange,
-  onAddPrescription,
-  onDeletePrescription,
-  onAddAction,
-  onDeleteAction,
-  readOnly,
-}: {
-  plan: string;
-  followUpInstruction: string;
-  followUpAt: string;
-  notes: string;
-  prescriptions: Prescription[];
-  actions: MedicalActionItem[];
-  medicineList: Medicine[];
-  serviceList: MedicalService[];
-  onPlanChange: (value: string) => void;
-  onFollowUpInstructionChange: (value: string) => void;
-  onFollowUpAtChange: (value: string) => void;
-  onNotesChange: (value: string) => void;
-  onAddPrescription: (data: { medicine_id: number; quantity: number; dosage: string; frequency: string; duration: string; route: string; instructions: string }) => void;
-  onDeletePrescription: (id: number) => void;
-  onAddAction: (data: { medical_service_id: number; quantity: number; notes: string }) => void;
-  onDeleteAction: (id: number) => void;
-  readOnly: boolean;
-}) {
-  const [selectedMedicine, setSelectedMedicine] = useState('');
-  const [selectedService, setSelectedService] = useState('');
-  const [prescriptionForm, setPrescriptionForm] = useState({
-    quantity: 1,
-    dosage: '',
-    frequency: '',
-    duration: '',
-    route: 'oral',
-    instructions: '',
-  });
-  const [actionNotes, setActionNotes] = useState('');
-
-  const medicineOptions = medicineList.map((medicine) => ({
-    value: String(medicine.id),
-    label: `${medicine.name}${medicine.strength ? ` ${medicine.strength}` : ''}`,
-  }));
-
-  const serviceOptions = serviceList.map((service) => ({
-    value: String(service.id),
-    label: `${service.name} — Rp ${service.price.toLocaleString('id-ID')}`,
-  }));
-
-  const handleAddPrescription = () => {
-    if (!selectedMedicine) return;
-    onAddPrescription({ medicine_id: parseInt(selectedMedicine, 10), ...prescriptionForm });
-    setSelectedMedicine('');
-    setPrescriptionForm({ quantity: 1, dosage: '', frequency: '', duration: '', route: 'oral', instructions: '' });
-  };
-
-  const handleAddAction = () => {
-    if (!selectedService) return;
-    onAddAction({ medical_service_id: parseInt(selectedService, 10), quantity: 1, notes: actionNotes });
-    setSelectedService('');
-    setActionNotes('');
-  };
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <SectionTitle title="Rencana Terapi" />
-        <Textarea value={plan} onChange={(event) => onPlanChange(event.target.value)} rows={6} disabled={readOnly} placeholder="Rencana obat, edukasi, follow-up, kontrol ulang, atau instruksi khusus." />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
-        <div>
-          <SectionTitle title="Instruksi Pulang / Follow-up" helper="Edukasi pasien, warning sign, dan kapan harus kembali." />
-          <Textarea
-            value={followUpInstruction}
-            onChange={(event) => onFollowUpInstructionChange(event.target.value)}
-            rows={5}
-            disabled={readOnly}
-            placeholder="Contoh: minum obat sampai habis, kontrol 3 hari bila demam tidak turun, segera ke IGD bila sesak."
-          />
-        </div>
-        <div className="rounded-lg border p-3">
-          <SectionTitle title="Kontrol Ulang" />
-          <div>
-            <Label className="text-xs">Jadwal Kontrol</Label>
-            <Input type="datetime-local" value={followUpAt} onChange={(event) => onFollowUpAtChange(event.target.value)} disabled={readOnly} />
-          </div>
-        </div>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <div className="rounded-lg border p-3">
-          <SectionTitle title="Resep Obat" />
-          <div className="space-y-2">
-            {prescriptions.length === 0 ? (
-              <div className="rounded-lg border border-dashed px-3 py-4 text-sm text-muted-foreground">Belum ada resep.</div>
-            ) : (
-              prescriptions.map((prescription) => (
-                <div key={prescription.id} className="flex items-start justify-between gap-3 rounded-lg border px-3 py-3">
-                  <div>
-                    <p className="text-sm font-medium">{prescription.medicine?.name || '-'}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{[prescription.dosage, prescription.frequency, prescription.duration].filter(Boolean).join(' · ') || 'Belum lengkap'} · Qty {prescription.quantity}</p>
-                    {prescription.instructions && <p className="mt-1 text-xs text-muted-foreground">{prescription.instructions}</p>}
-                  </div>
-                  {!readOnly && (
-                    <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => onDeletePrescription(prescription.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-
-          {!readOnly && (
-            <div className="mt-3 space-y-3 border-t pt-3">
-              <div>
-                <Label className="text-xs">Obat</Label>
-                <SearchableSelect options={medicineOptions} value={selectedMedicine} onValueChange={setSelectedMedicine} placeholder="Pilih obat" searchPlaceholder="Cari obat" />
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                <div>
-                  <Label className="text-xs">Qty</Label>
-                  <Input type="number" min={1} value={prescriptionForm.quantity} onChange={(event) => setPrescriptionForm((prev) => ({ ...prev, quantity: parseInt(event.target.value, 10) || 1 }))} />
-                </div>
-                <div>
-                  <Label className="text-xs">Dosis</Label>
-                  <Input value={prescriptionForm.dosage} onChange={(event) => setPrescriptionForm((prev) => ({ ...prev, dosage: event.target.value }))} />
-                </div>
-                <div>
-                  <Label className="text-xs">Frekuensi</Label>
-                  <Input value={prescriptionForm.frequency} onChange={(event) => setPrescriptionForm((prev) => ({ ...prev, frequency: event.target.value }))} />
-                </div>
-                <div>
-                  <Label className="text-xs">Durasi</Label>
-                  <Input value={prescriptionForm.duration} onChange={(event) => setPrescriptionForm((prev) => ({ ...prev, duration: event.target.value }))} />
-                </div>
-                <div>
-                  <Label className="text-xs">Rute</Label>
-                  <SearchableSelect
-                    options={[
-                      { value: 'oral', label: 'Oral' },
-                      { value: 'topikal', label: 'Topikal' },
-                      { value: 'injeksi', label: 'Injeksi' },
-                      { value: 'inhalasi', label: 'Inhalasi' },
-                    ]}
-                    value={prescriptionForm.route}
-                    onValueChange={(value) => setPrescriptionForm((prev) => ({ ...prev, route: value }))}
-                    placeholder="Rute"
-                  />
-                </div>
-                <div className="sm:col-span-2 xl:col-span-3">
-                  <Label className="text-xs">Aturan Pakai</Label>
-                  <Input value={prescriptionForm.instructions} onChange={(event) => setPrescriptionForm((prev) => ({ ...prev, instructions: event.target.value }))} placeholder="Sesudah makan" />
-                </div>
-              </div>
-              <Button size="sm" className="w-full gap-1.5" onClick={handleAddPrescription} disabled={!selectedMedicine}>
-                <Plus className="h-4 w-4" /> Tambah Resep
-              </Button>
-            </div>
-          )}
-        </div>
-
-        <div className="rounded-lg border p-3">
-          <SectionTitle title="Tindakan dan Catatan" />
-          <div className="space-y-2">
-            {actions.length === 0 ? (
-              <div className="rounded-lg border border-dashed px-3 py-4 text-sm text-muted-foreground">Belum ada tindakan.</div>
-            ) : (
-              actions.map((action) => (
-                <div key={action.id} className="flex items-start justify-between gap-3 rounded-lg border px-3 py-3">
-                  <div>
-                    <p className="text-sm font-medium">{action.medical_service?.name || '-'}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">Rp {action.price.toLocaleString('id-ID')} × {action.quantity}</p>
-                    {action.notes && <p className="mt-1 text-xs text-muted-foreground">{action.notes}</p>}
-                  </div>
-                  {!readOnly && (
-                    <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => onDeleteAction(action.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-
-          {!readOnly && (
-            <div className="mt-3 space-y-3 border-t pt-3">
-              <div>
-                <Label className="text-xs">Layanan / Tindakan</Label>
-                <SearchableSelect options={serviceOptions} value={selectedService} onValueChange={setSelectedService} placeholder="Pilih tindakan" searchPlaceholder="Cari layanan" />
-              </div>
-              <div>
-                <Label className="text-xs">Catatan</Label>
-                <Input value={actionNotes} onChange={(event) => setActionNotes(event.target.value)} placeholder="Catatan tindakan" />
-              </div>
-              <Button size="sm" className="w-full gap-1.5" onClick={handleAddAction} disabled={!selectedService}>
-                <Plus className="h-4 w-4" /> Tambah Tindakan
-              </Button>
-            </div>
-          )}
-
-          <Separator className="my-3" />
-
-          <div>
-            <Label className="text-sm font-medium">Catatan Tambahan</Label>
-            <Textarea value={notes} onChange={(event) => onNotesChange(event.target.value)} rows={6} disabled={readOnly} className="mt-2" />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export default function EMRForm() {
-  const { id } = useParams();
+export default function EMRFormPage() {
+  const { id, section } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const [record, setRecord] = useState<MedicalRecord | null>(null);
-  const [loading, setLoading] = useState(true);
+  const visitId = Number(id);
+  const activeSection = isSectionType(section) ? section : null;
+  const needsOdontogramData = activeSection === 'procedure';
+
+  const { visit, records, loading, error, reload, updateVisit, replaceRecords, upsertRecord, patchRecord } = useVisitEmr(visitId);
+  const {
+    entries: odontogramEntries,
+    loading: loadingOdontogram,
+    error: odontogramError,
+    upsertEntry: upsertOdontogramEntry,
+  } = useVisitOdontogramEntries(visitId, needsOdontogramData);
+  const {
+    icd10List,
+    medicineList,
+    serviceList,
+    physicalExamImageList,
+    loading: loadingReferences,
+    error: referenceError,
+  } = useEmrReferences();
+
+  const [selectedRecordId, setSelectedRecordId] = useState<number | null>(null);
+  const [draft, setDraft] = useState<MedicalRecordDraft>(buildDraft());
+  const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabKey>('subjective');
-  const [form, setForm] = useState<EMRFormState>(INITIAL_FORM);
-  const [icd10List, setIcd10List] = useState<ICD10[]>([]);
-  const [medicineList, setMedicineList] = useState<Medicine[]>([]);
-  const [serviceList, setServiceList] = useState<MedicalService[]>([]);
-  const [historyRecords, setHistoryRecords] = useState<MedicalRecord[]>([]);
+  const [cancelingPrescriptionOrder, setCancelingPrescriptionOrder] = useState(false);
+  const [cancelingLaboratoryOrder, setCancelingLaboratoryOrder] = useState(false);
+  const [cancelingRadiologyOrder, setCancelingRadiologyOrder] = useState(false);
+  const [cancelTarget, setCancelTarget] = useState<MedicalRecord | null>(null);
+  const [cancelingEntry, setCancelingEntry] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<MedicalRecord | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [finalizeOpen, setFinalizeOpen] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
+  const [printingResumeMedical, setPrintingResumeMedical] = useState(false);
+  const [cancelingFinalization, setCancelingFinalization] = useState(false);
+  const [latestAutoSyncResult, setLatestAutoSyncResult] = useState<SatusehatVisitAutoSyncResult | null>(null);
+  const [latestAutoSyncMessage, setLatestAutoSyncMessage] = useState('');
 
-  const readOnly = record?.status === 'final';
+  const recordsBySection = useMemo(() => groupRecordsBySection(records), [records]);
+  const finalizeVisitBlockers = useMemo(() => getFinalizeVisitBlockingOrders(recordsBySection), [recordsBySection]);
+  const latestOutcomeRecord = useMemo(() => getLatestRecordForSection(recordsBySection, 'outcome'), [recordsBySection]);
+  const completedSections = useMemo(
+    () => getCompletedCoreSections(recordsBySection),
+    [recordsBySection]
+  );
+  const allergyInfo = useMemo(() => {
+    const values = [
+      visit?.patient?.allergies,
+      ...records.map((record) => record.allergy_notes),
+    ]
+      .map((value) => (value || '').trim())
+      .filter(Boolean);
 
-  const loadRecord = useCallback(async () => {
+    return Array.from(new Set(values)).join(' | ');
+  }, [records, visit?.patient?.allergies]);
+
+  const activeSectionConfig = activeSection ? getSectionConfig(activeSection) : null;
+  const activeSectionRecords = activeSection ? recordsBySection[activeSection] || [] : [];
+
+  const selectedRecord = useMemo<MedicalRecord | null>(() => {
+    if (!activeSection) return null;
+    return activeSectionRecords.find((record) => record.id === selectedRecordId)
+      || activeSectionRecords.find((record) => record.status === 'draft')
+      || activeSectionRecords[0]
+      || null;
+  }, [activeSection, activeSectionRecords, selectedRecordId]);
+
+  const workspaceLocked = visit?.status === 'completed' || visit?.status === 'cancelled';
+  const readOnly = Boolean(workspaceLocked || selectedRecord?.status === 'final' || selectedRecord?.status === 'cancelled');
+  const isPrescriptionSection = activeSection === 'prescription';
+  const isLaboratorySection = activeSection === 'laboratory';
+  const isRadiologySection = activeSection === 'radiology';
+  const canCancelPrescriptionOrder = Boolean(
+    isPrescriptionSection
+      && selectedRecord?.prescription_fulfillment_mode === 'internal'
+      && selectedRecord?.prescription_workflow_status === 'ordered'
+  );
+  const canCancelLaboratoryOrder = Boolean(
+    isLaboratorySection
+      && selectedRecord?.laboratory_workflow_status === 'ordered'
+  );
+  const canCancelRadiologyOrder = Boolean(
+    isRadiologySection
+      && selectedRecord?.radiology_workflow_status === 'ordered'
+  );
+  const baselineDraft = useMemo(
+    () => buildDraft(selectedRecord || undefined, visit || undefined),
+    [selectedRecord?.id, selectedRecord?.updated_at, visit?.id]
+  );
+  const hasUnsavedChanges = useMemo(
+    () => JSON.stringify(baselineDraft) !== JSON.stringify(draft),
+    [baselineDraft, draft]
+  );
+
+  useEffect(() => {
+    if (visit && activeSectionConfig) {
+      setPageTitle(`Rekam Medis — ${visit.patient?.full_name || visit.visit_number} — ${activeSectionConfig.label}`);
+    }
+  }, [visit, activeSectionConfig]);
+
+  useEffect(() => {
+    if (referenceError) {
+      toast({ variant: 'destructive', title: 'Referensi EMR gagal dimuat', description: referenceError });
+    }
+  }, [referenceError, toast]);
+
+  useEffect(() => {
+    if (odontogramError && needsOdontogramData) {
+      toast({ variant: 'destructive', title: 'Odontogram gagal dimuat', description: odontogramError });
+    }
+  }, [needsOdontogramData, odontogramError, toast]);
+
+  const printMedicalResume = async () => {
+    if (!visit || printingResumeMedical) return;
+
+    setPrintingResumeMedical(true);
     try {
-      const response = await medicalRecordsApi.getById(Number(id));
-      const data: MedicalRecord = response.data.data;
-      setRecord(data);
-      setForm({
-        chief_complaint: data.chief_complaint || data.visit?.complaint || '',
-        history_of_present_illness: data.history_of_present_illness || '',
-        clinical_alert: data.clinical_alert || '',
-        allergy_notes: data.allergy_notes || data.patient?.allergies || '',
-        subjective: data.subjective || '',
-        bp_systolic: data.bp_systolic || 0,
-        bp_diastolic: data.bp_diastolic || 0,
-        heart_rate: data.heart_rate || 0,
-        temperature: data.temperature || 0,
-        respiratory_rate: data.respiratory_rate || 0,
-        spo2: data.spo2 || 0,
-        pain_scale: data.pain_scale || 0,
-        consciousness: data.consciousness || 'compos mentis',
-        height: data.height || 0,
-        weight: data.weight || 0,
-        physical_examination: data.physical_examination || '',
-        assessment: data.assessment || '',
-        plan: data.plan || '',
-        follow_up_instruction: data.follow_up_instruction || '',
-        follow_up_at: formatDateTimeLocal(data.follow_up_at),
-        notes: data.notes || '',
+      await openPdfDocumentInNewWindow({
+        toast,
+        loadingLabel: 'resume medis',
+        preparingMessage: 'Menyiapkan resume medis...',
+        blockedDescription: 'Izinkan popup untuk membuka resume medis dari backend.',
+        errorTitle: 'Gagal menyiapkan resume medis',
+        errorFallback: 'Resume medis tidak dapat dibuat.',
+        request: () => medicalRecordsApi.printMedicalResume(visit.id),
       });
-      setPageTitle(`Rekam Medis — ${data.patient?.full_name || ''}`);
-    } catch {
-      toast({ variant: 'destructive', title: 'Rekam medis tidak ditemukan' });
-      navigate('/emr');
     } finally {
-      setLoading(false);
+      setPrintingResumeMedical(false);
     }
-  }, [id, navigate, toast]);
-
-  useEffect(() => {
-    loadRecord();
-    icd10Api.search('per_page=5000').then((response) => setIcd10List(response.data.data || []));
-    medicinesApi.getAll('per_page=500&is_active=true').then((response) => setMedicineList(response.data.data || []));
-    medicalServicesApi.getAll('per_page=500&is_active=true').then((response) => setServiceList(response.data.data || []));
-  }, [loadRecord]);
-
-  useEffect(() => {
-    if (!record?.patient_id) return;
-    medicalRecordsApi
-      .getByPatient(record.patient_id)
-      .then((response) => {
-        const items: MedicalRecord[] = response.data.data || [];
-        setHistoryRecords(items.filter((item) => item.id !== record.id).slice(0, 5));
-      })
-      .catch(() => setHistoryRecords([]));
-  }, [record?.id, record?.patient_id]);
-
-  const handleFieldChange = (field: keyof EMRFormState, value: number | string) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSave = async () => {
-    if (!record) return;
+  const cancelFinalization = async () => {
+    if (!visit || cancelingFinalization) return;
+
+    setCancelingFinalization(true);
+    try {
+      await medicalRecordsApi.cancelFinalization(visit.id);
+      await reload();
+      toast({ title: 'Finalisasi kunjungan berhasil dibatalkan' });
+    } catch (requestError: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Gagal membatalkan finalisasi',
+        description: requestError.response?.data?.error,
+      });
+    } finally {
+      setCancelingFinalization(false);
+    }
+  };
+
+  useEffect(() => {
+    setDraft(buildDraft(selectedRecord || undefined, visit || undefined));
+  }, [selectedRecord?.id, visit?.id, activeSection]);
+
+  const createEntry = async () => {
+    if (!visit || !activeSection) return;
+
+    setCreating(true);
+    try {
+      const response = await medicalRecordsApi.create({ visit_id: visit.id, section_type: activeSection });
+      const createdRecord: MedicalRecord = response.data.data;
+      upsertRecord(createdRecord);
+      setSelectedRecordId(createdRecord.id);
+      updateVisit((currentVisit) => currentVisit
+        ? { ...currentVisit, status: 'in_progress', queue_status: 'in_consultation' }
+        : currentVisit
+      );
+      toast({ title: `${activeSectionConfig?.label || 'Entri'} berhasil dibuat` });
+    } catch (requestError: any) {
+      toast({ variant: 'destructive', title: 'Gagal membuat entri', description: requestError.response?.data?.error });
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const saveSelectedRecord = async () => {
+    if (!selectedRecord) return;
+
     setSaving(true);
     try {
-      const response = await medicalRecordsApi.update(record.id, form);
-      setRecord(response.data.data);
-      toast({ title: 'Rekam medis berhasil disimpan' });
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Gagal menyimpan', description: error.response?.data?.error });
+      const response = await medicalRecordsApi.update(selectedRecord.id, draft);
+      upsertRecord(response.data.data);
+      if (draft.allergy_notes.trim()) {
+        updateVisit((currentVisit) => currentVisit ? {
+          ...currentVisit,
+          patient: currentVisit.patient ? { ...currentVisit.patient, allergies: draft.allergy_notes.trim() } : currentVisit.patient,
+        } : currentVisit);
+      }
+      toast({ title: 'Entri rekam medis berhasil disimpan' });
+    } catch (requestError: any) {
+      toast({ variant: 'destructive', title: 'Gagal menyimpan entri', description: requestError.response?.data?.error });
     } finally {
       setSaving(false);
     }
   };
 
-  const handleFinalize = async () => {
-    if (!record) return;
-    setSaving(true);
+  const deleteRecord = async () => {
+    if (!deleteTarget) return;
+
+    setDeleting(true);
     try {
-      await medicalRecordsApi.update(record.id, form);
-      await medicalRecordsApi.finalize(record.id);
-      toast({ title: 'Rekam medis berhasil di-finalisasi' });
-      await loadRecord();
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Gagal finalisasi', description: error.response?.data?.error });
+      await medicalRecordsApi.delete(deleteTarget.id);
+
+      const remainingSectionRecords = activeSectionRecords.filter((record) => record.id !== deleteTarget.id);
+      replaceRecords((currentRecords) => currentRecords.filter((record) => record.id !== deleteTarget.id));
+      setSelectedRecordId((currentSelectedId) => {
+        if (currentSelectedId !== deleteTarget.id) {
+          return currentSelectedId;
+        }
+
+        return remainingSectionRecords.find((record) => record.status === 'draft')?.id
+          || remainingSectionRecords[0]?.id
+          || null;
+      });
+      setDeleteTarget(null);
+      toast({ title: 'Entri rekam medis berhasil dihapus' });
+    } catch (requestError: any) {
+      toast({ variant: 'destructive', title: 'Gagal menghapus entri', description: requestError.response?.data?.error });
     } finally {
-      setSaving(false);
+      setDeleting(false);
     }
   };
 
-  const handleAddDiagnosis = async (icd10Id: number, type: 'primer' | 'sekunder') => {
-    if (!record) return;
+  const cancelRecord = async () => {
+    if (!cancelTarget) return;
+
+    setCancelingEntry(true);
     try {
-      await medicalRecordsApi.addDiagnosis(record.id, { icd10_id: icd10Id, diagnosis_type: type });
-      await loadRecord();
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Gagal menambah diagnosis', description: error.response?.data?.error });
+      const response = await medicalRecordsApi.cancel(cancelTarget.id);
+      const updatedRecord: MedicalRecord = response.data.data;
+      upsertRecord(updatedRecord);
+      if (selectedRecord?.id === updatedRecord.id) {
+        setDraft(buildDraft(updatedRecord, visit || undefined));
+      }
+      setCancelTarget(null);
+      toast({ title: 'Entri rekam medis berhasil dibatalkan' });
+    } catch (requestError: any) {
+      toast({ variant: 'destructive', title: 'Gagal membatalkan entri', description: requestError.response?.data?.error });
+    } finally {
+      setCancelingEntry(false);
     }
   };
 
-  const handleDeleteDiagnosis = async (diagnosisId: number) => {
-    if (!record) return;
+  const finalizeVisit = async (payload: FinalizeVisitPayload) => {
+    if (!visit) return;
+
+    setFinalizing(true);
     try {
-      await medicalRecordsApi.deleteDiagnosis(record.id, diagnosisId);
-      await loadRecord();
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Gagal menghapus diagnosis', description: error.response?.data?.error });
+      if (selectedRecord && !readOnly) {
+        const saveResponse = await medicalRecordsApi.update(selectedRecord.id, draft);
+        upsertRecord(saveResponse.data.data);
+      }
+
+      const response = await medicalRecordsApi.finalizeVisit(visit.id, payload);
+      const autoSyncSummary = buildSatusehatAutoSyncSummary(response.data?.satusehat_auto_sync);
+      setLatestAutoSyncResult(response.data?.satusehat_auto_sync || null);
+      setLatestAutoSyncMessage('Hasil auto-sync dari finalisasi kunjungan.');
+      setFinalizeOpen(false);
+      await reload();
+      toast({
+        title: 'Kunjungan berhasil di-finalisasi',
+        description: autoSyncSummary.description,
+      });
+    } catch (requestError: any) {
+      const missingSections = requestError.response?.data?.missing_sections;
+      const blockingOrders = requestError.response?.data?.blocking_orders;
+      toast({
+        variant: 'destructive',
+        title: 'Gagal finalisasi kunjungan',
+        description: Array.isArray(blockingOrders) && blockingOrders.length > 0
+          ? `Selesaikan: ${blockingOrders.join(', ')}`
+          : Array.isArray(missingSections) && missingSections.length > 0
+          ? `Lengkapi: ${missingSections.join(', ')}`
+          : requestError.response?.data?.error,
+      });
+    } finally {
+      setFinalizing(false);
     }
   };
 
-  const handleAddPrescription = async (data: { medicine_id: number; quantity: number; dosage: string; frequency: string; duration: string; route: string; instructions: string }) => {
-    if (!record) return;
+  const addDiagnosis = async (payload: { icd10_id: number; diagnosis_type: 'primer' | 'sekunder'; working_diagnosis: string; differential_diagnosis: string; assessment_narrative: string; notes: string }) => {
+    if (!selectedRecord) return;
+
     try {
-      await medicalRecordsApi.addPrescription(record.id, data);
-      await loadRecord();
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Gagal menambah resep', description: error.response?.data?.error });
+      const response = await medicalRecordsApi.addDiagnosis(selectedRecord.id, payload);
+      patchRecord(selectedRecord.id, (record) => ({
+        ...record,
+        diagnoses: [response.data.data, ...(record.diagnoses || [])],
+        working_diagnosis: payload.diagnosis_type === 'primer'
+          ? payload.working_diagnosis || record.working_diagnosis
+          : record.working_diagnosis || payload.working_diagnosis,
+        differential_diagnosis: payload.diagnosis_type === 'primer'
+          ? payload.differential_diagnosis || record.differential_diagnosis
+          : record.differential_diagnosis || payload.differential_diagnosis,
+        assessment: payload.diagnosis_type === 'primer'
+          ? payload.assessment_narrative || record.assessment
+          : record.assessment || payload.assessment_narrative,
+      }));
+      setDraft((currentDraft) => ({
+        ...currentDraft,
+        working_diagnosis: payload.diagnosis_type === 'primer'
+          ? payload.working_diagnosis || currentDraft.working_diagnosis
+          : currentDraft.working_diagnosis || payload.working_diagnosis,
+        differential_diagnosis: payload.diagnosis_type === 'primer'
+          ? payload.differential_diagnosis || currentDraft.differential_diagnosis
+          : currentDraft.differential_diagnosis || payload.differential_diagnosis,
+        assessment: payload.diagnosis_type === 'primer'
+          ? payload.assessment_narrative || currentDraft.assessment
+          : currentDraft.assessment || payload.assessment_narrative,
+      }));
+    } catch (requestError: any) {
+      toast({ variant: 'destructive', title: 'Gagal menambah diagnosis', description: requestError.response?.data?.error });
     }
   };
 
-  const handleDeletePrescription = async (prescriptionId: number) => {
-    if (!record) return;
+  const deleteDiagnosis = async (diagnosisId: number) => {
+    if (!selectedRecord) return;
+
     try {
-      await medicalRecordsApi.deletePrescription(record.id, prescriptionId);
-      await loadRecord();
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Gagal menghapus resep', description: error.response?.data?.error });
+      await medicalRecordsApi.deleteDiagnosis(selectedRecord.id, diagnosisId);
+      patchRecord(selectedRecord.id, (record) => ({
+        ...record,
+        diagnoses: (record.diagnoses || []).filter((diagnosis) => diagnosis.id !== diagnosisId),
+      }));
+    } catch (requestError: any) {
+      toast({ variant: 'destructive', title: 'Gagal menghapus diagnosis', description: requestError.response?.data?.error });
     }
   };
 
-  const handleAddAction = async (data: { medical_service_id: number; quantity: number; notes: string }) => {
-    if (!record) return;
+  const addPrescription = async (payload: { medicine_id: number; quantity: number; dosage: string; frequency: string; duration: string; route: string; instructions: string; notes: string }) => {
+    if (!selectedRecord) return;
+
     try {
-      await medicalRecordsApi.addAction(record.id, data);
-      await loadRecord();
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Gagal menambah tindakan', description: error.response?.data?.error });
+      const response = await medicalRecordsApi.addPrescription(selectedRecord.id, payload);
+      patchRecord(selectedRecord.id, (record) => ({
+        ...record,
+        prescriptions: [response.data.data, ...(record.prescriptions || [])],
+      }));
+    } catch (requestError: any) {
+      toast({ variant: 'destructive', title: 'Gagal menambah resep', description: requestError.response?.data?.error });
     }
   };
 
-  const handleDeleteAction = async (actionId: number) => {
-    if (!record) return;
+  const deletePrescription = async (prescriptionId: number) => {
+    if (!selectedRecord) return;
+
     try {
-      await medicalRecordsApi.deleteAction(record.id, actionId);
-      await loadRecord();
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Gagal menghapus tindakan', description: error.response?.data?.error });
+      await medicalRecordsApi.deletePrescription(selectedRecord.id, prescriptionId);
+      patchRecord(selectedRecord.id, (record) => ({
+        ...record,
+        prescriptions: (record.prescriptions || []).filter((prescription) => prescription.id !== prescriptionId),
+      }));
+    } catch (requestError: any) {
+      toast({ variant: 'destructive', title: 'Gagal menghapus resep', description: requestError.response?.data?.error });
     }
   };
 
-  const patient = record?.patient;
-  const visit = record?.visit;
-  const age = calculateAge(patient?.birth_date);
-  const bmi = getBMI(form.weight, form.height);
+  const cancelPrescriptionOrder = async () => {
+    if (!selectedRecord) return;
 
-  const completion = useMemo(() => ({
-    subjective: Boolean(form.chief_complaint.trim() || form.history_of_present_illness.trim() || form.subjective.trim()),
-    objective: Boolean(form.physical_examination.trim() || form.bp_systolic || form.temperature || form.heart_rate || form.pain_scale || form.consciousness.trim()),
-    assessment: Boolean(form.assessment.trim() || record?.diagnoses?.length),
-    plan: Boolean(form.plan.trim() || form.follow_up_instruction.trim() || form.follow_up_at || record?.prescriptions?.length || record?.actions?.length),
-  }), [form, record?.actions?.length, record?.diagnoses?.length, record?.prescriptions?.length]);
+    setCancelingPrescriptionOrder(true);
+    try {
+      const response = await medicalRecordsApi.cancelPrescriptionOrder(selectedRecord.id);
+      const updatedRecord: MedicalRecord = response.data.data;
+      upsertRecord(updatedRecord);
+      setDraft(buildDraft(updatedRecord, visit || undefined));
+      toast({ title: 'Order resep berhasil dibatalkan' });
+    } catch (requestError: any) {
+      toast({ variant: 'destructive', title: 'Gagal membatalkan order resep', description: requestError.response?.data?.error });
+    } finally {
+      setCancelingPrescriptionOrder(false);
+    }
+  };
 
-  const completedCount = Object.values(completion).filter(Boolean).length;
+  const cancelLaboratoryOrder = async () => {
+    if (!selectedRecord) return;
 
-  if (loading) {
+    setCancelingLaboratoryOrder(true);
+    try {
+      const response = await medicalRecordsApi.cancelLaboratoryOrder(selectedRecord.id);
+      const updatedRecord: MedicalRecord = response.data.data;
+      upsertRecord(updatedRecord);
+      setDraft(buildDraft(updatedRecord, visit || undefined));
+      toast({ title: 'Order laboratorium berhasil dibatalkan' });
+    } catch (requestError: any) {
+      toast({ variant: 'destructive', title: 'Gagal membatalkan order laboratorium', description: requestError.response?.data?.error });
+    } finally {
+      setCancelingLaboratoryOrder(false);
+    }
+  };
+
+  const cancelRadiologyOrder = async () => {
+    if (!selectedRecord) return;
+
+    setCancelingRadiologyOrder(true);
+    try {
+      const response = await medicalRecordsApi.cancelRadiologyOrder(selectedRecord.id);
+      const updatedRecord: MedicalRecord = response.data.data;
+      upsertRecord(updatedRecord);
+      setDraft(buildDraft(updatedRecord, visit || undefined));
+      toast({ title: 'Order radiologi berhasil dibatalkan' });
+    } catch (requestError: any) {
+      toast({ variant: 'destructive', title: 'Gagal membatalkan order radiologi', description: requestError.response?.data?.error });
+    } finally {
+      setCancelingRadiologyOrder(false);
+    }
+  };
+
+  const refreshActionRecord = async (recordId: number) => {
+    const refreshedRecordResponse = await medicalRecordsApi.getById(recordId);
+    const refreshedRecord: MedicalRecord = refreshedRecordResponse.data.data;
+    upsertRecord(refreshedRecord);
+    return refreshedRecord;
+  };
+
+  const addAction = async (payload: MedicalActionMutationPayload) => {
+    if (!selectedRecord) return;
+
+    try {
+      const response = await medicalRecordsApi.addAction(selectedRecord.id, payload);
+      await refreshActionRecord(selectedRecord.id);
+      if (response.data.odontogram_entry) {
+        upsertOdontogramEntry(response.data.odontogram_entry);
+      }
+    } catch (requestError: any) {
+      toast({ variant: 'destructive', title: 'Gagal menambah tindakan', description: requestError.response?.data?.error });
+    }
+  };
+
+  const updateAction = async (actionId: number, payload: MedicalActionMutationPayload) => {
+    if (!selectedRecord) return;
+
+    try {
+      const response = await medicalRecordsApi.updateAction(selectedRecord.id, actionId, payload);
+      await refreshActionRecord(selectedRecord.id);
+      if (response.data.odontogram_entry) {
+        upsertOdontogramEntry(response.data.odontogram_entry);
+      }
+    } catch (requestError: any) {
+      toast({ variant: 'destructive', title: 'Gagal memperbarui tindakan', description: requestError.response?.data?.error });
+    }
+  };
+
+  const deleteAction = async (actionId: number) => {
+    if (!selectedRecord) return;
+
+    try {
+      await medicalRecordsApi.deleteAction(selectedRecord.id, actionId);
+      await refreshActionRecord(selectedRecord.id);
+    } catch (requestError: any) {
+      toast({ variant: 'destructive', title: 'Gagal menghapus tindakan', description: requestError.response?.data?.error });
+    }
+  };
+
+  if (!activeSection) {
+    return (
+      <div className="space-y-4 p-4 lg:p-5">
+        <div className="border border-border/70 bg-background px-5 py-8">
+          <h1 className="text-lg font-semibold">Section form tidak valid</h1>
+          <p className="mt-2 text-sm text-muted-foreground">Section yang diminta tidak dikenali.</p>
+          <div className="mt-4">
+            <Button variant="outline" onClick={() => navigate('/emr')}>Kembali ke daftar</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading || loadingReferences || (needsOdontogramData && loadingOdontogram)) {
     return (
       <div className="flex h-64 items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -894,217 +511,179 @@ export default function EMRForm() {
     );
   }
 
-  if (!record) return null;
+  if (!visit || error) {
+    return (
+      <div className="space-y-4 p-4 lg:p-5">
+        <div className="border border-border/70 bg-background px-5 py-8">
+          <h1 className="text-lg font-semibold">Form rekam medis tidak tersedia</h1>
+          <p className="mt-2 text-sm text-muted-foreground">{error || 'Data kunjungan tidak ditemukan.'}</p>
+          <div className="mt-4">
+            <Button variant="outline" onClick={() => navigate('/emr')}>Kembali ke daftar</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col gap-4 p-4 lg:p-5">
-      <div className="flex flex-col gap-3 rounded-xl border bg-card px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0 flex-1">
-          <div className="mb-2 flex items-center gap-2">
-            <Button variant="outline" size="icon" onClick={() => navigate('/emr')} className="h-8 w-8 shrink-0">
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <Badge variant={record.status === 'final' ? 'default' : 'secondary'}>
-              {record.status === 'final' ? 'Final' : 'Draft'}
-            </Badge>
-            <Badge variant="outline">{visit?.visit_number || '-'}</Badge>
-          </div>
-          <p className="text-sm font-semibold">{patient?.full_name || '-'}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{formatFullDate(record.record_date)} · Dr. {record.doctor?.full_name || '-'} · {record.polyclinic?.name || '-'}</p>
-        </div>
-        {!readOnly && (
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={handleSave} disabled={saving} className="gap-1.5">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Simpan
-            </Button>
-            <Button onClick={handleFinalize} disabled={saving} className="gap-1.5">
-              <Lock className="h-4 w-4" /> Finalisasi
-            </Button>
-          </div>
+    <div className="flex min-h-0 flex-1 flex-col xl:overflow-hidden">
+      <StickyVisitHeader
+        visit={visit}
+        completedSections={completedSections}
+        isLocked={Boolean(workspaceLocked)}
+        sticky={false}
+        sectionLabel={activeSectionConfig?.label}
+        allergyInfo={allergyInfo}
+        onBack={() => navigate(`/emr/${visit.id}`)}
+        onEncounterSynced={reload}
+        prefetchedMonitorResult={latestAutoSyncResult}
+        prefetchedMonitorMessage={latestAutoSyncMessage}
+        statusNote={selectedRecord ? (
+          <span className={hasUnsavedChanges ? 'font-medium text-amber-700' : 'font-medium text-emerald-700'}>
+            {hasUnsavedChanges ? 'Perubahan belum disimpan' : 'Sudah tersimpan'}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">Pilih atau buat entri untuk mulai mencatat</span>
         )}
-      </div>
+        actions={!workspaceLocked ? (
+          <Button className="gap-1.5 rounded-none shadow-none" onClick={() => setFinalizeOpen(true)} title='Final Kunjungan'>
+            <Lock className="h-4 w-4" />
+          </Button>
+        ) : visit.status === 'completed' ? (
+          <FinalizedVisitActions
+            onPrintMedicalResume={printMedicalResume}
+            printingMedicalResume={printingResumeMedical}
+            onCancelFinalization={cancelFinalization}
+            cancelingFinalization={cancelingFinalization}
+            buttonClassName="rounded-none shadow-none"
+          />
+        ) : undefined}
+      />
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-        <div className="rounded-xl border bg-card">
-          <div className="border-b px-3 py-2.5">
-            <div className="flex gap-2 overflow-x-auto whitespace-nowrap pb-0.5">
-              {TABS.map((tab) => {
-                const Icon = tab.icon;
-                const active = activeTab === tab.key;
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setActiveTab(tab.key)}
-                    className={active ? 'inline-flex min-w-fit items-center gap-2 rounded-full border border-primary bg-primary/5 px-3 py-1.5 text-left text-sm' : 'inline-flex min-w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-left text-sm hover:bg-muted/40'}
-                  >
-                    <span className="flex items-center gap-2 font-medium">
-                      <Icon className="h-4 w-4" />
-                      {tab.label}
-                    </span>
-                    <Badge variant={completion[tab.key] ? 'default' : 'secondary'} className="h-5 rounded-full px-1.5 text-[10px]">
-                      {completion[tab.key] ? 'OK' : '-'}
-                    </Badge>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="p-4">
-            {activeTab === 'subjective' && (
-              <SubjectivePane
-                chiefComplaint={form.chief_complaint}
-                historyOfPresentIllness={form.history_of_present_illness}
-                clinicalAlert={form.clinical_alert}
-                allergyNotes={form.allergy_notes}
-                subjective={form.subjective}
-                complaint={visit?.complaint || ''}
-                patientAllergies={patient?.allergies || ''}
-                onChange={(field, value) => handleFieldChange(field, value)}
-                readOnly={readOnly}
-              />
-            )}
-            {activeTab === 'objective' && (
-              <ObjectivePane form={form} onChange={handleFieldChange} readOnly={readOnly} />
-            )}
-            {activeTab === 'assessment' && (
-              <AssessmentPane
-                assessment={form.assessment}
-                diagnoses={record.diagnoses || []}
-                icd10List={icd10List}
-                onAssessmentChange={(value) => handleFieldChange('assessment', value)}
-                onAddDiagnosis={handleAddDiagnosis}
-                onDeleteDiagnosis={handleDeleteDiagnosis}
-                readOnly={readOnly}
-              />
-            )}
-            {activeTab === 'plan' && (
-              <PlanPane
-                plan={form.plan}
-                followUpInstruction={form.follow_up_instruction}
-                followUpAt={form.follow_up_at}
-                notes={form.notes}
-                prescriptions={record.prescriptions || []}
-                actions={record.actions || []}
-                medicineList={medicineList}
-                serviceList={serviceList}
-                onPlanChange={(value) => handleFieldChange('plan', value)}
-                onFollowUpInstructionChange={(value) => handleFieldChange('follow_up_instruction', value)}
-                onFollowUpAtChange={(value) => handleFieldChange('follow_up_at', value)}
-                onNotesChange={(value) => handleFieldChange('notes', value)}
-                onAddPrescription={handleAddPrescription}
-                onDeletePrescription={handleDeletePrescription}
-                onAddAction={handleAddAction}
-                onDeleteAction={handleDeleteAction}
-                readOnly={readOnly}
-              />
-            )}
-          </div>
-        </div>
-
-        <Card className="h-fit lg:sticky lg:top-20">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Ringkasan Klinis</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-2">
-              <DenseStat label="No. RM" value={patient?.medical_record_number || '-'} />
-              <DenseStat label="Usia / JK" value={`${age !== null ? `${age} th` : '-'} · ${patient?.gender === 'L' ? 'Laki-laki' : patient?.gender === 'P' ? 'Perempuan' : '-'}`} />
-              <DenseStat label="Pembayaran" value={visit?.payment_type?.toUpperCase() || '-'} />
-              <DenseStat label="Prioritas" value={visit?.priority === 'urgent' ? 'Urgent' : 'Normal'} alert={visit?.priority === 'urgent'} />
-              <DenseStat label="BMI" value={bmi ? `${bmi} (${getBMIStatus(bmi)})` : 'Belum lengkap'} alert={bmi >= 30} />
-              <DenseStat label="Nyeri" value={form.pain_scale ? `${form.pain_scale}/10` : 'Belum diisi'} alert={form.pain_scale >= 7} />
-            </div>
-
-            {(patient?.allergies || form.allergy_notes || form.clinical_alert) && (
-              <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3">
-                <div className="flex items-center gap-2 text-destructive">
-                  <AlertTriangle className="h-4 w-4" />
-                  <p className="text-xs font-semibold uppercase tracking-wide">Safety Notes</p>
-                </div>
-                <div className="mt-2 space-y-2 text-sm">
-                  {patient?.allergies && <p><span className="font-medium">Alergi master:</span> {patient.allergies}</p>}
-                  {form.allergy_notes && <p><span className="font-medium">Alergi kunjungan:</span> {form.allergy_notes}</p>}
-                  {form.clinical_alert && <p><span className="font-medium">Alert klinis:</span> {form.clinical_alert}</p>}
-                </div>
-              </div>
-            )}
-
-            <Separator />
-
-            <div>
-              <div className="mb-2 flex items-center gap-2">
-                <HeartPulse className="h-4 w-4 text-muted-foreground" />
-                <p className="text-sm font-semibold">Snapshot Vital</p>
-              </div>
-              <div className="space-y-2 text-sm text-muted-foreground">
-                <p>TD: {form.bp_systolic && form.bp_diastolic ? `${form.bp_systolic}/${form.bp_diastolic}` : '-'}</p>
-                <p>Nadi: {form.heart_rate ? `${form.heart_rate} x/menit` : '-'}</p>
-                <p>Suhu: {form.temperature ? `${form.temperature} °C` : '-'}</p>
-                <p>SpO2: {form.spo2 ? `${form.spo2}%` : '-'}</p>
-                <p>Nyeri: {form.pain_scale ? `${form.pain_scale}/10` : '-'}</p>
-                <p>Kesadaran: {form.consciousness || '-'}</p>
-              </div>
-            </div>
-
-            <Separator />
-
-            <div>
-              <div className="mb-2 flex items-center gap-2">
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                <p className="text-sm font-semibold">Progress</p>
-              </div>
-              <div className="grid gap-2">
-                <DenseStat label="Bagian Selesai" value={`${completedCount}/4`} />
-                <DenseStat label="Diagnosis" value={`${record.diagnoses?.length || 0}`} />
-                <DenseStat label="Resep" value={`${record.prescriptions?.length || 0}`} />
-                <DenseStat label="Tindakan" value={`${record.actions?.length || 0}`} />
-              </div>
-            </div>
-
-            <Separator />
-
-            <div>
-              <div className="mb-2 flex items-center gap-2">
-                <CalendarDays className="h-4 w-4 text-muted-foreground" />
-                <p className="text-sm font-semibold">Visit Aktif</p>
-              </div>
-              <div className="space-y-2 text-sm text-muted-foreground">
-                <p>Tanggal: {formatDate(visit?.visit_date)}</p>
-                <p>Keluhan: {visit?.complaint || '-'}</p>
-                <p>Keluhan utama RM: {form.chief_complaint || '-'}</p>
-                <p>Kontrol: {form.follow_up_at ? formatDate(form.follow_up_at) : '-'}</p>
-              </div>
-            </div>
-
-            <Separator />
-
-            <div>
-              <div className="mb-2 flex items-center gap-2">
-                <History className="h-4 w-4 text-muted-foreground" />
-                <p className="text-sm font-semibold">Riwayat Singkat</p>
-              </div>
-              {historyRecords.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Belum ada RM lain.</p>
-              ) : (
-                <div className="space-y-2">
-                  {historyRecords.map((item) => (
-                    <div key={item.id} className="rounded-lg border px-3 py-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs font-semibold">{formatDate(item.record_date)}</p>
-                        <Badge variant={item.status === 'final' ? 'default' : 'secondary'}>{item.status}</Badge>
-                      </div>
-                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.assessment || item.subjective || 'Belum ada ringkasan.'}</p>
-                    </div>
-                  ))}
+      <div className="flex flex-col gap-1.5 px-4 pb-4 pt-1.5 lg:px-5 xl:min-h-0 xl:flex-1 xl:overflow-hidden">
+        <div className="grid gap-0 border border-border/70 bg-background xl:min-h-0 xl:flex-1 xl:grid-cols-[280px_minmax(0,1fr)] xl:overflow-hidden">
+          <aside className="border-b border-border/70 bg-background xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden xl:border-b-0 xl:border-r xl:border-r-border/70">
+            <div className="border-b border-border/70 px-3 py-3">
+              <h2 className="text-sm font-semibold">Riwayat Entri {activeSectionConfig?.label}</h2>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">Pilih entri di kiri, isi detail di kanan.</p>
+              {!workspaceLocked && (
+                <div className="mt-2 grid grid-cols-2 gap-1.5">
+                  <Button variant="outline" className="gap-1.5 rounded-none shadow-none" onClick={createEntry} disabled={creating}>
+                    {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FilePlus2 className="h-4 w-4" />}
+                    Tambah Entri
+                  </Button>
+                  <Button className="gap-1.5 rounded-none shadow-none" onClick={saveSelectedRecord} disabled={!selectedRecord || readOnly || saving}>
+                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    Simpan Entri
+                  </Button>
                 </div>
               )}
             </div>
-          </CardContent>
-        </Card>
+            <div className="bg-background xl:min-h-0 xl:flex-1 xl:overflow-hidden">
+              <EntryTimeline
+                records={activeSectionRecords}
+                selectedRecordId={selectedRecord?.id || null}
+                onSelect={setSelectedRecordId}
+                onEditRecord={setSelectedRecordId}
+                onCancelRecord={!workspaceLocked ? setCancelTarget : undefined}
+                onDeleteRecord={!workspaceLocked ? setDeleteTarget : undefined}
+                borderless
+                dirtyRecordId={hasUnsavedChanges ? selectedRecord?.id || null : null}
+              />
+            </div>
+          </aside>
+
+          <main className="min-w-0 bg-background xl:h-full xl:min-h-0 xl:overflow-hidden">
+            <div className="px-3 py-3 xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-y-auto xl:[scrollbar-gutter:stable]">
+              {selectedRecord ? (
+                <SectionEditorBody
+                  section={activeSection}
+                  draft={draft}
+                  setDraft={setDraft}
+                  record={selectedRecord}
+                  icd10List={icd10List}
+                  medicineList={medicineList}
+                  serviceList={serviceList}
+                  physicalExamImageList={physicalExamImageList}
+                  onAddDiagnosis={addDiagnosis}
+                  onDeleteDiagnosis={deleteDiagnosis}
+                  onAddPrescription={addPrescription}
+                  onDeletePrescription={deletePrescription}
+                  onCancelPrescriptionOrder={cancelPrescriptionOrder}
+                  canCancelPrescriptionOrder={canCancelPrescriptionOrder}
+                  prescriptionActionState={{
+                    submitting: false,
+                    canceling: cancelingPrescriptionOrder,
+                    printingPrescription: false,
+                    printingTicket: false,
+                  }}
+                  onCancelLaboratoryOrder={cancelLaboratoryOrder}
+                  canCancelLaboratoryOrder={canCancelLaboratoryOrder}
+                  laboratoryActionState={{
+                    canceling: cancelingLaboratoryOrder,
+                    printingTicket: false,
+                    printingResult: false,
+                  }}
+                  onCancelRadiologyOrder={cancelRadiologyOrder}
+                  canCancelRadiologyOrder={canCancelRadiologyOrder}
+                  radiologyActionState={{
+                    canceling: cancelingRadiologyOrder,
+                    printingTicket: false,
+                    printingResult: false,
+                  }}
+                  onAddAction={addAction}
+                  onUpdateAction={updateAction}
+                  onDeleteAction={deleteAction}
+                  odontogramEntries={odontogramEntries}
+                  readOnly={readOnly}
+                />
+              ) : (
+                <section className="border-t border-dashed border-border/70 bg-background px-5 py-12 text-center text-sm text-muted-foreground">
+                  Belum ada entri pada section ini. Buat entri baru untuk mulai mencatat.
+                </section>
+              )}
+            </div>
+          </main>
+        </div>
       </div>
+
+      <ConfirmDialog
+        open={Boolean(cancelTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCancelTarget(null);
+          }
+        }}
+        onConfirm={cancelRecord}
+        title="Batalkan Entri"
+        description="Entri yang dibatalkan akan menjadi nonaktif dan baru bisa dihapus setelah statusnya batal."
+        confirmText={cancelingEntry ? 'Membatalkan...' : 'Batalkan Entri'}
+        cancelText="Tutup"
+      />
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+          }
+        }}
+        onConfirm={deleteRecord}
+        title="Hapus Entri"
+        description="Hanya entri berstatus batal yang dapat dihapus, dan penghapusan ini tidak bisa dikembalikan."
+        confirmText={deleting ? 'Menghapus...' : 'Hapus'}
+        cancelText="Batal"
+        variant="destructive"
+      />
+
+      <FinalizeVisitDialog
+        open={finalizeOpen}
+        onOpenChange={setFinalizeOpen}
+        outcomeRecord={latestOutcomeRecord}
+        blockers={finalizeVisitBlockers}
+        submitting={finalizing}
+        onSubmit={finalizeVisit}
+      />
     </div>
   );
 }

@@ -67,7 +67,7 @@ export default function DoctorsPage() {
       <DataTable
         columns={columns}
         data={data}
-        searchPlaceholder="Cari dokter berdasarkan nama, spesialisasi, atau SIP..."
+        searchPlaceholder="Cari dokter berdasarkan nama, NIK, NIP, spesialisasi, atau SIP..."
         pageSize={10}
         toolbarActions={
           hasPermission('doctors.create') ? (

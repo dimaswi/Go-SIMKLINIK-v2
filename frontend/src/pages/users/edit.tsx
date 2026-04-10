@@ -9,6 +9,7 @@ import { SearchableSelect } from '@/components/ui/searchable-select';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, User, Shield } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
+import { MasterDataAsideSection, MasterDataAsideStack, MasterDataLegacySections, MasterDataPageShell } from '@/pages/master-data/shared';
 
 export default function UserEdit() {
   const navigate = useNavigate();
@@ -86,78 +87,68 @@ export default function UserEdit() {
     );
   }
 
+  const selectedRole = roles.find((role: any) => String(role.id) === formData.role_id);
+
   return (
-    <div className="p-6">
-      <form onSubmit={handleSubmit} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_280px]">
-        <div className="space-y-6">
-          <section className="space-y-5 rounded-lg border border-border/80 p-5">
-            <div className="space-y-2">
-              <Label htmlFor="full_name" className="text-xs font-medium flex items-center gap-2">
-                <User className="h-3.5 w-3.5 text-muted-foreground" />
-                Nama Lengkap
-              </Label>
-              <Input
-                id="full_name"
-                required
-                placeholder="Masukkan nama lengkap"
-                value={formData.full_name}
-                onChange={e => setFormData({ ...formData, full_name: e.target.value })}
-                className="h-10 text-sm"
-              />
+    <form id="user-edit-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <MasterDataPageShell
+        title="Edit User"
+        subtitle="Adjust role assignment and account status for this user."
+        onBack={() => navigate('/users')}
+        actions={<Button type="submit" form="user-edit-form" disabled={loading} className="rounded-none shadow-none">{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Update User</Button>}
+        aside={
+          <MasterDataAsideStack>
+            <div>
+              <MasterDataAsideSection title="Ringkasan" helper="Preview perubahan utama pada akun user.">
+                <div className="space-y-1 text-sm">
+                  <p className="font-medium">{formData.full_name || '-'}</p>
+                  <p className="text-muted-foreground">Role: {selectedRole?.name || '-'}</p>
+                  <p className="text-muted-foreground">Status: {formData.is_active ? 'Aktif' : 'Nonaktif'}</p>
+                </div>
+              </MasterDataAsideSection>
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="role_id" className="text-xs font-medium flex items-center gap-2">
-                <Shield className="h-3.5 w-3.5 text-muted-foreground" />
-                Role
-              </Label>
-              <SearchableSelect
-                options={roles.map((r: any) => ({ value: String(r.id), label: r.name }))}
-                value={formData.role_id}
-                onValueChange={value => setFormData({ ...formData, role_id: value })}
-                placeholder="Pilih role..."
-                searchPlaceholder="Cari role..."
-                emptyText="Role tidak ditemukan."
-              />
-            </div>
-
-            <div className="flex items-center justify-between rounded-md border p-4">
-              <div className="space-y-0.5">
-                <Label htmlFor="is_active" className="text-xs font-medium cursor-pointer">Status Akun</Label>
-                <p className="text-xs text-muted-foreground">{formData.is_active ? 'Akun aktif' : 'Akun tidak aktif'}</p>
+          </MasterDataAsideStack>
+        }
+      >
+        <MasterDataLegacySections>
+          <div className="space-y-6">
+            <section className="space-y-5 rounded-lg border border-border/80 p-5">
+              <div className="space-y-2">
+                <Label htmlFor="full_name" className="text-xs font-medium flex items-center gap-2">
+                  <User className="h-3.5 w-3.5 text-muted-foreground" />
+                  Nama Lengkap
+                </Label>
+                <Input id="full_name" required placeholder="Masukkan nama lengkap" value={formData.full_name} onChange={(e) => setFormData({ ...formData, full_name: e.target.value })} className="h-10 text-sm" />
               </div>
-              <Switch
-                id="is_active"
-                checked={formData.is_active}
-                onCheckedChange={checked => setFormData({ ...formData, is_active: checked })}
-              />
-            </div>
-          </section>
-        </div>
+            </section>
 
-        <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
-          <div className="rounded-lg border border-border/80 p-4 text-sm">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Ringkasan</p>
-            <div className="space-y-1">
-              <p className="font-medium">{formData.full_name || '-'}</p>
-              <p className="text-muted-foreground">Role: {roles.find(r => String(r.id) === formData.role_id)?.name || '-'}</p>
-              <p className="text-muted-foreground">Status: {formData.is_active ? 'Aktif' : 'Nonaktif'}</p>
-            </div>
-          </div>
+            <section className="space-y-5 rounded-lg border border-border/80 p-5">
+              <div className="space-y-2">
+                <Label htmlFor="role_id" className="text-xs font-medium flex items-center gap-2">
+                  <Shield className="h-3.5 w-3.5 text-muted-foreground" />
+                  Role
+                </Label>
+                <SearchableSelect
+                  options={roles.map((role: any) => ({ value: String(role.id), label: role.name }))}
+                  value={formData.role_id}
+                  onValueChange={(value) => setFormData({ ...formData, role_id: value })}
+                  placeholder="Pilih role..."
+                  searchPlaceholder="Cari role..."
+                  emptyText="Role tidak ditemukan."
+                />
+              </div>
 
-          <div className="rounded-lg border border-border/80 p-3">
-            <div className="flex flex-col gap-2">
-              <Button type="submit" disabled={loading} className="h-10">
-                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Update User
-              </Button>
-              <Button type="button" variant="outline" onClick={() => navigate('/users')} className="h-10">
-                Batal
-              </Button>
-            </div>
+              <div className="flex items-center justify-between rounded-md border p-4">
+                <div className="space-y-0.5">
+                  <Label htmlFor="is_active" className="cursor-pointer text-xs font-medium">Status Akun</Label>
+                  <p className="text-xs text-muted-foreground">{formData.is_active ? 'Akun aktif' : 'Akun tidak aktif'}</p>
+                </div>
+                <Switch id="is_active" checked={formData.is_active} onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })} />
+              </div>
+            </section>
           </div>
-        </aside>
-      </form>
-    </div>
+        </MasterDataLegacySections>
+      </MasterDataPageShell>
+    </form>
   );
 }

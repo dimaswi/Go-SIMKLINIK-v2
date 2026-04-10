@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"starter/backend/database"
 	"starter/backend/models"
+	"starter/backend/services/satusehat"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -15,8 +17,8 @@ func GetMedicines(c *gin.Context) {
 	query := database.DB.Model(&models.Medicine{})
 
 	if search := c.Query("q"); search != "" {
-		query = query.Where("name ILIKE ? OR code ILIKE ? OR generic_name ILIKE ?",
-			"%"+search+"%", "%"+search+"%", "%"+search+"%")
+		query = query.Where("name ILIKE ? OR code ILIKE ? OR generic_name ILIKE ? OR kfa_code ILIKE ? OR kfa_name ILIKE ?",
+			"%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%")
 	}
 
 	if categoryID := c.Query("category_id"); categoryID != "" {
@@ -72,6 +74,8 @@ func GetMedicine(c *gin.Context) {
 }
 
 type CreateMedicineRequest struct {
+	KFACode       string  `json:"kfa_code"`
+	KFAName       string  `json:"kfa_name"`
 	Name          string  `json:"name" binding:"required"`
 	GenericName   string  `json:"generic_name"`
 	CategoryID    uint    `json:"category_id" binding:"required"`
@@ -107,6 +111,8 @@ func CreateMedicine(c *gin.Context) {
 
 	medicine := models.Medicine{
 		Code:          generateMedicineCode(),
+		KFACode:       req.KFACode,
+		KFAName:       req.KFAName,
 		Name:          req.Name,
 		GenericName:   req.GenericName,
 		CategoryID:    req.CategoryID,
@@ -147,6 +153,8 @@ func UpdateMedicine(c *gin.Context) {
 	}
 
 	medicine.Name = req.Name
+	medicine.KFACode = req.KFACode
+	medicine.KFAName = req.KFAName
 	medicine.GenericName = req.GenericName
 	medicine.CategoryID = req.CategoryID
 	medicine.UnitID = req.UnitID
@@ -185,4 +193,41 @@ func DeleteMedicine(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Obat berhasil dihapus"})
+}
+
+func SearchMedicineKFA(c *gin.Context) {
+	config, err := satusehat.LoadConfig()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat konfigurasi SATUSEHAT"})
+		return
+	}
+
+	keyword := c.Query("keyword")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	size, _ := strconv.Atoi(c.DefaultQuery("size", "10"))
+
+	result, err := satusehat.SearchKFAProducts(context.Background(), config, keyword, page, size)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": result, "config": config.PublicStatus()})
+}
+
+func GetMedicineKFADetail(c *gin.Context) {
+	config, err := satusehat.LoadConfig()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat konfigurasi SATUSEHAT"})
+		return
+	}
+
+	code := c.Param("code")
+	result, err := satusehat.GetKFAProductDetail(context.Background(), config, code)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": result, "config": config.PublicStatus()})
 }

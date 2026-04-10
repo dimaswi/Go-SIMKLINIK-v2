@@ -38,12 +38,13 @@ func GetPolyclinic(c *gin.Context) {
 }
 
 type CreatePolyclinicRequest struct {
-	Name        string `json:"name" binding:"required"`
-	Description string `json:"description"`
-	IsActive    *bool  `json:"is_active"`
-	Color       string `json:"color"`
-	Icon        string `json:"icon"`
-	SortOrder   int    `json:"sort_order"`
+	Name        string  `json:"name" binding:"required"`
+	Description string  `json:"description"`
+	AdminFee    float64 `json:"admin_fee"`
+	IsActive    *bool   `json:"is_active"`
+	Color       string  `json:"color"`
+	Icon        string  `json:"icon"`
+	SortOrder   int     `json:"sort_order"`
 }
 
 func generatePolyclinicCode() string {
@@ -58,6 +59,10 @@ func CreatePolyclinic(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if req.AdminFee < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Biaya administrasi tidak boleh negatif"})
+		return
+	}
 
 	isActive := true
 	if req.IsActive != nil {
@@ -68,6 +73,7 @@ func CreatePolyclinic(c *gin.Context) {
 		Name:        req.Name,
 		Code:        generatePolyclinicCode(),
 		Description: req.Description,
+		AdminFee:    req.AdminFee,
 		IsActive:    isActive,
 		Color:       req.Color,
 		Icon:        req.Icon,
@@ -96,9 +102,14 @@ func UpdatePolyclinic(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if req.AdminFee < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Biaya administrasi tidak boleh negatif"})
+		return
+	}
 
 	polyclinic.Name = req.Name
 	polyclinic.Description = req.Description
+	polyclinic.AdminFee = req.AdminFee
 	polyclinic.Color = req.Color
 	polyclinic.Icon = req.Icon
 	polyclinic.SortOrder = req.SortOrder

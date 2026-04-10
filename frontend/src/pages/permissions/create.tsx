@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { permissionsApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Key, FileText, Package, Tag } from "lucide-react";
+import { MasterDataAsideSection, MasterDataAsideStack, MasterDataLegacySections, MasterDataPageShell } from '@/pages/master-data/shared';
 
 export default function PermissionCreate() {
   const navigate = useNavigate();
@@ -90,118 +91,91 @@ export default function PermissionCreate() {
   };
 
   return (
-    <div className="p-6">
-      <form onSubmit={handleSubmit} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="space-y-6">
-          <section className="space-y-5 rounded-lg border border-border/80 p-5">
-            <div className="space-y-2">
-              <Label htmlFor="name" className="text-sm font-medium flex items-center gap-2">
-                <Key className="h-4 w-4 text-muted-foreground" />
-                Nama Permission
-              </Label>
-              <Input
-                id="name"
-                required
-                placeholder="e.g., users.create"
-                value={formData.name}
-                onChange={e => setFormData({ ...formData, name: e.target.value })}
-                className="h-10"
-              />
+    <form id="permission-create-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <MasterDataPageShell
+        title="Create Permission"
+        subtitle="Define a permission code, module, and action so it can be reused in role management."
+        onBack={() => navigate('/permissions')}
+        actions={<Button type="submit" form="permission-create-form" disabled={loading} className="rounded-none shadow-none">{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Permission</Button>}
+        aside={
+          <MasterDataAsideStack>
+            <div>
+              <MasterDataAsideSection title="Permission Preview" helper="Nama permission akan mengikuti pola module.action saat modul dan action dipilih.">
+                <div className="space-y-1 text-sm">
+                  <p className="font-medium">{formData.name || 'Nama permission belum diisi'}</p>
+                  <p className="text-muted-foreground">Module: {formData.module || '-'}</p>
+                  <p className="text-muted-foreground">Category: {formData.category || '-'}</p>
+                  <p className="text-muted-foreground">Action: {formData.action || '-'}</p>
+                </div>
+              </MasterDataAsideSection>
             </div>
-
-            <div className="grid gap-5 md:grid-cols-2">
+            <div>
+              <MasterDataAsideSection title="Deskripsi" helper="Gunakan deskripsi yang jelas agar role editor mudah memahami tujuan permission ini.">
+                <p className="text-sm text-muted-foreground line-clamp-5">{formData.description || 'Deskripsi permission belum diisi.'}</p>
+              </MasterDataAsideSection>
+            </div>
+          </MasterDataAsideStack>
+        }
+      >
+        <MasterDataLegacySections>
+          <div className="space-y-6">
+            <section className="space-y-5 rounded-lg border border-border/80 p-5">
               <div className="space-y-2">
-                <Label htmlFor="module" className="text-sm font-medium flex items-center gap-2">
-                  <Package className="h-4 w-4 text-muted-foreground" />
-                  Module
+                <Label htmlFor="name" className="text-sm font-medium flex items-center gap-2">
+                  <Key className="h-4 w-4 text-muted-foreground" />
+                  Nama Permission
                 </Label>
-                <Input
-                  id="module"
-                  required
-                  placeholder="e.g., users"
-                  value={formData.module}
-                  onChange={e => setFormData({ ...formData, module: e.target.value })}
-                  className="h-10"
-                />
+                <Input id="name" required placeholder="e.g., users.create" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="h-10" />
+              </div>
+
+              <div className="grid gap-5 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="module" className="text-sm font-medium flex items-center gap-2">
+                    <Package className="h-4 w-4 text-muted-foreground" />
+                    Module
+                  </Label>
+                  <Input id="module" required placeholder="e.g., users" value={formData.module} onChange={(e) => setFormData({ ...formData, module: e.target.value })} className="h-10" />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="category" className="text-sm font-medium flex items-center gap-2">
+                    <Tag className="h-4 w-4 text-muted-foreground" />
+                    Category
+                  </Label>
+                  <Input id="category" required placeholder="e.g., management" value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} className="h-10" />
+                </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="category" className="text-sm font-medium flex items-center gap-2">
-                  <Tag className="h-4 w-4 text-muted-foreground" />
-                  Category
-                </Label>
-                <Input
-                  id="category"
-                  required
-                  placeholder="e.g., management"
-                  value={formData.category}
-                  onChange={e => setFormData({ ...formData, category: e.target.value })}
-                  className="h-10"
-                />
+                <Label className="text-sm font-medium">Action</Label>
+                <Select value={formData.action} onValueChange={(value) => setFormData({ ...formData, action: value })}>
+                  <SelectTrigger className="h-10">
+                    <SelectValue placeholder="Pilih action" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {actionOptions.map((action) => (
+                      <SelectItem key={action.id} value={action.id}>
+                        <div className="flex flex-col text-left">
+                          <span className="font-medium">{action.label}</span>
+                          <span className="text-xs text-muted-foreground">{action.description}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            </div>
+            </section>
 
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Action</Label>
-              <Select
-                value={formData.action}
-                onValueChange={value => setFormData({ ...formData, action: value })}
-              >
-                <SelectTrigger className="h-10">
-                  <SelectValue placeholder="Pilih action" />
-                </SelectTrigger>
-                <SelectContent>
-                  {actionOptions.map(action => (
-                    <SelectItem key={action.id} value={action.id}>
-                      <div className="flex flex-col text-left">
-                        <span className="font-medium">{action.label}</span>
-                        <span className="text-xs text-muted-foreground">{action.description}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
+            <section className="space-y-2 rounded-lg border border-border/80 p-5">
               <Label htmlFor="description" className="text-sm font-medium flex items-center gap-2">
                 <FileText className="h-4 w-4 text-muted-foreground" />
                 Deskripsi
               </Label>
-              <Textarea
-                id="description"
-                placeholder="Deskripsi permission..."
-                value={formData.description}
-                onChange={e => setFormData({ ...formData, description: e.target.value })}
-                className="min-h-[110px]"
-              />
-            </div>
-          </section>
-        </div>
-
-        <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
-          <div className="rounded-lg border border-border/80 p-4 text-sm">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Permission Preview</p>
-            <p className="font-medium">{formData.name || 'Nama permission belum diisi'}</p>
-            <p className="mt-2 text-muted-foreground">Module: {formData.module || '-'}</p>
-            <p className="text-muted-foreground">Category: {formData.category || '-'}</p>
-            <p className="text-muted-foreground">Action: {formData.action || '-'}</p>
-            <p className="mt-2 text-muted-foreground line-clamp-4">{formData.description || 'Deskripsi permission belum diisi.'}</p>
+              <Textarea id="description" placeholder="Deskripsi permission..." value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="min-h-[110px]" />
+            </section>
           </div>
-
-          <div className="rounded-lg border border-border/80 p-3">
-            <div className="flex flex-col gap-2">
-              <Button type="submit" disabled={loading} className="h-10">
-                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Simpan Permission
-              </Button>
-              <Button type="button" variant="outline" onClick={() => navigate('/permissions')} className="h-10">
-                Batal
-              </Button>
-            </div>
-          </div>
-        </aside>
-      </form>
-    </div>
+        </MasterDataLegacySections>
+      </MasterDataPageShell>
+    </form>
   );
 }

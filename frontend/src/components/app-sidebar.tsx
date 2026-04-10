@@ -16,6 +16,7 @@ import {
   Layers,
   Ruler,
   HeartPulse,
+  FlaskConical,
   FolderTree,
   CreditCard,
   Truck,
@@ -27,6 +28,13 @@ import {
   Users2,
   Monitor,
   FileText,
+  ImagePlus,
+  PillBottle,
+  PackageCheck,
+  History,
+  ScanLine,
+  Banknote,
+  PlugZap,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { usePermission } from '@/hooks/usePermission';
@@ -57,19 +65,21 @@ interface SubMenuItem {
   path: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  permission?: string;
+  permission?: string | string[];
+  exact?: boolean;
 }
 
 interface MenuItem {
   path: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  permission?: string;
+  permission?: string | string[];
   submenu?: SubMenuItem[];
+  exact?: boolean;
 }
 
 const menuItems: MenuItem[] = [
-  { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard.view' },
+  { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard.view', exact: true },
   {
     path: '/registration',
     label: 'Front Office',
@@ -94,8 +104,10 @@ const menuItems: MenuItem[] = [
       { path: '/medicines', label: 'Obat', icon: Pill, permission: 'medicines.view' },
       { path: '/service-categories', label: 'Kategori Layanan', icon: Layers, permission: 'service_categories.view' },
       { path: '/medical-services', label: 'Layanan Medis', icon: HeartPulse, permission: 'medical_services.view' },
+      { path: '/specimen-templates', label: 'Template Specimen', icon: FlaskConical, permission: 'medical_services.view' },
       { path: '/payment-methods', label: 'Metode Pembayaran', icon: CreditCard, permission: 'payment_methods.view' },
       { path: '/suppliers', label: 'Supplier', icon: Truck, permission: 'suppliers.view' },
+      { path: '/physical-exam-images', label: 'Gambar Pemeriksaan', icon: ImagePlus, permission: 'physical_exam_images.view' },
     ]
   },
   {
@@ -107,6 +119,44 @@ const menuItems: MenuItem[] = [
       { path: '/purchasing', label: 'Purchase Order', icon: PackageSearch, permission: 'purchase_orders.view' },
     ]
   },
+  {
+    path: '/pharmacy',
+    label: 'Farmasi',
+    icon: PillBottle,
+    permission: ['prescriptions.view', 'prescriptions.process'],
+    submenu: [
+      { path: '/pharmacy', label: 'Ringkasan Farmasi', icon: PillBottle, permission: ['prescriptions.view', 'prescriptions.process'], exact: true },
+      { path: '/pharmacy/receive', label: 'Terima Resep', icon: PillBottle, permission: ['prescriptions.view', 'prescriptions.process'] },
+      { path: '/pharmacy/process', label: 'Proses Resep', icon: PackageSearch, permission: ['prescriptions.view', 'prescriptions.process'] },
+      { path: '/pharmacy/handover', label: 'Serahkan Resep', icon: PackageCheck, permission: ['prescriptions.view', 'prescriptions.process'] },
+      { path: '/pharmacy/completed', label: 'Resep Selesai', icon: History, permission: ['prescriptions.view', 'prescriptions.process'] },
+    ]
+  },
+  {
+    path: '/laboratory',
+    label: 'Laboratorium',
+    icon: FlaskConical,
+    permission: ['laboratory.view', 'laboratory.process'],
+    submenu: [
+      { path: '/laboratory', label: 'Ringkasan Laboratorium', icon: FlaskConical, permission: ['laboratory.view', 'laboratory.process'], exact: true },
+      { path: '/laboratory/receive', label: 'Terima Order', icon: FlaskConical, permission: ['laboratory.view', 'laboratory.process'] },
+      { path: '/laboratory/process', label: 'Proses Hasil', icon: PackageSearch, permission: ['laboratory.view', 'laboratory.process'] },
+      { path: '/laboratory/completed', label: 'Hasil Selesai', icon: History, permission: ['laboratory.view', 'laboratory.process'] },
+    ]
+  },
+  {
+    path: '/radiology',
+    label: 'Radiologi',
+    icon: ScanLine,
+    permission: ['radiology.view', 'radiology.process'],
+    submenu: [
+      { path: '/radiology', label: 'Ringkasan Radiologi', icon: ScanLine, permission: ['radiology.view', 'radiology.process'], exact: true },
+      { path: '/radiology/receive', label: 'Terima Order', icon: ScanLine, permission: ['radiology.view', 'radiology.process'] },
+      { path: '/radiology/process', label: 'Proses Hasil', icon: PackageSearch, permission: ['radiology.view', 'radiology.process'] },
+      { path: '/radiology/completed', label: 'Hasil Selesai', icon: History, permission: ['radiology.view', 'radiology.process'] },
+    ]
+  },
+  { path: '/kasir', label: 'Kasir', icon: Banknote, permission: ['invoices.view', 'invoices.pay'] },
   {
     path: '/users',
     label: 'User Management',
@@ -120,19 +170,34 @@ const menuItems: MenuItem[] = [
   },
 ];
 
-function isPathActive(currentPath: string, targetPath: string): boolean {
+function isPathActive(currentPath: string, targetPath: string, exact = false): boolean {
   if (!targetPath) return false;
   if (targetPath === '/') return currentPath === '/';
+  if (exact) return currentPath === targetPath;
   return currentPath === targetPath || currentPath.startsWith(`${targetPath}/`);
+}
+
+function isSubmenuActive(currentPath: string, submenu: SubMenuItem) {
+  return isPathActive(currentPath, submenu.path, submenu.exact);
+}
+
+function isMenuItemActive(currentPath: string, item: MenuItem) {
+  return isPathActive(currentPath, item.path, item.exact)
+    || Boolean(item.submenu?.some((submenu) => isSubmenuActive(currentPath, submenu)));
 }
 
 export function AppSidebar() {
   const { user, logout } = useAuthStore();
   const { state } = useSidebar();
-  const { hasPermission } = usePermission();
+  const { hasAnyPermission, hasPermission } = usePermission();
   const [appName, setAppName] = useState(getAppName());
   const [appSubtitle, setAppSubtitle] = useState(getAppSubtitle());
   const isCollapsed = state === 'collapsed';
+
+  const canAccess = (permission?: string | string[]) => {
+    if (!permission) return true;
+    return Array.isArray(permission) ? hasAnyPermission(permission) : hasPermission(permission);
+  };
 
   useEffect(() => {
     const handleStorageChange = () => {
@@ -149,15 +214,19 @@ export function AppSidebar() {
   };
 
   const visibleMenuItems = menuItems.filter(item => {
-    if (!item.permission) return true;
-    return hasPermission(item.permission);
+    if (!canAccess(item.permission)) return false;
+
+    if (item.submenu) {
+      return item.submenu.some((sub) => canAccess(sub.permission));
+    }
+
+    return true;
   }).map(item => {
     if (item.submenu) {
       return {
         ...item,
         submenu: item.submenu.filter(sub => {
-          if (!sub.permission) return true;
-          return hasPermission(sub.permission);
+          return canAccess(sub.permission);
         })
       };
     }
@@ -253,6 +322,12 @@ export function AppSidebar() {
                 Settings
               </Link>
             </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link to="/settings/integrations">
+                <PlugZap className="mr-2 size-4" />
+                Integrasi
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout} className="text-destructive">
               <LogOut className="mr-2 size-4" />
@@ -270,8 +345,7 @@ function CollapsedMenuItem({ item }: { item: MenuItem }) {
   const location = useLocation();
   const Icon = item.icon;
   const hasSubmenu = item.submenu && item.submenu.length > 0;
-  const isActive = isPathActive(location.pathname, item.path) ||
-    (hasSubmenu && item.submenu!.some(sub => isPathActive(location.pathname, sub.path)));
+  const isActive = isMenuItemActive(location.pathname, item);
 
   if (hasSubmenu) {
     return (
@@ -281,10 +355,10 @@ function CollapsedMenuItem({ item }: { item: MenuItem }) {
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
                 <button className={cn(
-                  "flex items-center justify-center size-8 rounded-lg transition-colors",
+                  "flex items-center justify-center size-8 rounded-lg border transition-colors",
                   isActive
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    ? "border-sidebar-border/60 bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
+                    : "border-transparent text-sidebar-foreground/70 hover:border-sidebar-border/40 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 )}>
                   <Icon className="size-4" />
                 </button>
@@ -296,10 +370,10 @@ function CollapsedMenuItem({ item }: { item: MenuItem }) {
         <DropdownMenuContent side="right" align="start" className="min-w-44">
           {item.submenu!.map((sub) => {
             const SubIcon = sub.icon;
-            const isSubActive = isPathActive(location.pathname, sub.path);
+            const isSubActive = isSubmenuActive(location.pathname, sub);
             return (
               <DropdownMenuItem key={sub.path} asChild>
-                <Link to={sub.path} className={cn(isSubActive && "bg-accent")}>
+                <Link to={sub.path} className={cn(isSubActive && "bg-accent text-accent-foreground") }>
                   <SubIcon className="mr-2 size-4" />
                   {sub.label}
                 </Link>
@@ -318,10 +392,10 @@ function CollapsedMenuItem({ item }: { item: MenuItem }) {
           <Link
             to={item.path}
             className={cn(
-              "flex items-center justify-center size-8 rounded-lg transition-colors",
+              "flex items-center justify-center size-8 rounded-lg border transition-colors",
               isActive
-                ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                ? "border-sidebar-border/60 bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
+                : "border-transparent text-sidebar-foreground/70 hover:border-sidebar-border/40 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             )}
           >
             <Icon className="size-4" />
@@ -338,8 +412,7 @@ function ExpandedMenuItem({ item }: { item: MenuItem }) {
   const location = useLocation();
   const Icon = item.icon;
   const hasSubmenu = item.submenu && item.submenu.length > 0;
-  const isActive = isPathActive(location.pathname, item.path) ||
-    (hasSubmenu && item.submenu!.some(sub => isPathActive(location.pathname, sub.path)));
+  const isActive = isMenuItemActive(location.pathname, item);
   const [expanded, setExpanded] = useState(isActive);
 
   useEffect(() => {
@@ -358,10 +431,10 @@ function ExpandedMenuItem({ item }: { item: MenuItem }) {
         <button
           onClick={() => setExpanded(!expanded)}
           className={cn(
-            "flex items-center gap-3 w-full px-3 py-2 text-sm rounded-lg transition-colors",
+            "flex items-center gap-3 w-full rounded-lg border px-3 py-2 text-sm transition-colors",
             isActive
-              ? "text-sidebar-accent-foreground font-medium"
-              : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+              ? "border-sidebar-border/60 bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
+              : "border-transparent text-sidebar-foreground/80 hover:border-sidebar-border/40 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
           )}
         >
           <Icon className="size-[18px] shrink-0" />
@@ -376,30 +449,33 @@ function ExpandedMenuItem({ item }: { item: MenuItem }) {
         {expanded && (
           <div className="relative">
             {item.submenu!.map((sub) => {
-              const isSubActive = isPathActive(location.pathname, sub.path);
+              const isSubActive = isSubmenuActive(location.pathname, sub);
 
               return (
                 <div key={sub.path} className="relative flex items-center h-[34px]">
                   {/* Horizontal branch from vertical trunk to dot */}
-                  <div className="absolute left-[21px] top-[50%] w-[16px] h-px bg-sidebar-foreground/25" />
+                  <div className={cn(
+                    "absolute left-[21px] top-[50%] h-px w-[16px]",
+                    isSubActive ? "bg-sidebar-primary" : "bg-sidebar-foreground/25",
+                  )} />
 
                   {/* Dot bullet on the branch */}
                   <div className="absolute left-[37px] top-[50%] -translate-y-[50%]">
                     <span className={cn(
-                      "block size-[5px] rounded-full",
+                      "block size-[6px] rounded-full border",
                       isSubActive
-                        ? "bg-sidebar-foreground"
-                        : "bg-sidebar-foreground/35"
+                        ? "border-sidebar-primary bg-sidebar-primary"
+                        : "border-sidebar-foreground/15 bg-sidebar-foreground/35"
                     )} />
                   </div>
 
                   <Link
                     to={sub.path}
                     className={cn(
-                      "flex items-center w-full ml-[48px] mr-2 px-3 py-1.5 text-sm rounded-lg transition-colors",
+                      "flex items-center w-full ml-[48px] mr-2 rounded-lg border px-3 py-1.5 text-sm transition-colors",
                       isSubActive
-                        ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium"
-                        : "text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+                        ? "border-sidebar-primary/30 bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                        : "border-transparent text-sidebar-foreground/60 hover:border-sidebar-border/40 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
                     )}
                   >
                     <span className="truncate">{sub.label}</span>
@@ -418,10 +494,10 @@ function ExpandedMenuItem({ item }: { item: MenuItem }) {
     <Link
       to={item.path}
       className={cn(
-        "flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors",
+        "flex items-center gap-3 rounded-lg border px-3 py-2 text-sm transition-colors",
         isActive
-          ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-          : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+          ? "border-sidebar-border/60 bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
+          : "border-transparent text-sidebar-foreground/80 hover:border-sidebar-border/40 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
       )}
     >
       <Icon className="size-[18px] shrink-0" />

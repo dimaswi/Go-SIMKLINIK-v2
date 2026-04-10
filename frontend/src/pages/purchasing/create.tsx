@@ -8,6 +8,15 @@ import { purchaseOrdersApi, suppliersApi, medicinesApi, type Supplier, type Medi
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Plus, Trash2, ShoppingCart } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
+import { getLocalISODate } from '@/lib/utils';
+import { MasterDataAsideSection, MasterDataAsideStack, MasterDataLegacySections, MasterDataPageShell } from '@/pages/master-data/shared';
+
+const PURCHASE_STATUS_OPTIONS = [
+  { value: 'draft', label: 'Draft (belum dikirim ke supplier)' },
+  { value: 'ordered', label: 'Dipesan (sudah dikirim ke supplier)' },
+];
+
+const getPurchaseStatusLabel = (value: string) => PURCHASE_STATUS_OPTIONS.find(option => option.value === value)?.label || value;
 
 interface ItemRow {
   medicine_id: number;
@@ -24,7 +33,7 @@ export default function PurchasingCreate() {
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [formData, setFormData] = useState({
     supplier_id: '',
-    order_date: new Date().toISOString().split('T')[0],
+    order_date: getLocalISODate(),
     status: 'ordered',
     notes: '',
   });
@@ -97,169 +106,168 @@ export default function PurchasingCreate() {
   };
 
   const medicineOptions = medicines.map(m => ({ value: String(m.id), label: `${m.name}${m.strength ? ` ${m.strength}` : ''}` }));
+  const selectedSupplier = suppliers.find(supplier => String(supplier.id) === formData.supplier_id) || null;
+  const validItemCount = items.filter(row => row.medicine_id > 0).length;
 
   return (
-    <div className="p-6">
-      <form onSubmit={handleSubmit} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_280px]">
-        <div className="space-y-6">
-          {/* Header */}
-          <section className="space-y-4 rounded-lg border border-border/80 p-5">
-            <p className="text-sm font-semibold flex items-center gap-2">
-              <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-              Informasi Pemesanan
-            </p>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="space-y-2 md:col-span-2">
-                <Label className="text-xs font-medium">Supplier <span className="text-destructive">*</span></Label>
-                <SearchableSelect
-                  options={suppliers.filter(s => s.is_active).map(s => ({ value: String(s.id), label: s.name }))}
-                  value={formData.supplier_id}
-                  onValueChange={v => setFormData({ ...formData, supplier_id: v })}
-                  placeholder="Pilih supplier..."
-                  searchPlaceholder="Cari supplier..."
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="order_date" className="text-xs font-medium">Tanggal Pesan</Label>
-                <Input
-                  id="order_date"
-                  type="date"
-                  value={formData.order_date}
-                  onChange={e => setFormData({ ...formData, order_date: e.target.value })}
-                  className="h-10 text-sm"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Status</Label>
-                <SearchableSelect
-                  options={[
-                    { value: 'draft', label: 'Draft (belum dikirim ke supplier)' },
-                    { value: 'ordered', label: 'Dipesan (sudah dikirim ke supplier)' },
-                  ]}
-                  value={formData.status}
-                  onValueChange={value => setFormData({ ...formData, status: value })}
-                  placeholder="Pilih status..."
-                />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="notes" className="text-xs font-medium">Catatan</Label>
-                <Input
-                  id="notes"
-                  placeholder="Catatan tambahan..."
-                  value={formData.notes}
-                  onChange={e => setFormData({ ...formData, notes: e.target.value })}
-                  className="h-10 text-sm"
-                />
-              </div>
-            </div>
-          </section>
-
-          {/* Items */}
-          <section className="rounded-lg border border-border/80 p-5 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold">Daftar Obat</p>
-              <Button type="button" variant="outline" size="sm" onClick={addItem}>
-                <Plus className="mr-1 h-3.5 w-3.5" />Tambah Baris
-              </Button>
+    <form id="purchase-order-create-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <MasterDataPageShell
+        title="Buat Purchase Order"
+        subtitle="Susun pesanan obat ke supplier, lengkapi item, lalu simpan sebagai draft atau PO yang sudah dikirim."
+        onBack={() => navigate('/purchasing')}
+        actions={<Button type="submit" form="purchase-order-create-form" disabled={loading} className="rounded-none shadow-none">{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan PO</Button>}
+        aside={
+          <MasterDataAsideStack>
+            <div>
+              <MasterDataAsideSection title="Ringkasan" helper="Pantau supplier, status, dan total pesanan sebelum PO dibuat.">
+                <div className="space-y-1 text-sm">
+                  <p className="text-muted-foreground">Supplier: <span className="text-foreground font-medium">{selectedSupplier?.name || '-'}</span></p>
+                  <p className="text-muted-foreground">Items: <span className="text-foreground font-medium">{validItemCount}</span></p>
+                  <p className="text-muted-foreground">Status: <span className="text-foreground font-medium">{getPurchaseStatusLabel(formData.status)}</span></p>
+                  <p className="text-muted-foreground">Tanggal: <span className="text-foreground font-medium">{formData.order_date || '-'}</span></p>
+                  <p className="pt-2 font-semibold">Total: Rp {totalAmount.toLocaleString('id-ID')}</p>
+                </div>
+              </MasterDataAsideSection>
             </div>
 
-            <div className="rounded-md border overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/50">
-                  <tr>
-                    <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground w-[40%]">Obat</th>
-                    <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-24">Qty</th>
-                    <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-36">Harga Beli (Rp)</th>
-                    <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-32">Subtotal</th>
-                    <th className="px-3 py-2 w-10"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {items.map((item, idx) => (
-                    <tr key={idx}>
-                      <td className="px-3 py-2">
-                        <SearchableSelect
-                          options={medicineOptions}
-                          value={item.medicine_id ? String(item.medicine_id) : ''}
-                          onValueChange={v => updateItem(idx, 'medicine_id', v)}
-                          placeholder="Pilih obat..."
-                          searchPlaceholder="Cari obat..."
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <Input
-                          type="number"
-                          min="1"
-                          value={item.quantity}
-                          onChange={e => updateItem(idx, 'quantity', Number(e.target.value))}
-                          className="h-9 text-sm text-right w-20 ml-auto"
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <Input
-                          type="number"
-                          min="0"
-                          value={item.unit_price}
-                          onChange={e => updateItem(idx, 'unit_price', Number(e.target.value))}
-                          className="h-9 text-sm text-right"
-                        />
-                      </td>
-                      <td className="px-3 py-2 text-right font-medium">
-                        {(item.quantity * item.unit_price).toLocaleString('id-ID')}
-                      </td>
-                      <td className="px-3 py-2">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive hover:text-destructive"
-                          onClick={() => removeItem(idx)}
-                          disabled={items.length === 1}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </td>
+            <div>
+              <MasterDataAsideSection title="Catatan" helper="Status draft masih bisa diedit. Status dipesan siap diproses pada halaman detail PO.">
+                <p className="text-sm text-muted-foreground">Harga beli akan terisi otomatis dari master obat, tetapi masih bisa disesuaikan per baris sebelum disimpan.</p>
+              </MasterDataAsideSection>
+            </div>
+          </MasterDataAsideStack>
+        }
+      >
+        <MasterDataLegacySections>
+          <div className="space-y-6">
+            <section className="space-y-4 rounded-lg border border-border/80 p-5">
+              <p className="flex items-center gap-2 text-sm font-semibold">
+                <ShoppingCart className="h-4 w-4 text-muted-foreground" />
+                Informasi Pemesanan
+              </p>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="space-y-2 md:col-span-2">
+                  <Label className="text-xs font-medium">Supplier <span className="text-destructive">*</span></Label>
+                  <SearchableSelect
+                    options={suppliers.filter(s => s.is_active).map(s => ({ value: String(s.id), label: s.name }))}
+                    value={formData.supplier_id}
+                    onValueChange={v => setFormData({ ...formData, supplier_id: v })}
+                    placeholder="Pilih supplier..."
+                    searchPlaceholder="Cari supplier..."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="order_date" className="text-xs font-medium">Tanggal Pesan</Label>
+                  <Input
+                    id="order_date"
+                    type="date"
+                    value={formData.order_date}
+                    onChange={e => setFormData({ ...formData, order_date: e.target.value })}
+                    className="h-10 text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Status</Label>
+                  <SearchableSelect
+                    options={PURCHASE_STATUS_OPTIONS}
+                    value={formData.status}
+                    onValueChange={value => setFormData({ ...formData, status: value })}
+                    placeholder="Pilih status..."
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="notes" className="text-xs font-medium">Catatan</Label>
+                  <Input
+                    id="notes"
+                    placeholder="Catatan tambahan..."
+                    value={formData.notes}
+                    onChange={e => setFormData({ ...formData, notes: e.target.value })}
+                    className="h-10 text-sm"
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section className="space-y-3 rounded-lg border border-border/80 p-5">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold">Daftar Obat</p>
+                <Button type="button" variant="outline" size="sm" onClick={addItem}>
+                  <Plus className="mr-1 h-3.5 w-3.5" />Tambah Baris
+                </Button>
+              </div>
+
+              <div className="overflow-x-auto rounded-md border">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="w-[40%] px-3 py-2 text-left text-xs font-medium text-muted-foreground">Obat</th>
+                      <th className="w-24 px-3 py-2 text-right text-xs font-medium text-muted-foreground">Qty</th>
+                      <th className="w-36 px-3 py-2 text-right text-xs font-medium text-muted-foreground">Harga Beli (Rp)</th>
+                      <th className="w-32 px-3 py-2 text-right text-xs font-medium text-muted-foreground">Subtotal</th>
+                      <th className="w-10 px-3 py-2"></th>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot className="bg-muted/30">
-                  <tr>
-                    <td colSpan={3} className="px-3 py-2 text-right font-semibold text-sm">Total</td>
-                    <td className="px-3 py-2 text-right font-bold text-sm">
-                      Rp {totalAmount.toLocaleString('id-ID')}
-                    </td>
-                    <td></td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </section>
-        </div>
-
-        {/* Sidebar */}
-        <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
-          <div className="rounded-lg border border-border/80 p-4 text-sm space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Ringkasan</p>
-            <div className="space-y-1">
-              <p className="text-muted-foreground">Supplier: <span className="text-foreground font-medium">
-                {suppliers.find(s => String(s.id) === formData.supplier_id)?.name || '-'}
-              </span></p>
-              <p className="text-muted-foreground">Items: <span className="text-foreground font-medium">{items.filter(r => r.medicine_id > 0).length}</span></p>
-              <p className="text-muted-foreground">Status: <span className="text-foreground font-medium">{formData.status === 'ordered' ? 'Dipesan' : 'Draft'}</span></p>
-              <p className="font-semibold mt-2">Total: Rp {totalAmount.toLocaleString('id-ID')}</p>
-            </div>
+                  </thead>
+                  <tbody className="divide-y">
+                    {items.map((item, idx) => (
+                      <tr key={idx}>
+                        <td className="px-3 py-2">
+                          <SearchableSelect
+                            options={medicineOptions}
+                            value={item.medicine_id ? String(item.medicine_id) : ''}
+                            onValueChange={v => updateItem(idx, 'medicine_id', v)}
+                            placeholder="Pilih obat..."
+                            searchPlaceholder="Cari obat..."
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <Input
+                            type="number"
+                            min="1"
+                            value={item.quantity}
+                            onChange={e => updateItem(idx, 'quantity', Number(e.target.value))}
+                            className="ml-auto h-9 w-20 text-right text-sm"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <Input
+                            type="number"
+                            min="0"
+                            value={item.unit_price}
+                            onChange={e => updateItem(idx, 'unit_price', Number(e.target.value))}
+                            className="h-9 text-right text-sm"
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium">
+                          {(item.quantity * item.unit_price).toLocaleString('id-ID')}
+                        </td>
+                        <td className="px-3 py-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={() => removeItem(idx)}
+                            disabled={items.length === 1}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-muted/30">
+                    <tr>
+                      <td colSpan={3} className="px-3 py-2 text-right text-sm font-semibold">Total</td>
+                      <td className="px-3 py-2 text-right text-sm font-bold">Rp {totalAmount.toLocaleString('id-ID')}</td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </section>
           </div>
-          <div className="rounded-lg border border-border/80 p-3">
-            <div className="flex flex-col gap-2">
-              <Button type="submit" disabled={loading} className="h-10">
-                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Simpan PO
-              </Button>
-              <Button type="button" variant="outline" onClick={() => navigate('/purchasing')} className="h-10">Batal</Button>
-            </div>
-          </div>
-        </aside>
-      </form>
-    </div>
+        </MasterDataLegacySections>
+      </MasterDataPageShell>
+    </form>
   );
 }

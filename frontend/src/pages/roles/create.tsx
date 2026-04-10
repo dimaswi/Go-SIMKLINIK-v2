@@ -11,6 +11,7 @@ import { PermissionDetailModal } from '@/components/permission-detail-modal';
 import { rolesApi, permissionsApi } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Shield, FileText, CheckSquare, Info, Package } from 'lucide-react';
+import { MasterDataAsideSection, MasterDataAsideStack, MasterDataLegacySections, MasterDataPageShell } from '@/pages/master-data/shared';
 
 export default function RoleCreate() {
   const navigate = useNavigate();
@@ -93,155 +94,128 @@ export default function RoleCreate() {
   };
 
   return (
-    <div className="p-6">
-      <form onSubmit={handleSubmit} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="space-y-6">
-          <section className="space-y-5 rounded-lg border border-border/80 p-5">
-            <div className="space-y-2">
-              <Label htmlFor="name" className="text-sm font-medium flex items-center gap-2">
-                <Shield className="h-4 w-4 text-muted-foreground" />
-                Nama Role
-              </Label>
-              <Input
-                id="name"
-                required
-                placeholder="e.g., Admin"
-                value={formData.name}
-                onChange={e => setFormData({ ...formData, name: e.target.value })}
-                className="h-10"
-              />
-            </div>
+    <>
+      <PermissionDetailModal permission={selectedPermission} isOpen={showPermissionModal} onClose={() => setShowPermissionModal(false)} />
 
-            <div className="space-y-2">
-              <Label htmlFor="description" className="text-sm font-medium flex items-center gap-2">
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                Deskripsi
-              </Label>
-              <Textarea
-                id="description"
-                placeholder="Deskripsi role..."
-                value={formData.description}
-                onChange={e => setFormData({ ...formData, description: e.target.value })}
-                className="min-h-[96px]"
-              />
-            </div>
-          </section>
-
-          <section className="space-y-4 rounded-lg border border-border/80 p-5">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium flex items-center gap-2">
-                <CheckSquare className="h-4 w-4 text-muted-foreground" />
-                Permission Matrix
-              </Label>
-              <Badge variant="secondary" className="text-sm">{formData.permission_ids.length} dipilih</Badge>
-            </div>
-
-            <div className="max-h-[560px] overflow-y-auto rounded-md border">
-              {Object.entries(groupedPermissions).map(([module, modulePermissions]) => (
-                <div key={module} className="border-b last:border-b-0">
-                  <div className="border-b bg-muted/20 px-3 py-2.5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Package className="h-4 w-4 text-muted-foreground" />
-                        <h4 className="font-medium text-sm">{module}</h4>
-                        <Badge variant="outline" className="text-xs">
-                          {modulePermissions.filter(p => formData.permission_ids.includes(p.id)).length}/{modulePermissions.length}
-                        </Badge>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          const modulePermIds = modulePermissions.map(p => p.id);
-                          const allSelected = modulePermIds.every(id => formData.permission_ids.includes(id));
-                          if (allSelected) {
-                            setFormData(prev => ({
-                              ...prev,
-                              permission_ids: prev.permission_ids.filter(id => !modulePermIds.includes(id)),
-                            }));
-                          } else {
-                            setFormData(prev => ({
-                              ...prev,
-                              permission_ids: [...new Set([...prev.permission_ids, ...modulePermIds])],
-                            }));
-                          }
-                        }}
-                        className="text-xs"
-                      >
-                        {modulePermissions.every(p => formData.permission_ids.includes(p.id)) ? 'Clear' : 'Select'}
-                      </Button>
-                    </div>
+      <form id="role-create-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <MasterDataPageShell
+          title="Create Role"
+          subtitle="Create a role and assemble its permission matrix before assigning it to users."
+          onBack={() => navigate('/roles')}
+          actions={<Button type="submit" form="role-create-form" disabled={loading} className="rounded-none shadow-none">{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Role</Button>}
+          aside={
+            <MasterDataAsideStack>
+              <div>
+                <MasterDataAsideSection title="Role Preview" helper="Ringkasan cepat nama role dan total permission terpilih.">
+                  <div className="space-y-1 text-sm">
+                    <p className="font-medium">{formData.name || 'Nama role belum diisi'}</p>
+                    <p className="text-muted-foreground line-clamp-3">{formData.description || 'Deskripsi role belum diisi.'}</p>
+                    <p className="text-muted-foreground">Total permission: {formData.permission_ids.length}</p>
                   </div>
+                </MasterDataAsideSection>
+              </div>
+              <div>
+                <MasterDataAsideSection title="Pemilihan Cepat" helper="Gunakan tombol Select atau Clear per modul untuk mempercepat penyusunan hak akses.">
+                  <p className="text-sm text-muted-foreground">Periksa kembali permission yang sensitif sebelum role dipakai di produksi.</p>
+                </MasterDataAsideSection>
+              </div>
+            </MasterDataAsideStack>
+          }
+        >
+          <MasterDataLegacySections>
+            <div className="space-y-6">
+              <section className="space-y-5 rounded-lg border border-border/80 p-5">
+                <div className="space-y-2">
+                  <Label htmlFor="name" className="text-sm font-medium flex items-center gap-2">
+                    <Shield className="h-4 w-4 text-muted-foreground" />
+                    Nama Role
+                  </Label>
+                  <Input id="name" required placeholder="e.g., Admin" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="h-10" />
+                </div>
 
-                  <div className="space-y-2 p-3">
-                    {modulePermissions.map(perm => (
-                      <div key={perm.id} className="flex items-center space-x-3 rounded-md border p-2.5 transition-colors hover:bg-muted/30">
-                        <Checkbox
-                          id={`perm-${perm.id}`}
-                          checked={formData.permission_ids.includes(perm.id)}
-                          onCheckedChange={() => handlePermissionToggle(perm.id)}
-                        />
-                        <div className="flex-1 flex items-center justify-between">
-                          <div className="space-y-1">
-                            <label htmlFor={`perm-${perm.id}`} className="text-sm font-medium leading-none cursor-pointer flex items-center gap-2">
-                              {perm.name}
-                              <Badge variant="secondary" className="text-xs">{perm.category}</Badge>
-                            </label>
-                            {perm.description && <p className="text-xs text-muted-foreground">{perm.description}</p>}
+                <div className="space-y-2">
+                  <Label htmlFor="description" className="text-sm font-medium flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    Deskripsi
+                  </Label>
+                  <Textarea id="description" placeholder="Deskripsi role..." value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="min-h-[96px]" />
+                </div>
+              </section>
+
+              <section className="space-y-4 rounded-lg border border-border/80 p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <Label className="text-sm font-medium flex items-center gap-2">
+                    <CheckSquare className="h-4 w-4 text-muted-foreground" />
+                    Permission Matrix
+                  </Label>
+                  <Badge variant="secondary" className="text-sm">{formData.permission_ids.length} dipilih</Badge>
+                </div>
+
+                <div className="max-h-[560px] overflow-y-auto rounded-md border">
+                  {Object.entries(groupedPermissions).map(([module, modulePermissions]) => (
+                    <div key={module} className="border-b last:border-b-0">
+                      <div className="border-b bg-muted/20 px-3 py-2.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <Package className="h-4 w-4 text-muted-foreground" />
+                            <h4 className="font-medium text-sm">{module}</h4>
+                            <Badge variant="outline" className="text-xs">
+                              {modulePermissions.filter((permission) => formData.permission_ids.includes(permission.id)).length}/{modulePermissions.length}
+                            </Badge>
                           </div>
                           <Button
                             type="button"
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleShowPermissionInfo(perm)}
-                            className="h-7 w-7 p-0"
+                            onClick={() => {
+                              const modulePermIds = modulePermissions.map((permission) => permission.id);
+                              const allSelected = modulePermIds.every((permissionId) => formData.permission_ids.includes(permissionId));
+                              if (allSelected) {
+                                setFormData((prev) => ({ ...prev, permission_ids: prev.permission_ids.filter((permissionId) => !modulePermIds.includes(permissionId)) }));
+                              } else {
+                                setFormData((prev) => ({ ...prev, permission_ids: [...new Set([...prev.permission_ids, ...modulePermIds])] }));
+                              }
+                            }}
+                            className="text-xs"
                           >
-                            <Info className="h-3.5 w-3.5" />
+                            {modulePermissions.every((permission) => formData.permission_ids.includes(permission.id)) ? 'Clear' : 'Select'}
                           </Button>
                         </div>
                       </div>
-                    ))}
-                  </div>
+
+                      <div className="space-y-2 p-3">
+                        {modulePermissions.map((permission) => (
+                          <div key={permission.id} className="flex items-center space-x-3 rounded-md border p-2.5 transition-colors hover:bg-muted/30">
+                            <Checkbox id={`perm-${permission.id}`} checked={formData.permission_ids.includes(permission.id)} onCheckedChange={() => handlePermissionToggle(permission.id)} />
+                            <div className="flex flex-1 items-center justify-between gap-3">
+                              <div className="space-y-1">
+                                <label htmlFor={`perm-${permission.id}`} className="cursor-pointer text-sm font-medium leading-none flex items-center gap-2">
+                                  {permission.name}
+                                  <Badge variant="secondary" className="text-xs">{permission.category}</Badge>
+                                </label>
+                                {permission.description ? <p className="text-xs text-muted-foreground">{permission.description}</p> : null}
+                              </div>
+                              <Button type="button" variant="ghost" size="sm" onClick={() => handleShowPermissionInfo(permission)} className="h-7 w-7 p-0">
+                                <Info className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  {Object.keys(groupedPermissions).length === 0 ? (
+                    <div className="py-8 text-center text-muted-foreground">
+                      <p className="text-sm">Tidak ada permission tersedia.</p>
+                    </div>
+                  ) : null}
                 </div>
-              ))}
-
-              {Object.keys(groupedPermissions).length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  <p className="text-sm">Tidak ada permission tersedia.</p>
-                </div>
-              )}
+              </section>
             </div>
-          </section>
-        </div>
-
-        <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
-          <div className="rounded-lg border border-border/80 p-4 text-sm">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Role Preview</p>
-            <p className="font-medium">{formData.name || 'Nama role belum diisi'}</p>
-            <p className="mt-1 text-muted-foreground line-clamp-3">{formData.description || 'Deskripsi role belum diisi.'}</p>
-            <p className="mt-3 text-muted-foreground">Total permission: {formData.permission_ids.length}</p>
-          </div>
-
-          <div className="rounded-lg border border-border/80 p-3">
-            <div className="flex flex-col gap-2">
-              <Button type="submit" disabled={loading} className="h-10">
-                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Simpan Role
-              </Button>
-              <Button type="button" variant="outline" onClick={() => navigate('/roles')} className="h-10">
-                Batal
-              </Button>
-            </div>
-          </div>
-        </aside>
+          </MasterDataLegacySections>
+        </MasterDataPageShell>
       </form>
-
-      <PermissionDetailModal
-        permission={selectedPermission}
-        isOpen={showPermissionModal}
-        onClose={() => setShowPermissionModal(false)}
-      />
-    </div>
+    </>
   );
 }

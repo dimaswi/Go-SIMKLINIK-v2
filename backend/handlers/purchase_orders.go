@@ -104,7 +104,7 @@ func CreatePurchaseOrder(c *gin.Context) {
 
 	orderDate := time.Now()
 	if req.OrderDate != "" {
-		if t, err := time.Parse("2006-01-02", req.OrderDate); err == nil {
+		if t, err := time.ParseInLocation("2006-01-02", req.OrderDate, time.Local); err == nil {
 			orderDate = t
 		}
 	}
@@ -164,7 +164,7 @@ func UpdatePurchaseOrder(c *gin.Context) {
 	}
 
 	if req.OrderDate != "" {
-		if t, err := time.Parse("2006-01-02", req.OrderDate); err == nil {
+		if t, err := time.ParseInLocation("2006-01-02", req.OrderDate, time.Local); err == nil {
 			order.OrderDate = t
 		}
 	}
@@ -279,7 +279,7 @@ func ReceivePurchaseOrder(c *gin.Context) {
 		}
 		var expiryDate *time.Time
 		if ri.ExpiryDate != "" {
-			if t, err := time.Parse("2006-01-02", ri.ExpiryDate); err == nil {
+			if t, err := time.ParseInLocation("2006-01-02", ri.ExpiryDate, time.Local); err == nil {
 				item.ExpiryDate = &t
 				expiryDate = &t
 			}

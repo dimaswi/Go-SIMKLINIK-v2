@@ -1,293 +1,529 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ChangeEvent, FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/ui/searchable-select';
-import { patientsApi, polyclinicsApi, doctorsApi, visitsApi, type Patient, type Polyclinic, type Doctor } from '@/lib/api';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  doctorsApi,
+  patientsApi,
+  polyclinicsApi,
+  registrationQueueApi,
+  visitsApi,
+  type Doctor,
+  type Patient,
+  type Polyclinic,
+  type RegistrationQueueItem,
+} from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, User, Calendar, Stethoscope, ClipboardList } from 'lucide-react';
+import { CalendarDays, Loader2, UserPlus } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
+import { getLocalISODate } from '@/lib/utils';
+import {
+  EMPTY_PATIENT_FORM_DATA,
+  PatientFormSections,
+  type PatientFormData,
+  getPatientAgeLabel,
+  getPatientGenderLabel,
+  getPatientInsuranceLabel,
+} from '@/pages/patients/shared';
+import { MasterDataAsideSection, MasterDataAsideStack, MasterDataPageShell } from '@/pages/master-data/shared';
 
 const PAYMENT_OPTIONS = [
   { value: 'umum', label: 'Umum (Mandiri)' },
   { value: 'bpjs', label: 'BPJS Kesehatan' },
   { value: 'asuransi', label: 'Asuransi Swasta' },
 ];
-const VISIT_TYPE_OPTIONS = [
-  { value: 'baru', label: 'Pasien Baru' },
-  { value: 'lama', label: 'Pasien Lama' },
-];
+
 const PRIORITY_OPTIONS = [
   { value: 'normal', label: 'Normal' },
   { value: 'urgent', label: 'Urgent (Prioritas)' },
 ];
 
-function calcAge(birth: string) {
-  return Math.floor((Date.now() - new Date(birth).getTime()) / 31557600000);
-}
+type EntryMode = 'existing' | 'new';
 
 export default function RegistrationCreate() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
-
+  const initialMode = searchParams.get('mode') === 'new' ? 'new' : 'existing';
+  const ticketId = searchParams.get('ticket_id');
+  const initialPatientId = searchParams.get('patient_id');
+  const [entryMode, setEntryMode] = useState<EntryMode>(initialMode);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-
+  const [newPatientForm, setNewPatientForm] = useState<PatientFormData>(EMPTY_PATIENT_FORM_DATA);
   const [polyclinics, setPolyclinics] = useState<Polyclinic[]>([]);
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [allDoctors, setAllDoctors] = useState<Doctor[]>([]);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [registrationTicket, setRegistrationTicket] = useState<RegistrationQueueItem | null>(null);
+  const [markingTicketProcessing, setMarkingTicketProcessing] = useState(false);
+  const processingSyncTicketIdRef = useRef<number | null>(null);
 
-  const [formData, setFormData] = useState({
-    patient_id: searchParams.get('patient_id') || '',
+  const [visitForm, setVisitForm] = useState({
+    patient_id: initialPatientId || '',
     polyclinic_id: '',
     doctor_id: '',
-    visit_date: new Date().toISOString().split('T')[0],
+    visit_date: getLocalISODate(),
     payment_type: 'umum',
-    visit_type: 'baru',
+    insurance_number: '',
+    visit_type: initialPatientId ? 'lama' : 'baru',
     priority: 'normal',
     complaint: '',
   });
 
   useEffect(() => {
-    setPageTitle('Pendaftaran Kunjungan');
+    setPageTitle('Front Office · Workspace Pendaftaran');
+    setLoading(true);
     Promise.all([
       patientsApi.getAll('per_page=500&is_active=true'),
       polyclinicsApi.getAll(),
       doctorsApi.getAll(),
-    ]).then(([patientRes, poliRes, doctorRes]) => {
-      const patientList = patientRes.data.data || [];
-      const doctorList = doctorRes.data.data || [];
-      setPatients(patientList);
-      setPolyclinics(poliRes.data.data || []);
-      setAllDoctors(doctorList);
+      ticketId ? registrationQueueApi.getById(Number(ticketId)) : Promise.resolve(null),
+    ]).then(([patientResponse, polyclinicResponse, doctorResponse, ticketResponse]) => {
+      const patientList = patientResponse.data.data || [];
+      const doctorList = doctorResponse.data.data || [];
 
-      const pid = searchParams.get('patient_id');
-      if (pid) {
-        const patient = patientList.find((item: Patient) => String(item.id) === pid);
+      setPatients(patientList);
+      setPolyclinics(polyclinicResponse.data.data || []);
+      setAllDoctors(doctorList);
+      setDoctors(doctorList);
+      setRegistrationTicket(ticketResponse?.data.data || null);
+      processingSyncTicketIdRef.current = null;
+
+      if (initialPatientId) {
+        const patient = patientList.find((item: Patient) => String(item.id) === initialPatientId) || null;
+        setSelectedPatient(patient);
+        setEntryMode('existing');
         if (patient) {
-          setSelectedPatient(patient);
-          setFormData(prev => ({
-            ...prev,
-            patient_id: pid,
+          setVisitForm((previous) => ({
+            ...previous,
+            patient_id: initialPatientId,
             visit_type: 'lama',
             payment_type: patient.insurance_type || 'umum',
+            insurance_number: patient.insurance_number || '',
           }));
         }
       }
     }).catch(() => {
       toast({ variant: 'destructive', title: 'Error!', description: 'Gagal memuat data pendaftaran.' });
-    }).finally(() => setLoading(false));
-  }, []);
+    }).finally(() => {
+      setLoading(false);
+    });
+  }, [initialPatientId, ticketId, toast]);
 
   useEffect(() => {
-    if (!formData.patient_id) {
+    if (entryMode !== 'existing') {
+      setSelectedPatient(null);
+      setVisitForm((previous) => ({
+        ...previous,
+        patient_id: '',
+        visit_type: 'baru',
+        payment_type: newPatientForm.insurance_type || 'umum',
+        insurance_number: newPatientForm.insurance_number || '',
+      }));
+      return;
+    }
+
+    if (!visitForm.patient_id) {
       setSelectedPatient(null);
       return;
     }
-    const patient = patients.find(item => String(item.id) === formData.patient_id) || null;
+
+    const patient = patients.find((item) => String(item.id) === visitForm.patient_id) || null;
     setSelectedPatient(patient);
     if (patient) {
-      setFormData(prev => ({
-        ...prev,
+      setVisitForm((previous) => ({
+        ...previous,
         visit_type: 'lama',
-        payment_type: patient.insurance_type || prev.payment_type || 'umum',
+        payment_type: patient.insurance_type || previous.payment_type || 'umum',
+        insurance_number: patient.insurance_number || '',
       }));
     }
-  }, [formData.patient_id, patients]);
+  }, [entryMode, newPatientForm.insurance_number, newPatientForm.insurance_type, patients, visitForm.patient_id]);
 
   useEffect(() => {
-    if (formData.polyclinic_id) {
-      const filtered = allDoctors.filter(d =>
-        !d.polyclinics || d.polyclinics.length === 0 ||
-        d.polyclinics.some((p: any) => String(p.id) === formData.polyclinic_id)
-      );
-      setDoctors(filtered.length > 0 ? filtered : allDoctors);
+    if (entryMode !== 'new') {
+      return;
+    }
+
+    setVisitForm((previous) => ({
+      ...previous,
+      payment_type: newPatientForm.insurance_type || 'umum',
+      insurance_number: newPatientForm.insurance_number || '',
+      visit_type: 'baru',
+    }));
+  }, [entryMode, newPatientForm.insurance_number, newPatientForm.insurance_type]);
+
+  useEffect(() => {
+    if (!ticketId || !registrationTicket || registrationTicket.status !== 'called' || markingTicketProcessing) {
+      return;
+    }
+
+    if (processingSyncTicketIdRef.current === registrationTicket.id) {
+      return;
+    }
+
+    processingSyncTicketIdRef.current = registrationTicket.id;
+
+    setMarkingTicketProcessing(true);
+    registrationQueueApi.updateStatus(Number(ticketId), { status: 'processing' })
+      .then((response) => {
+        setRegistrationTicket(response.data.data || registrationTicket);
+      })
+      .catch(() => {
+        // Hindari loop request. Pengguna tetap bisa melanjutkan form walau sinkronisasi gagal.
+      })
+      .finally(() => {
+        setMarkingTicketProcessing(false);
+      });
+  }, [markingTicketProcessing, registrationTicket, ticketId]);
+
+  useEffect(() => {
+    if (visitForm.polyclinic_id) {
+      const filteredDoctors = allDoctors.filter((doctor) => (
+        !doctor.polyclinics ||
+        doctor.polyclinics.length === 0 ||
+        doctor.polyclinics.some((polyclinic: Polyclinic) => String(polyclinic.id) === visitForm.polyclinic_id)
+      ));
+      setDoctors(filteredDoctors.length > 0 ? filteredDoctors : allDoctors);
     } else {
       setDoctors(allDoctors);
     }
-    setFormData(f => ({ ...f, doctor_id: '' }));
-  }, [formData.polyclinic_id, allDoctors]);
 
-  const set = (field: string, val: string) => setFormData(p => ({ ...p, [field]: val }));
+    setVisitForm((previous) => ({ ...previous, doctor_id: '' }));
+  }, [allDoctors, visitForm.polyclinic_id]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.patient_id || !selectedPatient || !formData.polyclinic_id) {
-      toast({ variant: 'destructive', title: 'Periksa data!', description: 'Pasien dan poliklinik wajib diisi.' });
+  const setVisitField = (field: keyof typeof visitForm, value: string) => {
+    setVisitForm((previous) => ({ ...previous, [field]: value }));
+  };
+
+  const setPatientField = (field: keyof PatientFormData, value: string) => {
+    setNewPatientForm((previous) => ({ ...previous, [field]: value }));
+  };
+
+  const handlePatientInput = (event: ChangeEvent<HTMLInputElement>) => {
+    setPatientField(event.target.name as keyof PatientFormData, event.target.value);
+  };
+
+  const handlePatientTextarea = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    setPatientField(event.target.name as keyof PatientFormData, event.target.value);
+  };
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+
+    if (!visitForm.polyclinic_id || !visitForm.doctor_id || !visitForm.visit_date) {
+      toast({ variant: 'destructive', title: 'Periksa data!', description: 'Poliklinik, dokter, dan tanggal kunjungan wajib diisi.' });
       return;
     }
+
+    if (entryMode === 'existing' && !visitForm.patient_id) {
+      toast({ variant: 'destructive', title: 'Periksa data!', description: 'Pilih pasien lama terlebih dahulu.' });
+      return;
+    }
+
+    if (entryMode === 'new' && (!newPatientForm.full_name || !newPatientForm.gender)) {
+      toast({ variant: 'destructive', title: 'Periksa data!', description: 'Nama dan jenis kelamin pasien baru wajib diisi.' });
+      return;
+    }
+
     setSubmitting(true);
     try {
-      const payload = {
-        ...formData,
-        patient_id: Number(formData.patient_id),
-        polyclinic_id: Number(formData.polyclinic_id),
-        doctor_id: formData.doctor_id ? Number(formData.doctor_id) : null,
+      let patientId = Number(visitForm.patient_id);
+
+      if (entryMode === 'new') {
+        const patientPayload = {
+          ...newPatientForm,
+          birth_date: newPatientForm.birth_date || null,
+        };
+        const patientResponse = await patientsApi.create(patientPayload);
+        patientId = Number(patientResponse.data.data.id);
+      }
+
+      const visitPayload = {
+        patient_id: patientId,
+        polyclinic_id: Number(visitForm.polyclinic_id),
+        doctor_id: Number(visitForm.doctor_id),
+        visit_date: visitForm.visit_date,
+        payment_type: visitForm.payment_type,
+        insurance_number: visitForm.payment_type === 'umum' ? '' : visitForm.insurance_number,
+        visit_type: entryMode === 'new' ? 'baru' : 'lama',
+        priority: visitForm.priority,
+        complaint: visitForm.complaint,
       };
-      await visitsApi.create(payload);
-      toast({ variant: 'success', title: 'Berhasil!', description: 'Kunjungan berhasil didaftarkan.' });
+
+      const visitResponse = await visitsApi.create(visitPayload);
+      const queueNumber = String(visitResponse.data.data.queue_number || 0).padStart(3, '0');
+      let ticketSyncFailed = false;
+
+      if (ticketId) {
+        try {
+          await registrationQueueApi.updateStatus(Number(ticketId), {
+            status: 'completed',
+            visit_id: Number(visitResponse.data.data.id),
+          });
+        } catch {
+          ticketSyncFailed = true;
+        }
+      }
+
+      toast({
+        variant: ticketSyncFailed ? 'default' : 'success',
+        title: ticketSyncFailed ? 'Pendaftaran Tersimpan' : 'Berhasil!',
+        description: ticketSyncFailed
+          ? `Kunjungan berhasil dibuat dengan nomor antrian ${queueNumber}, tetapi sinkronisasi status tiket belum selesai.`
+          : `Pendaftaran berhasil disimpan. Nomor antrian pasien adalah ${queueNumber}.`,
+      });
       navigate('/registration');
-    } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Gagal!', description: e.response?.data?.error || 'Pendaftaran gagal.' });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Gagal!', description: error.response?.data?.error || 'Pendaftaran gagal.' });
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (loading) {
-    return <div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
-  }
-
-  const patientOptions = patients.map(patient => ({
+  const patientOptions = useMemo(() => patients.map((patient) => ({
     value: String(patient.id),
     label: `${patient.medical_record_number} - ${patient.full_name}`,
-  }));
-  const polyOptions = polyclinics.map(p => ({ value: String(p.id), label: p.name }));
-  const doctorOptions = doctors.map(d => ({ value: String(d.id), label: `${d.full_name}${d.specialization ? ` — ${d.specialization}` : ''}` }));
+  })), [patients]);
+
+  const polyclinicOptions = useMemo(() => polyclinics.map((polyclinic) => ({
+    value: String(polyclinic.id),
+    label: polyclinic.name,
+  })), [polyclinics]);
+
+  const doctorOptions = useMemo(() => doctors.map((doctor) => ({
+    value: String(doctor.id),
+    label: `${doctor.full_name}${doctor.specialization ? ` — ${doctor.specialization}` : ''}`,
+  })), [doctors]);
+
+  const selectedPolyclinic = polyclinics.find((item) => String(item.id) === visitForm.polyclinic_id) || null;
+  const selectedDoctor = doctors.find((item) => String(item.id) === visitForm.doctor_id) || null;
+
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6">
-      <form onSubmit={handleSubmit} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="space-y-6">
-          <section className="space-y-4 rounded-lg border border-border/80 p-5">
-            <div className="flex items-center gap-2">
-              <User className="h-4 w-4 text-muted-foreground" />
-              <p className="text-sm font-semibold">Pasien</p>
-            </div>
-            <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Pilih Pasien</Label>
-                <SearchableSelect
-                  options={patientOptions}
-                  value={formData.patient_id}
-                  onValueChange={value => set('patient_id', value)}
-                  placeholder="Cari pasien berdasarkan No. RM atau nama..."
-                  searchPlaceholder="Cari pasien..."
-                  emptyText="Pasien tidak ditemukan."
-                />
-              </div>
-              <Button type="button" variant="outline" className="h-10" onClick={() => navigate('/patients/create')}>
-                + Tambah Pasien
-              </Button>
-            </div>
-            {selectedPatient && (
-              <div className="rounded-lg border p-4 text-sm">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-medium">{selectedPatient.full_name}</p>
-                  <span className="font-mono text-xs text-muted-foreground">{selectedPatient.medical_record_number}</span>
+    <form id="registration-create-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <MasterDataPageShell
+        title="Workspace Pendaftaran"
+        subtitle="Fokus ke form pendaftaran. Pilih mode pasien di kontrol ringkas, lalu langsung isi data kunjungan."
+        onBack={() => navigate('/registration')}
+        badges={
+          <>
+            {registrationTicket ? (
+              <Badge variant="outline" className="h-5 rounded-none px-2 text-[10px] uppercase tracking-[0.18em] shadow-none">
+                Tiket {String(registrationTicket.ticket_number).padStart(3, '0')}
+              </Badge>
+            ) : null}
+            <Badge variant="secondary" className="h-5 rounded-none px-2 text-[10px] uppercase tracking-[0.18em] shadow-none">
+              {entryMode === 'new' ? 'Pasien Baru' : 'Pasien Lama'}
+            </Badge>
+            <Badge variant="outline" className="h-5 rounded-none px-2 text-[10px] uppercase tracking-[0.18em] shadow-none">
+              {getPatientInsuranceLabel(visitForm.payment_type)}
+            </Badge>
+          </>
+        }
+        meta={
+          <>
+            <span>Poli {selectedPolyclinic?.name || '-'}</span>
+            <span>Dokter {selectedDoctor?.full_name || '-'}</span>
+            <span>Tanggal {visitForm.visit_date || '-'}</span>
+          </>
+        }
+        actions={
+          <Button type="submit" form="registration-create-form" disabled={submitting} className="rounded-none shadow-none">
+            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Simpan Pendaftaran
+          </Button>
+        }
+        aside={
+          <MasterDataAsideStack>
+            <div>
+              <MasterDataAsideSection title="Ringkasan Kunjungan">
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <p>Tiket: <span className="font-medium text-foreground">{registrationTicket ? String(registrationTicket.ticket_number).padStart(3, '0') : '-'}</span></p>
+                  <p>Pasien: <span className="font-medium text-foreground">{entryMode === 'existing' ? (selectedPatient?.full_name || 'Belum dipilih') : (newPatientForm.full_name || 'Belum diisi')}</span></p>
+                  <p>Jenis kelamin: {entryMode === 'existing' ? getPatientGenderLabel(selectedPatient?.gender) : getPatientGenderLabel(newPatientForm.gender)}</p>
+                  <p>Usia: {entryMode === 'existing' ? getPatientAgeLabel(selectedPatient?.birth_date) : getPatientAgeLabel(newPatientForm.birth_date)}</p>
+                  <p>Pembayaran: {getPatientInsuranceLabel(visitForm.payment_type)}</p>
+                  <p>Prioritas: {visitForm.priority === 'urgent' ? 'Urgent' : 'Normal'}</p>
+                  <p>Poli: {selectedPolyclinic?.name || '-'}</p>
+                  <p>Dokter: {selectedDoctor?.full_name || '-'}</p>
                 </div>
-                <div className="mt-1 flex flex-wrap gap-3 text-xs text-muted-foreground">
-                  <span>{selectedPatient.gender === 'L' ? 'Laki-laki' : 'Perempuan'}</span>
-                  {selectedPatient.birth_date && <span>{calcAge(selectedPatient.birth_date)} tahun</span>}
-                  <span>{selectedPatient.phone || 'Tanpa telepon'}</span>
-                </div>
-              </div>
-            )}
-          </section>
+              </MasterDataAsideSection>
+            </div>
+          </MasterDataAsideStack>
+        }
+      >
+        <div className="divide-y divide-border/70">
 
-          <section className="space-y-4 rounded-lg border border-border/80 p-5">
-            <div className="flex items-center gap-2">
-              <Stethoscope className="h-4 w-4 text-muted-foreground" />
-              <p className="text-sm font-semibold">Data Kunjungan</p>
+          {entryMode === 'existing' ? (
+            <section className="px-4 py-4 lg:px-5 lg:py-5">
+              <div className="space-y-1">
+                <h2 className="text-sm font-semibold tracking-tight">Pilih Pasien Lama</h2>
+                <p className="text-[11px] leading-5 text-muted-foreground">Cari pasien berdasarkan nama atau nomor rekam medis. Jika pasien belum ada, pindahkan ke mode pasien baru.</p>
+              </div>
+              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_220px] xl:items-end">
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Cari Pasien</Label>
+                  <SearchableSelect
+                    options={patientOptions}
+                    value={visitForm.patient_id}
+                    onValueChange={(value) => setVisitField('patient_id', value)}
+                    placeholder="Cari pasien berdasarkan No. RM atau nama..."
+                    searchPlaceholder="Cari pasien..."
+                    emptyText="Pasien tidak ditemukan."
+                    square
+                  />
+                </div>
+                <Button type="button" variant="outline" className="rounded-none shadow-none" onClick={() => setEntryMode('new')}>
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Pindah Ke Pasien Baru
+                </Button>
+              </div>
+
+              {selectedPatient ? (
+                <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                  <div className="border border-border/70 bg-muted/20 px-4 py-4 text-sm">
+                    <p className="font-semibold text-foreground">{selectedPatient.full_name}</p>
+                    <p className="mt-1 font-mono text-xs text-muted-foreground">{selectedPatient.medical_record_number}</p>
+                    <p className="mt-2 text-muted-foreground">{getPatientGenderLabel(selectedPatient.gender)} · {getPatientAgeLabel(selectedPatient.birth_date)}</p>
+                  </div>
+                  <div className="border border-border/70 bg-muted/20 px-4 py-4 text-sm text-muted-foreground">
+                    <p>Telepon: {selectedPatient.phone || '-'}</p>
+                    <p className="mt-1">Alamat: {selectedPatient.address || '-'}</p>
+                    <p className="mt-1">Penjamin: {getPatientInsuranceLabel(selectedPatient.insurance_type)}</p>
+                    <p className="mt-1">No. Penjamin: {selectedPatient.insurance_number || '-'}</p>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          ) : (
+            <div>
+              <PatientFormSections
+                formData={newPatientForm}
+                setField={setPatientField}
+                onInputChange={handlePatientInput}
+                onTextareaChange={handlePatientTextarea}
+              />
             </div>
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Poliklinik <span className="text-destructive">*</span></Label>
+          )}
+
+          <section className="px-4 py-4 lg:px-5 lg:py-5">
+            <div className="space-y-1">
+              <h2 className="text-sm font-semibold tracking-tight">Tujuan Kunjungan Hari Ini</h2>
+              <p className="text-[11px] leading-5 text-muted-foreground">Lengkapi poliklinik, dokter, penjamin, tanggal, dan prioritas. Dokter wajib dipilih agar kunjungan dapat dibuat.</p>
+            </div>
+            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Poliklinik</Label>
                 <SearchableSelect
-                  options={polyOptions}
-                  value={formData.polyclinic_id}
-                  onValueChange={v => set('polyclinic_id', v)}
+                  options={polyclinicOptions}
+                  value={visitForm.polyclinic_id}
+                  onValueChange={(value) => setVisitField('polyclinic_id', value)}
                   placeholder="Pilih poliklinik..."
                   searchPlaceholder="Cari poli..."
+                  square
                 />
               </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Dokter</Label>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Dokter</Label>
                 <SearchableSelect
                   options={doctorOptions}
-                  value={formData.doctor_id}
-                  onValueChange={v => set('doctor_id', v)}
+                  value={visitForm.doctor_id}
+                  onValueChange={(value) => setVisitField('doctor_id', value)}
                   placeholder="Pilih dokter..."
                   searchPlaceholder="Cari dokter..."
-                  noneLabel="Belum ditentukan"
+                  square
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="visit_date" className="text-xs font-medium">Tanggal Kunjungan</Label>
-                <Input id="visit_date" type="date" value={formData.visit_date} onChange={e => set('visit_date', e.target.value)} className="h-10 text-sm" />
+              <div className="space-y-1.5">
+                <Label htmlFor="visit_date" className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Tanggal Kunjungan</Label>
+                <div className="relative">
+                  <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="visit_date"
+                    type="date"
+                    value={visitForm.visit_date}
+                    onChange={(event) => setVisitField('visit_date', event.target.value)}
+                    className="rounded-none pl-10"
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Pembayaran</Label>
-                <SearchableSelect options={PAYMENT_OPTIONS} value={formData.payment_type} onValueChange={v => set('payment_type', v)} placeholder="Pilih pembayaran..." />
+              <div className="space-y-1.5">
+                <Label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Pembayaran</Label>
+                <SearchableSelect
+                  options={PAYMENT_OPTIONS}
+                  value={visitForm.payment_type}
+                  onValueChange={(value) => setVisitField('payment_type', value)}
+                  placeholder="Pilih pembayaran..."
+                  square
+                />
               </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Tipe Kunjungan</Label>
-                <SearchableSelect options={VISIT_TYPE_OPTIONS} value={formData.visit_type} onValueChange={v => set('visit_type', v)} placeholder="Pilih tipe..." />
+              <div className="space-y-1.5">
+                <Label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Prioritas</Label>
+                <SearchableSelect
+                  options={PRIORITY_OPTIONS}
+                  value={visitForm.priority}
+                  onValueChange={(value) => setVisitField('priority', value)}
+                  placeholder="Pilih prioritas..."
+                  square
+                />
               </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Prioritas</Label>
-                <SearchableSelect options={PRIORITY_OPTIONS} value={formData.priority} onValueChange={v => set('priority', v)} placeholder="Pilih prioritas..." />
+              <div className="space-y-1.5">
+                <Label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Tipe Kunjungan</Label>
+                <div className="flex h-10 items-center border border-border/70 bg-muted/10 px-3 text-sm text-muted-foreground">
+                  {entryMode === 'new' ? 'Pasien Baru' : 'Pasien Lama'}
+                </div>
               </div>
+              {visitForm.payment_type !== 'umum' ? (
+                <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
+                  <Label htmlFor="insurance_number" className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Nomor Penjamin</Label>
+                  <Input
+                    id="insurance_number"
+                    value={visitForm.insurance_number}
+                    onChange={(event) => setVisitField('insurance_number', event.target.value)}
+                    placeholder="Masukkan nomor BPJS atau asuransi"
+                    className="rounded-none"
+                  />
+                </div>
+              ) : null}
             </div>
           </section>
 
-          <section className="space-y-4 rounded-lg border border-border/80 p-5">
-            <div className="flex items-center gap-2">
-              <ClipboardList className="h-4 w-4 text-muted-foreground" />
-              <p className="text-sm font-semibold">Keluhan</p>
+          <section className="px-4 py-4 lg:px-5 lg:py-5">
+            <div className="space-y-1">
+              <h2 className="text-sm font-semibold tracking-tight">Keluhan Dan Catatan Awal</h2>
+              <p className="text-[11px] leading-5 text-muted-foreground">Tuliskan ringkasan keluhan pasien untuk membantu triase awal dan memudahkan petugas poli saat memanggil antrian.</p>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="complaint" className="text-xs font-medium">Keluhan Utama</Label>
-              <textarea
-                id="complaint"
-                value={formData.complaint}
-                onChange={e => set('complaint', e.target.value)}
-                placeholder="Keluhan yang disampaikan pasien..."
-                rows={4}
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none"
-              />
+            <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+              <div className="space-y-1.5">
+                <Label htmlFor="complaint" className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Keluhan Utama</Label>
+                <Textarea
+                  id="complaint"
+                  value={visitForm.complaint}
+                  onChange={(event) => setVisitField('complaint', event.target.value)}
+                  placeholder="Keluhan yang disampaikan pasien..."
+                  rows={6}
+                  className="rounded-none"
+                />
+              </div>
             </div>
           </section>
         </div>
-
-        <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
-          <div className="rounded-lg border border-border/80 p-4 text-sm">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Ringkasan Pendaftaran</p>
-            <div className="space-y-1">
-              <p className="truncate font-medium">{selectedPatient?.full_name || 'Pasien belum dipilih'}</p>
-              <p className="font-mono text-muted-foreground">{selectedPatient?.medical_record_number || '-'}</p>
-              <p className="text-muted-foreground">Poli: {polyclinics.find(item => String(item.id) === formData.polyclinic_id)?.name || '-'}</p>
-              <p className="text-muted-foreground">Dokter: {doctors.find(item => String(item.id) === formData.doctor_id)?.full_name || 'Belum ditentukan'}</p>
-              <p className="text-muted-foreground">Tanggal: {formData.visit_date || '-'}</p>
-              <p className="text-muted-foreground">Pembayaran: {PAYMENT_OPTIONS.find(option => option.value === formData.payment_type)?.label || '-'}</p>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-border/80 p-4 text-sm">
-            <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              <Calendar className="h-3.5 w-3.5" />
-              Catatan
-            </p>
-            <p className="text-muted-foreground">Nomor kunjungan dan nomor antrian akan dibuat otomatis saat data disimpan.</p>
-          </div>
-
-          <div className="rounded-lg border border-border/80 p-3">
-            <div className="flex flex-col gap-2">
-              <Button type="submit" disabled={submitting} className="h-10">
-                {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Simpan Pendaftaran
-              </Button>
-              <Button type="button" variant="outline" onClick={() => navigate('/registration')} className="h-10">
-                Batal
-              </Button>
-            </div>
-          </div>
-        </aside>
-      </form>
-    </div>
+      </MasterDataPageShell>
+    </form>
   );
 }

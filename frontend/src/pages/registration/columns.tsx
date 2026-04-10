@@ -1,119 +1,155 @@
 import type { ColumnDef } from '@tanstack/react-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Eye, Trash2 } from 'lucide-react';
+import { ArrowUpRight, Ban, UserPlus, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import type { Visit } from '@/lib/api';
+import type { RegistrationQueueItem } from '@/lib/api';
 
 const STATUS_MAP: Record<string, { label: string; className: string }> = {
-  registered:   { label: 'Terdaftar',    className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
-  in_progress:  { label: 'Konsultasi',   className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
-  completed:    { label: 'Selesai',      className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
-  cancelled:    { label: 'Dibatalkan',   className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
+  waiting: { label: 'Menunggu', className: 'border-amber-300 bg-amber-50 text-amber-700' },
+  called: { label: 'Dipanggil', className: 'border-blue-300 bg-blue-50 text-blue-700' },
+  processing: { label: 'Diproses', className: 'border-violet-300 bg-violet-50 text-violet-700' },
+  completed: { label: 'Selesai', className: 'border-emerald-300 bg-emerald-50 text-emerald-700' },
+  cancelled: { label: 'Dibatalkan', className: 'border-red-300 bg-red-50 text-red-700' },
 };
 
-const QUEUE_MAP: Record<string, { label: string; className: string }> = {
-  waiting:        { label: 'Menunggu',   className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
-  in_consultation:{ label: 'Konsultasi', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
-  done:           { label: 'Selesai',    className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
-  cancelled:      { label: 'Batal',      className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
-};
+function formatTime(value?: string) {
+  if (!value) {
+    return '-';
+  }
 
-const PAYMENT_MAP: Record<string, string> = { umum: 'Umum', bpjs: 'BPJS', asuransi: 'Asuransi' };
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '-';
+  }
 
-function ActionsCell({ visit, onDelete }: { visit: Visit; onDelete: (id: number) => void }) {
-  const navigate = useNavigate();
-  return (
-    <div className="flex items-center gap-1">
-      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(`/patients/${visit.patient_id}`)}>
-        <Eye className="h-4 w-4" />
-      </Button>
-      {(visit.status === 'registered' || visit.status === 'cancelled') && (
-        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => onDelete(visit.id)}>
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      )}
-    </div>
-  );
+  return date.toLocaleTimeString('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
-export function createColumns(onDelete: (id: number) => void): ColumnDef<Visit>[] {
+function ActionsCell({
+  item,
+  onProcess,
+  onCancel,
+}: {
+  item: RegistrationQueueItem;
+  onProcess: (item: RegistrationQueueItem, mode: 'existing' | 'new') => void;
+  onCancel: (item: RegistrationQueueItem) => void;
+}) {
+  const navigate = useNavigate();
+
+  if (item.status === 'waiting') {
+    return (
+      <div className="flex items-center justify-end gap-2">
+        <span className="text-xs text-muted-foreground">Panggil di halaman antrian</span>
+        <Button type="button" variant="outline" size="sm" className="rounded-none text-destructive shadow-none hover:text-destructive" onClick={() => onCancel(item)}>
+          <Ban className="mr-1.5 h-3.5 w-3.5" />
+          Batal
+        </Button>
+      </div>
+    );
+  }
+
+  if (item.status === 'called' || item.status === 'processing') {
+    return (
+      <div className="flex flex-nowrap items-center justify-end gap-2 whitespace-nowrap">
+        <Button type="button" variant="outline" size="sm" className="h-8 rounded-none px-3 shadow-none" onClick={() => onProcess(item, 'existing')}>
+          <Users className="mr-1.5 h-3.5 w-3.5" />
+          Pasien Lama
+        </Button>
+        <Button type="button" size="sm" className="h-8 rounded-none px-3 shadow-none" onClick={() => onProcess(item, 'new')}>
+          <UserPlus className="mr-1.5 h-3.5 w-3.5" />
+          Pasien Baru
+        </Button>
+      </div>
+    );
+  }
+
+  if (item.status === 'completed' && item.visit_id) {
+    return (
+      <div className="flex items-center justify-end gap-2">
+        <Button type="button" variant="outline" size="sm" className="rounded-none shadow-none" onClick={() => navigate(`/emr/${item.visit_id}`)}>
+          <ArrowUpRight className="mr-1.5 h-3.5 w-3.5" />
+          Buka EMR
+        </Button>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+export function createColumns({
+  onProcess,
+  onCancel,
+}: {
+  onProcess: (item: RegistrationQueueItem, mode: 'existing' | 'new') => void;
+  onCancel: (item: RegistrationQueueItem) => void;
+}): ColumnDef<RegistrationQueueItem>[] {
   return [
     {
-      header: 'No. Kunjungan',
-      accessorKey: 'visit_number',
+      header: 'Tiket',
+      id: 'ticket_number',
       cell: ({ row }) => (
-        <span className="font-mono text-xs">{row.original.visit_number}</span>
-      ),
-    },
-    {
-      header: 'Antrian',
-      accessorKey: 'queue_number',
-      cell: ({ row }) => (
-        <div className="flex items-center gap-2">
-          <span className={`text-lg font-black ${row.original.priority === 'urgent' ? 'text-orange-500' : 'text-primary'}`}>
-            {String(row.original.queue_number).padStart(3, '0')}
-          </span>
-          {row.original.priority === 'urgent' && (
-            <Badge className="text-xs bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">Urgent</Badge>
-          )}
+        <div className="min-w-[92px] space-y-1">
+          <p className="text-2xl font-black leading-none text-foreground">
+            {String(row.original.ticket_number).padStart(3, '0')}
+          </p>
+          <p className="text-xs text-muted-foreground">Diambil {formatTime(row.original.created_at)}</p>
         </div>
       ),
     },
     {
-      header: 'Pasien',
-      id: 'patient',
-      cell: ({ row }) => {
-        const p = (row.original as any).patient;
-        return (
-          <div>
-            <p className="text-sm font-medium">{p?.full_name || '-'}</p>
-            <p className="text-xs text-muted-foreground font-mono">{p?.medical_record_number || '-'}</p>
-          </div>
-        );
-      },
-    },
-    {
-      header: 'Poliklinik / Dokter',
-      id: 'polyclinic',
-      cell: ({ row }) => {
-        const poli = (row.original as any).polyclinic;
-        const doc = (row.original as any).doctor;
-        return (
-          <div>
-            <p className="text-sm font-medium">{poli?.name || '-'}</p>
-            <p className="text-xs text-muted-foreground">{doc?.full_name || 'Belum ditentukan'}</p>
-          </div>
-        );
-      },
-    },
-    {
-      header: 'Pembayaran',
-      accessorKey: 'payment_type',
-      cell: ({ row }) => (
-        <Badge variant="outline" className="text-xs">{PAYMENT_MAP[row.original.payment_type] || row.original.payment_type}</Badge>
-      ),
-    },
-    {
-      header: 'Status Antrian',
-      accessorKey: 'queue_status',
-      cell: ({ row }) => {
-        const s = QUEUE_MAP[row.original.queue_status];
-        return s ? <Badge className={`text-xs ${s.className}`}>{s.label}</Badge> : <Badge variant="outline">{row.original.queue_status}</Badge>;
-      },
-    },
-    {
       header: 'Status',
-      accessorKey: 'status',
+      id: 'status',
       cell: ({ row }) => {
-        const s = STATUS_MAP[row.original.status];
-        return s ? <Badge className={`text-xs ${s.className}`}>{s.label}</Badge> : <Badge variant="outline">{row.original.status}</Badge>;
+        const status = STATUS_MAP[row.original.status];
+        return (
+          <div className="min-w-[120px] space-y-2">
+            <Badge variant="outline" className={`rounded-none text-xs shadow-none ${status?.className || ''}`}>
+              {status?.label || row.original.status}
+            </Badge>
+            <div className="space-y-1 text-xs text-muted-foreground">
+              <p>Dipanggil: {formatTime(row.original.called_at)}</p>
+              <p>Diproses: {formatTime(row.original.processing_started_at)}</p>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Hasil Pendaftaran',
+      id: 'registration_result',
+      cell: ({ row }) => {
+        const visit = row.original.visit;
+        return (
+          <div className="min-w-[160px] space-y-1">
+            <p className="truncate text-sm font-medium text-foreground" title={visit?.patient?.full_name || 'Belum diproses'}>{visit?.patient?.full_name || 'Belum diproses'}</p>
+            <p className="font-mono text-xs text-muted-foreground">{visit?.patient?.medical_record_number || '-'}</p>
+            <p className="truncate text-xs text-muted-foreground" title={visit?.visit_number || 'Belum ada nomor kunjungan'}>{visit?.visit_number || 'Belum ada nomor kunjungan'}</p>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Tujuan Kunjungan',
+      id: 'destination',
+      cell: ({ row }) => {
+        const visit = row.original.visit;
+        return (
+          <div className="min-w-[160px] space-y-1">
+            <p className="truncate text-sm font-medium text-foreground" title={visit?.polyclinic?.name || '-'}>{visit?.polyclinic?.name || '-'}</p>
+            <p className="truncate text-xs text-muted-foreground" title={visit?.doctor?.full_name || 'Dokter belum dipilih'}>{visit?.doctor?.full_name || 'Dokter belum dipilih'}</p>
+          </div>
+        );
       },
     },
     {
       header: '',
       id: 'actions',
-      cell: ({ row }) => <ActionsCell visit={row.original} onDelete={onDelete} />,
+      cell: ({ row }) => <ActionsCell item={row.original} onProcess={onProcess} onCancel={onCancel} />,
     },
   ];
 }

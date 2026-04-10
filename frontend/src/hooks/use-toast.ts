@@ -142,8 +142,22 @@ function dispatch(action: Action) {
 
 type Toast = Omit<ToasterToast, "id">
 
+function isSuccessToastTitle(title?: React.ReactNode) {
+  if (typeof title !== "string") {
+    return false
+  }
+
+  const normalized = title.trim().toLowerCase()
+  if (!normalized) {
+    return false
+  }
+
+  return /(berhasil|sukses|tersimpan|diperbarui|dihapus|dibatalkan|dibuat|diproses|dikirim|dicetak|disinkronkan)/i.test(normalized)
+}
+
 function toast({ ...props }: Toast) {
   const id = genId()
+  const resolvedVariant = props.variant ?? (isSuccessToastTitle(props.title) ? "success" : undefined)
 
   const update = (props: ToasterToast) =>
     dispatch({
@@ -156,6 +170,7 @@ function toast({ ...props }: Toast) {
     type: "ADD_TOAST",
     toast: {
       ...props,
+      variant: resolvedVariant,
       id,
       open: true,
       onOpenChange: (open) => {

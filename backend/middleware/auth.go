@@ -76,6 +76,10 @@ func AuthMiddleware() gin.HandlerFunc {
 }
 
 func RequirePermission(permission string) gin.HandlerFunc {
+	return RequireAnyPermission(permission)
+}
+
+func RequireAnyPermission(permissions ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		roleID, exists := c.Get("role_id")
 		if !exists {
@@ -91,9 +95,14 @@ func RequirePermission(permission string) gin.HandlerFunc {
 			return
 		}
 
+		allowedPermissions := make(map[string]struct{}, len(permissions))
+		for _, permission := range permissions {
+			allowedPermissions[permission] = struct{}{}
+		}
+
 		hasPermission := false
 		for _, perm := range role.Permissions {
-			if perm.Name == permission {
+			if _, ok := allowedPermissions[perm.Name]; ok {
 				hasPermission = true
 				break
 			}

@@ -3,14 +3,18 @@ import { usePermission } from '@/hooks/usePermission';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  permission: string;
+  permission: string | string[];
   fallback?: React.ReactNode;
 }
 
 export function ProtectedRoute({ children, permission, fallback }: ProtectedRouteProps) {
-  const { hasPermission } = usePermission();
+  const { hasAnyPermission, hasPermission } = usePermission();
 
-  if (!hasPermission(permission)) {
+  const allowed = Array.isArray(permission)
+    ? hasAnyPermission(permission)
+    : hasPermission(permission);
+
+  if (!allowed) {
     if (fallback) {
       return <>{fallback}</>;
     }

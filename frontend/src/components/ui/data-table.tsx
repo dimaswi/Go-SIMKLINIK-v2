@@ -15,16 +15,10 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react"
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import {
   Table,
@@ -53,6 +47,8 @@ interface DataTableProps<TData, TValue> {
   pageSize?: number
   toolbarActions?: React.ReactNode
   className?: string
+  emptyMessage?: React.ReactNode
+  showSelectionSummary?: boolean
 }
 
 export function DataTable<TData, TValue>({
@@ -65,6 +61,8 @@ export function DataTable<TData, TValue>({
   pageSize = 10,
   toolbarActions,
   className,
+  emptyMessage = "No results.",
+  showSelectionSummary = true,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
@@ -99,52 +97,55 @@ export function DataTable<TData, TValue>({
     },
   })
 
+  const hasToolbar = showSearch || showColumnVisibility || Boolean(toolbarActions)
+
   return (
     <div className={cn("flex h-full min-h-0 w-full flex-col", className)}>
-      {/* Search and Controls */}
-      <div className="flex items-center justify-between pb-4">
-        <div className="flex items-center space-x-2">
-          {showSearch && (
-            <Input
-              placeholder={searchPlaceholder}
-              value={globalFilter ?? ""}
-              onChange={(event) => setGlobalFilter(event.target.value)}
-              className="max-w-sm"
-            />
-          )}
+      {hasToolbar && (
+        <div className="flex flex-col gap-3 pb-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            {showSearch && (
+              <Input
+                placeholder={searchPlaceholder}
+                value={globalFilter ?? ""}
+                onChange={(event) => setGlobalFilter(event.target.value)}
+                className="max-w-sm"
+              />
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            {/* {showColumnVisibility && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline">
+                    Columns <ChevronDown className="ml-2 h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {table
+                    .getAllColumns()
+                    .filter((column: any) => column.getCanHide())
+                    .map((column: any) => {
+                      return (
+                        <DropdownMenuCheckboxItem
+                          key={column.id}
+                          className="capitalize"
+                          checked={column.getIsVisible()}
+                          onCheckedChange={(value) =>
+                            column.toggleVisibility(!!value)
+                          }
+                        >
+                          {column.id}
+                        </DropdownMenuCheckboxItem>
+                      )
+                    })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )} */}
+            {toolbarActions}
+          </div>
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          {showColumnVisibility && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline">
-                  Columns <ChevronDown className="ml-2 h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {table
-                  .getAllColumns()
-                  .filter((column: any) => column.getCanHide())
-                  .map((column: any) => {
-                    return (
-                      <DropdownMenuCheckboxItem
-                        key={column.id}
-                        className="capitalize"
-                        checked={column.getIsVisible()}
-                        onCheckedChange={(value) =>
-                          column.toggleVisibility(!!value)
-                        }
-                      >
-                        {column.id}
-                      </DropdownMenuCheckboxItem>
-                    )
-                  })}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-          {toolbarActions}
-        </div>
-      </div>
+      )}
 
       <div className="flex min-h-0 flex-1 flex-col rounded-md border">
         {/* Table */}
@@ -191,7 +192,7 @@ export function DataTable<TData, TValue>({
                     colSpan={columns.length}
                     className="h-24 text-center"
                   >
-                    No results.
+                    {emptyMessage}
                   </TableCell>
                 </TableRow>
               )}
@@ -203,8 +204,9 @@ export function DataTable<TData, TValue>({
         {showPagination && (
           <div className="flex items-center justify-between space-x-2 border-t bg-muted/10 px-4 py-3">
             <div className="flex-1 text-sm text-muted-foreground">
-              {table.getFilteredSelectedRowModel().rows.length} of{" "}
-              {table.getFilteredRowModel().rows.length} row(s) selected.
+              {showSelectionSummary
+                ? <>{table.getFilteredSelectedRowModel().rows.length} of{" "}{table.getFilteredRowModel().rows.length} row(s) selected.</>
+                : <>{table.getFilteredRowModel().rows.length} row(s)</>}
             </div>
             <div className="flex items-center space-x-6">
               <div className="flex items-center space-x-2">

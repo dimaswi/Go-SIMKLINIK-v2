@@ -13,8 +13,8 @@ func GetDoctors(c *gin.Context) {
 	query := database.DB.Preload("User").Preload("Polyclinics").Preload("Schedules").Preload("Schedules.Polyclinic")
 
 	if search := c.Query("q"); search != "" {
-		query = query.Where("full_name ILIKE ? OR sip_number ILIKE ? OR specialization ILIKE ?",
-			"%"+search+"%", "%"+search+"%", "%"+search+"%")
+		query = query.Where("full_name ILIKE ? OR nik_number ILIKE ? OR nip_number ILIKE ? OR sip_number ILIKE ? OR specialization ILIKE ?",
+			"%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%")
 	}
 
 	if polyclinicID := c.Query("polyclinic_id"); polyclinicID != "" {
@@ -45,6 +45,8 @@ func GetDoctor(c *gin.Context) {
 type CreateDoctorRequest struct {
 	UserID         *uint  `json:"user_id"`
 	FullName       string `json:"full_name" binding:"required"`
+	NIKNumber      string `json:"nik_number"`
+	NIPNumber      string `json:"nip_number"`
 	SIPNumber      string `json:"sip_number"`
 	Specialization string `json:"specialization"`
 	Phone          string `json:"phone"`
@@ -68,6 +70,8 @@ func CreateDoctor(c *gin.Context) {
 	doctor := models.Doctor{
 		UserID:         req.UserID,
 		FullName:       req.FullName,
+		NIKNumber:      req.NIKNumber,
+		NIPNumber:      req.NIPNumber,
 		SIPNumber:      req.SIPNumber,
 		Specialization: req.Specialization,
 		Phone:          req.Phone,
@@ -108,6 +112,8 @@ func UpdateDoctor(c *gin.Context) {
 
 	doctor.UserID = req.UserID
 	doctor.FullName = req.FullName
+	doctor.NIKNumber = req.NIKNumber
+	doctor.NIPNumber = req.NIPNumber
 	doctor.SIPNumber = req.SIPNumber
 	doctor.Specialization = req.Specialization
 	doctor.Phone = req.Phone

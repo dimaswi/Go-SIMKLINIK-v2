@@ -9,6 +9,7 @@ import { doctorsApi, polyclinicsApi, type Polyclinic } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, User, Phone, Stethoscope, FileText } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
+import { MasterDataAsideSection, MasterDataAsideStack, MasterDataLegacySections, MasterDataPageShell } from '@/pages/master-data/shared';
 
 export default function DoctorEdit() {
   const navigate = useNavigate();
@@ -19,7 +20,7 @@ export default function DoctorEdit() {
   const [polyclinics, setPolyclinics] = useState<Polyclinic[]>([]);
   const [selectedPolyclinics, setSelectedPolyclinics] = useState<number[]>([]);
   const [formData, setFormData] = useState({
-    full_name: '', sip_number: '', specialization: '', phone: '', is_active: true,
+    full_name: '', nik_number: '', nip_number: '', sip_number: '', specialization: '', phone: '', is_active: true,
   });
 
   useEffect(() => {
@@ -34,7 +35,7 @@ export default function DoctorEdit() {
         polyclinicsApi.getAll(),
       ]);
       const d = docRes.data.data;
-      setFormData({ full_name: d.full_name, sip_number: d.sip_number, specialization: d.specialization, phone: d.phone, is_active: d.is_active });
+      setFormData({ full_name: d.full_name, nik_number: d.nik_number || '', nip_number: d.nip_number || '', sip_number: d.sip_number, specialization: d.specialization, phone: d.phone, is_active: d.is_active });
       setSelectedPolyclinics(d.polyclinics?.map((p: any) => p.id) || []);
       setPolyclinics(polyRes.data.data);
     } catch {
@@ -67,9 +68,24 @@ export default function DoctorEdit() {
   }
 
   return (
-    <div className="p-6">
-      <form onSubmit={handleSubmit} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_280px]">
-        <div className="space-y-6">
+    <form id="doctor-edit-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <MasterDataPageShell
+        title="Edit Dokter"
+        subtitle="Perbarui profil dokter dan keterkaitannya dengan poliklinik yang dilayani."
+        onBack={() => navigate('/doctors')}
+        actions={<Button type="submit" form="doctor-edit-form" disabled={loading} className="rounded-none shadow-none">{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Update Dokter</Button>}
+        aside={
+          <MasterDataAsideStack>
+            <div>
+              <MasterDataAsideSection title="Ringkasan" helper="Preview data dokter yang akan disimpan.">
+                <div className="space-y-1"><p className="truncate font-medium">{formData.full_name || '-'}</p><p className="truncate text-muted-foreground">NIK: {formData.nik_number || '-'}</p><p className="truncate text-muted-foreground">NIP: {formData.nip_number || '-'}</p><p className="truncate text-muted-foreground">{formData.specialization || '-'}</p><p className="text-muted-foreground">Poli: {selectedPolyclinics.length} dipilih</p><p className="text-muted-foreground">Status: {formData.is_active ? 'Aktif' : 'Nonaktif'}</p></div>
+              </MasterDataAsideSection>
+            </div>
+          </MasterDataAsideStack>
+        }
+      >
+        <MasterDataLegacySections>
+          <div className="space-y-6">
           <section className="space-y-4 rounded-lg border border-border/80 p-5">
             <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
               <div className="space-y-2">
@@ -77,11 +93,19 @@ export default function DoctorEdit() {
                 <Input id="full_name" required value={formData.full_name} onChange={e => setFormData({ ...formData, full_name: e.target.value })} className="h-10 text-sm" />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="sip_number" className="text-xs font-medium flex items-center gap-2"><FileText className="h-3.5 w-3.5 text-muted-foreground" />Nomor SIP</Label>
-                <Input id="sip_number" value={formData.sip_number} onChange={e => setFormData({ ...formData, sip_number: e.target.value })} className="h-10 text-sm" />
+                <Label htmlFor="nik_number" className="text-xs font-medium flex items-center gap-2"><FileText className="h-3.5 w-3.5 text-muted-foreground" />NIK</Label>
+                <Input id="nik_number" value={formData.nik_number} onChange={e => setFormData({ ...formData, nik_number: e.target.value })} className="h-10 text-sm" />
               </div>
             </div>
             <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="nip_number" className="text-xs font-medium flex items-center gap-2"><FileText className="h-3.5 w-3.5 text-muted-foreground" />NIP</Label>
+                <Input id="nip_number" value={formData.nip_number} onChange={e => setFormData({ ...formData, nip_number: e.target.value })} className="h-10 text-sm" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="sip_number" className="text-xs font-medium flex items-center gap-2"><FileText className="h-3.5 w-3.5 text-muted-foreground" />Nomor SIP</Label>
+                <Input id="sip_number" value={formData.sip_number} onChange={e => setFormData({ ...formData, sip_number: e.target.value })} className="h-10 text-sm" />
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="specialization" className="text-xs font-medium flex items-center gap-2"><Stethoscope className="h-3.5 w-3.5 text-muted-foreground" />Spesialisasi</Label>
                 <Input id="specialization" value={formData.specialization} onChange={e => setFormData({ ...formData, specialization: e.target.value })} className="h-10 text-sm" />
@@ -114,28 +138,9 @@ export default function DoctorEdit() {
               ))}
             </div>
           </section>
-        </div>
-
-        <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
-          <div className="rounded-lg border border-border/80 p-4 text-sm">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Ringkasan</p>
-            <div className="space-y-1">
-              <p className="truncate font-medium">{formData.full_name || '-'}</p>
-              <p className="truncate text-muted-foreground">{formData.specialization || '-'}</p>
-              <p className="text-muted-foreground">Poli: {selectedPolyclinics.length} dipilih</p>
-              <p className="text-muted-foreground">Status: {formData.is_active ? 'Aktif' : 'Nonaktif'}</p>
-            </div>
           </div>
-          <div className="rounded-lg border border-border/80 p-3">
-            <div className="flex flex-col gap-2">
-              <Button type="submit" disabled={loading} className="h-10">
-                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Update Dokter
-              </Button>
-              <Button type="button" variant="outline" onClick={() => navigate('/doctors')} className="h-10">Batal</Button>
-            </div>
-          </div>
-        </aside>
-      </form>
-    </div>
+        </MasterDataLegacySections>
+      </MasterDataPageShell>
+    </form>
   );
 }

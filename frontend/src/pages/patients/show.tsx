@@ -1,63 +1,71 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
-import { patientsApi, type Patient, type Visit } from '@/lib/api';
-import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/confirm-dialog';
-import { Loader2, ArrowLeft, Edit, Trash2, PlusCircle, Calendar, MapPin, ShieldCheck, User, ClipboardList, CircleCheck, CircleX } from 'lucide-react';
+import { usePermission } from '@/hooks/usePermission';
+import { useToast } from '@/hooks/use-toast';
+import { patientsApi, type Patient, type Visit } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
-
-function calcAge(birth: string): number {
-  const diff = Date.now() - new Date(birth).getTime();
-  return Math.floor(diff / 31557600000);
-}
-
-function fmt(val?: string | null, fallback = '-') {
-  return val || fallback;
-}
-
-function InfoItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border p-4">
-      <p className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="text-sm font-medium">{value}</p>
-    </div>
-  );
-}
+import { formatDate, formatDateTime } from '@/pages/emr/utils';
+import { Edit, Loader2, PlusCircle, RefreshCw, Trash2 } from 'lucide-react';
+import {
+  PatientDetailItem,
+  PatientPageShell,
+  PatientPanelSection,
+  PatientSection,
+  getPatientAddressLabel,
+  getPatientAgeLabel,
+  getPatientEmergencyLabel,
+  getPatientGenderLabel,
+  getPatientInsuranceLabel,
+  getPatientSatusehatChecklist,
+  getPatientSatusehatReadyCount,
+} from './shared';
 
 const STATUS_LABEL: Record<string, string> = {
-  registered: 'Terdaftar', in_progress: 'Dalam Konsultasi', completed: 'Selesai', cancelled: 'Dibatalkan',
+  registered: 'Terdaftar',
+  in_progress: 'Dalam Konsultasi',
+  completed: 'Selesai',
+  cancelled: 'Dibatalkan',
 };
+
 const QUEUE_LABEL: Record<string, string> = {
-  waiting: 'Menunggu', in_consultation: 'Konsultasi', done: 'Selesai', cancelled: 'Dibatalkan',
+  waiting: 'Menunggu',
+  in_consultation: 'Konsultasi',
+  done: 'Selesai',
+  cancelled: 'Dibatalkan',
 };
 
 export default function PatientShow() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { hasAnyPermission } = usePermission();
   const [patient, setPatient] = useState<Patient | null>(null);
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncingSatusehat, setSyncingSatusehat] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
 
+  const loadPatient = useCallback(async () => {
+    const patientId = Number(id);
+    try {
+      const [patientResponse, historyResponse] = await Promise.all([patientsApi.getById(patientId), patientsApi.getHistory(patientId)]);
+      setPatient(patientResponse.data.data);
+      setVisits(historyResponse.data.data || []);
+    } catch {
+      toast({ variant: 'destructive', title: 'Error!', description: 'Gagal memuat data.' });
+    } finally {
+      setLoading(false);
+    }
+  }, [id, toast]);
+
   useEffect(() => {
     setPageTitle('Detail Pasien');
-    const pid = Number(id);
-    Promise.all([
-      patientsApi.getById(pid),
-      patientsApi.getHistory(pid),
-    ]).then(([pRes, hRes]) => {
-      setPatient(pRes.data.data);
-      setVisits(hRes.data.data || []);
-    }).catch(() => {
-      toast({ variant: 'destructive', title: 'Error!', description: 'Gagal memuat data.' });
-    }).finally(() => setLoading(false));
-  }, [id]);
+    void loadPatient();
+  }, [loadPatient]);
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -65,234 +73,262 @@ export default function PatientShow() {
       await patientsApi.delete(Number(id));
       toast({ variant: 'success', title: 'Berhasil!', description: 'Data pasien berhasil dihapus.' });
       navigate('/patients');
-    } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Gagal!', description: e.response?.data?.error || 'Tidak dapat menghapus pasien.' });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Gagal!',
+        description: error.response?.data?.error || 'Tidak dapat menghapus pasien.',
+      });
     } finally {
-      setDeleting(false); setShowDelete(false);
+      setDeleting(false);
+      setShowDelete(false);
+    }
+  };
+
+  const handleSyncSatusehatPatient = async () => {
+    if (!patient?.id) return;
+
+    setSyncingSatusehat(true);
+    try {
+      const response = await patientsApi.syncSatusehat(patient.id);
+      toast({
+        variant: 'success',
+        title: 'Sync berhasil',
+        description: response.data?.message || 'Patient berhasil dikirim ke SATUSEHAT.',
+      });
+      await loadPatient();
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Gagal sync patient',
+        description: error.response?.data?.error || 'Sinkronisasi Patient SATUSEHAT gagal dijalankan.',
+      });
+    } finally {
+      setSyncingSatusehat(false);
     }
   };
 
   if (loading) {
     return (
-      <div className="flex h-[70vh] items-center justify-center">
-        <div className="rounded-xl border bg-card px-8 py-10 text-center shadow-sm">
-          <Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Memuat detail pasien...</p>
-        </div>
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
 
   if (!patient) {
     return (
-      <div className="flex h-[70vh] items-center justify-center">
-        <div className="rounded-xl border bg-card px-8 py-10 text-center shadow-sm">
-          <p className="text-lg font-semibold">Pasien tidak ditemukan</p>
-          <p className="mt-1 text-sm text-muted-foreground">Data pasien ini tidak tersedia atau sudah dihapus.</p>
-          <Button onClick={() => navigate('/patients')} className="mt-5">Kembali ke Pasien</Button>
+      <div className="space-y-4 p-4 lg:p-5">
+        <div className="rounded-xl border border-border/80 bg-background px-5 py-8">
+          <h1 className="text-lg font-semibold">Pasien tidak ditemukan</h1>
+          <p className="mt-2 text-sm text-muted-foreground">Data pasien ini tidak tersedia atau sudah dihapus.</p>
+          <div className="mt-4">
+            <Button variant="outline" onClick={() => navigate('/patients')}>Kembali ke daftar pasien</Button>
+          </div>
         </div>
       </div>
     );
   }
 
-  const age = patient.birth_date ? calcAge(patient.birth_date) : null;
-  const insuranceLabel: Record<string, string> = { umum: 'Umum', bpjs: 'BPJS', asuransi: 'Asuransi Swasta' };
+  const formatValue = (value?: string | null, fallback = '-') => value || fallback;
+  const ageLabel = getPatientAgeLabel(patient.birth_date);
+  const canSyncSatusehat = hasAnyPermission(['settings.update', 'patients.update']);
+  const satusehatChecklist = getPatientSatusehatChecklist(patient);
+  const satusehatReadyCount = getPatientSatusehatReadyCount(patient);
 
   return (
-    <div className="p-4">
+    <>
       <ConfirmDialog
-        open={showDelete} onOpenChange={setShowDelete}
-        title="Hapus Pasien?" description={`Data pasien "${patient.full_name}" akan dihapus permanen.`}
-        onConfirm={handleDelete} confirmText={deleting ? 'Menghapus...' : 'Ya, Hapus'}
+        open={showDelete}
+        onOpenChange={setShowDelete}
+        title="Hapus Pasien?"
+        description={`Data pasien "${patient.full_name}" akan dihapus permanen.`}
+        onConfirm={handleDelete}
+        confirmText={deleting ? 'Menghapus...' : 'Ya, Hapus'}
         variant="destructive"
       />
 
-      <div className="space-y-6">
-        <section className="rounded-xl border bg-card p-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0">
-              <div className="flex items-center gap-3">
-                <Button variant="outline" size="icon" onClick={() => navigate('/patients')} className="h-9 w-9 shrink-0 rounded-md">
-                  <ArrowLeft className="h-4 w-4" />
-                  <span className="sr-only">Kembali ke Pasien</span>
-                </Button>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge className="h-6 rounded-md border-0 bg-sky-500 px-2 text-[11px] font-semibold text-white">{patient.medical_record_number}</Badge>
-                    <Badge className={patient.is_active ? 'h-6 rounded-md border-0 bg-emerald-500 px-2 text-[11px] font-semibold text-white' : 'h-6 rounded-md border-0 bg-rose-500 px-2 text-[11px] font-semibold text-white'}>
-                      {patient.is_active ? 'AKTIF' : 'NONAKTIF'}
-                    </Badge>
-                    <Badge className="h-6 rounded-md border-0 bg-amber-500 px-2 text-[11px] font-semibold text-white">{patient.gender === 'L' ? 'LAKI-LAKI' : 'PEREMPUAN'}</Badge>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" onClick={() => navigate(`/registration/create?patient_id=${patient.id}`)}>
-                <PlusCircle className="h-4 w-4" />
-                Daftarkan Kunjungan
+      <PatientPageShell
+        title={patient.full_name}
+        subtitle="Ringkasan administratif pasien dengan pola tampilan yang disederhanakan seperti halaman rekam medis terbaru."
+        onBack={() => navigate('/patients')}
+        badges={
+          <>
+            <Badge variant="secondary" className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none">
+              {patient.medical_record_number}
+            </Badge>
+            <Badge className={patient.is_active ? 'h-5 rounded-none border-0 bg-emerald-600 px-2 text-[10px] uppercase tracking-wide text-white shadow-none' : 'h-5 rounded-none border-0 bg-rose-600 px-2 text-[10px] uppercase tracking-wide text-white shadow-none'}>
+              {patient.is_active ? 'Pasien Aktif' : 'Nonaktif'}
+            </Badge>
+            <Badge variant="outline" className="h-5 rounded-none px-2 text-[10px] font-medium shadow-none">
+              {getPatientGenderLabel(patient.gender)}
+            </Badge>
+            <Badge className={satusehatReadyCount === satusehatChecklist.length ? 'h-5 rounded-none border-0 bg-emerald-600 px-2 text-[10px] uppercase tracking-wide text-white shadow-none' : 'h-5 rounded-none border-0 bg-amber-500 px-2 text-[10px] uppercase tracking-wide text-white shadow-none'}>
+              {satusehatReadyCount}/{satusehatChecklist.length} SATUSEHAT
+            </Badge>
+          </>
+        }
+        meta={
+          <>
+            <span>Usia {ageLabel}</span>
+            <span>Telepon {formatValue(patient.phone)}</span>
+            <span>Asuransi {getPatientInsuranceLabel(patient.insurance_type)}</span>
+            <span>{visits.length} riwayat kunjungan</span>
+          </>
+        }
+        actions={
+          <>
+            {canSyncSatusehat ? (
+              <Button variant="outline" className="gap-1.5 rounded-none shadow-none" onClick={() => void handleSyncSatusehatPatient()} disabled={syncingSatusehat}>
+                {syncingSatusehat ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {patient.satusehat_patient_id ? 'Sync Ulang SATUSEHAT' : 'Sync ke SATUSEHAT'}
               </Button>
-              <Button size="sm" variant="outline" onClick={() => navigate(`/patients/${id}/edit`)}>
-                <Edit className="h-4 w-4" />
-                Edit Pasien
-              </Button>
-              <Button variant="destructive" size="sm" onClick={() => setShowDelete(true)} disabled={deleting}>
-                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                Hapus Pasien
-              </Button>
-            </div>
-          </div>
-
-          <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
-            <div className="rounded-md border px-3 py-2">
-              <p className="text-[11px] text-muted-foreground">Usia</p>
-              <p className="text-sm font-medium">{age !== null ? `${age} tahun` : '-'}</p>
-            </div>
-            <div className="rounded-md border px-3 py-2">
-              <p className="text-[11px] text-muted-foreground">Telepon</p>
-              <p className="truncate text-sm font-medium">{fmt(patient.phone)}</p>
-            </div>
-            <div className="rounded-md border px-3 py-2">
-              <p className="text-[11px] text-muted-foreground">Asuransi</p>
-              <p className="text-sm font-medium">{insuranceLabel[patient.insurance_type || 'umum'] || fmt(patient.insurance_type)}</p>
-            </div>
-            <div className="rounded-md border px-3 py-2">
-              <p className="text-[11px] text-muted-foreground">Kunjungan</p>
-              <p className="text-sm font-medium">{visits.length} riwayat</p>
-            </div>
-          </div>
-        </section>
-
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <Card className="xl:col-span-2">
-            <CardHeader>
-              <CardTitle className="text-base">Informasi Pasien</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="space-y-3">
-                  <p className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground"><User className="h-4 w-4" />Identitas</p>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <InfoItem label="Nama Lengkap" value={patient.full_name} />
-                    <InfoItem label="NIK" value={fmt(patient.nik)} />
-                    <InfoItem label="Tempat Lahir" value={fmt(patient.birth_place)} />
-                    <InfoItem label="Tanggal Lahir" value={patient.birth_date ? `${new Date(patient.birth_date).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}${age !== null ? ` (${age} thn)` : ''}` : '-'} />
-                    <InfoItem label="Golongan Darah" value={fmt(patient.blood_type)} />
-                    <InfoItem label="Status Nikah" value={fmt(patient.marital_status)} />
-                    <InfoItem label="Agama" value={fmt(patient.religion)} />
-                    <InfoItem label="Pendidikan" value={fmt(patient.education)} />
-                    <InfoItem label="Pekerjaan" value={fmt(patient.occupation)} />
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <p className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground"><MapPin className="h-4 w-4" />Alamat & Kontak</p>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="md:col-span-2"><InfoItem label="Alamat" value={fmt(patient.address)} /></div>
-                    <InfoItem label="RT/RW" value={patient.rt || patient.rw ? `${patient.rt || '-'}/${patient.rw || '-'}` : '-'} />
-                    <InfoItem label="Kelurahan" value={fmt(patient.kelurahan)} />
-                    <InfoItem label="Kecamatan" value={fmt(patient.kecamatan)} />
-                    <InfoItem label="Kota" value={fmt(patient.city)} />
-                    <InfoItem label="Provinsi" value={fmt(patient.province)} />
-                    <InfoItem label="Kode Pos" value={fmt(patient.postal_code)} />
-                    <InfoItem label="Telepon" value={fmt(patient.phone)} />
-                    <InfoItem label="Email" value={fmt(patient.email)} />
-                    <InfoItem label="Kontak Darurat" value={fmt(patient.emergency_contact_name)} />
-                    <InfoItem label="Hubungan" value={fmt(patient.emergency_contact_relation)} />
-                    <InfoItem label="Telepon Darurat" value={fmt(patient.emergency_contact_phone)} />
-                  </div>
-                </div>
-              </div>
-
-              <Separator />
-
+            ) : null}
+            <Button className="gap-1.5 rounded-none shadow-none" onClick={() => navigate(`/registration/create?patient_id=${patient.id}`)}>
+              <PlusCircle className="h-4 w-4" />
+              Daftarkan Kunjungan
+            </Button>
+            <Button variant="outline" className="gap-1.5 rounded-none shadow-none" onClick={() => navigate(`/patients/${id}/edit`)}>
+              <Edit className="h-4 w-4" />
+              Edit Pasien
+            </Button>
+            <Button variant="destructive" className="gap-1.5 rounded-none shadow-none" onClick={() => setShowDelete(true)} disabled={deleting}>
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Hapus Pasien
+            </Button>
+          </>
+        }
+        aside={
+          <div className="divide-y divide-border/70">
+            <PatientPanelSection title="Status Integrasi">
               <div className="space-y-3">
-                <p className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground"><ShieldCheck className="h-4 w-4" />Asuransi & Catatan Medis</p>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <InfoItem label="Tipe Asuransi" value={insuranceLabel[patient.insurance_type || 'umum'] || fmt(patient.insurance_type)} />
-                  {patient.insurance_type !== 'umum' && <InfoItem label="Nomor Asuransi" value={fmt(patient.insurance_number)} />}
-                  <div className="md:col-span-2"><InfoItem label="Alergi" value={fmt(patient.allergies, 'Tidak ada data alergi')} /></div>
-                  <div className="md:col-span-2"><InfoItem label="Catatan" value={fmt(patient.notes, 'Tidak ada catatan tambahan')} /></div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant={patient.satusehat_patient_id ? 'default' : 'secondary'} className="rounded-none">
+                    {patient.satusehat_patient_id ? 'Patient tersinkron' : 'Belum sync SATUSEHAT'}
+                  </Badge>
+                </div>
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <p>Patient ID SATUSEHAT: <span className="font-medium text-foreground break-all">{patient.satusehat_patient_id || '-'}</span></p>
+                  <p>Sync terakhir: <span className="font-medium text-foreground">{formatDateTime(patient.satusehat_synced_at)}</span></p>
+                  <p>NIK: <span className="font-medium text-foreground">{formatValue(patient.nik)}</span></p>
                 </div>
               </div>
+            </PatientPanelSection>
 
-              <Separator />
+            <PatientPanelSection title="Kontak Ringkas" helper="Informasi yang paling sering dipakai saat registrasi ulang.">
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>Alamat: {getPatientAddressLabel(patient)}</p>
+                <p>Kontak darurat: {getPatientEmergencyLabel(patient)}</p>
+                <p>Email: {formatValue(patient.email)}</p>
+              </div>
+            </PatientPanelSection>
+          </div>
+        }
+      >
+        <div className="divide-y divide-border/70">
+          <PatientSection title="Identitas Dan Domisili" helper="Informasi inti pasien ditampilkan tanpa kartu terpisah agar lebih cepat dipindai seperti workspace EMR terbaru.">
+            <div className="grid gap-6 xl:grid-cols-2">
+              <div className="grid gap-x-6 gap-y-4 border border-border/70 bg-muted/[0.03] p-4 md:grid-cols-2">
+                <PatientDetailItem label="Nama Lengkap" value={patient.full_name} />
+                <PatientDetailItem label="NIK" value={formatValue(patient.nik)} />
+                <PatientDetailItem label="Tempat Lahir" value={formatValue(patient.birth_place)} />
+                <PatientDetailItem label="Tanggal Lahir" value={patient.birth_date ? `${formatDate(patient.birth_date)}${ageLabel !== '-' ? ` (${ageLabel})` : ''}` : '-'} />
+                <PatientDetailItem label="Golongan Darah" value={formatValue(patient.blood_type)} />
+                <PatientDetailItem label="Status Pernikahan" value={formatValue(patient.marital_status)} />
+                <PatientDetailItem label="Agama" value={formatValue(patient.religion)} />
+                <PatientDetailItem label="Pendidikan" value={formatValue(patient.education)} />
+                <PatientDetailItem label="Pekerjaan" value={formatValue(patient.occupation)} />
+              </div>
 
-              <div className="space-y-3">
-                <p className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground"><ClipboardList className="h-4 w-4" />Riwayat Kunjungan</p>
-                {visits.length === 0 ? (
-                  <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
-                    Belum ada riwayat kunjungan.
+              <div className="grid gap-x-6 gap-y-4 border border-border/70 bg-muted/[0.03] p-4 md:grid-cols-2">
+                <PatientDetailItem label="Alamat Lengkap" value={formatValue(patient.address)} />
+                <PatientDetailItem label="RT / RW" value={patient.rt || patient.rw ? `${patient.rt || '-'}/${patient.rw || '-'}` : '-'} />
+                <PatientDetailItem label="Kelurahan" value={formatValue(patient.kelurahan)} />
+                <PatientDetailItem label="Kecamatan" value={formatValue(patient.kecamatan)} />
+                <PatientDetailItem label="Kota / Kabupaten" value={formatValue(patient.city)} />
+                <PatientDetailItem label="Provinsi" value={formatValue(patient.province)} />
+                <PatientDetailItem label="Kode Pos" value={formatValue(patient.postal_code)} />
+                <PatientDetailItem label="Telepon" value={formatValue(patient.phone)} />
+                <PatientDetailItem label="Email" value={formatValue(patient.email)} />
+              </div>
+            </div>
+          </PatientSection>
+
+          <PatientSection title="Penjamin Dan Catatan Medis" helper="Penjamin, alergi, dan catatan tambahan ditempatkan dalam satu blok untuk mempercepat verifikasi administratif.">
+            <div className="grid gap-x-6 gap-y-4 border border-border/70 bg-muted/[0.03] p-4 md:grid-cols-2 xl:grid-cols-3">
+              <PatientDetailItem label="Tipe Asuransi" value={getPatientInsuranceLabel(patient.insurance_type)} />
+              {patient.insurance_type !== 'umum' ? <PatientDetailItem label="Nomor Asuransi" value={formatValue(patient.insurance_number)} /> : null}
+              <PatientDetailItem label="Kontak Darurat" value={getPatientEmergencyLabel(patient)} />
+              <PatientDetailItem label="Alergi" value={formatValue(patient.allergies, 'Tidak ada data alergi')} />
+              <PatientDetailItem label="Catatan Tambahan" value={formatValue(patient.notes, 'Tidak ada catatan tambahan')} />
+            </div>
+          </PatientSection>
+
+          <PatientSection title="Kesiapan SATUSEHAT" helper="Checklist detail dipindahkan ke area utama agar aside tetap pendek dan tidak perlu scroll.">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {satusehatChecklist.map((item) => (
+                <div key={item.label} className="flex items-start justify-between gap-3 border border-border/70 bg-muted/[0.03] p-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-foreground/95">{item.label}</p>
+                    <p className="text-[11px] leading-5 text-muted-foreground">{item.hint}</p>
                   </div>
-                ) : (
-                  <div className="space-y-3">
-                    {visits.map(v => (
-                      <div key={v.id} className="rounded-lg border p-4">
-                        <div className="grid gap-3 md:grid-cols-4">
-                          <div>
-                            <p className="text-xs text-muted-foreground">Tanggal</p>
-                            <p className="text-sm font-medium">{new Date(v.visit_date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
-                            <p className="text-xs font-mono text-muted-foreground">{v.visit_number}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-muted-foreground">Poliklinik</p>
-                            <p className="text-sm font-medium">{(v as any).polyclinic?.name || '-'}</p>
-                            <p className="text-xs text-muted-foreground">{(v as any).doctor?.full_name || '-'}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-muted-foreground">Keluhan</p>
-                            <p className="text-sm">{fmt(v.complaint)}</p>
-                          </div>
-                          <div className="flex flex-col gap-1.5">
-                            <Badge variant="outline" className="w-fit text-xs">{STATUS_LABEL[v.status] || v.status}</Badge>
-                            <Badge variant="secondary" className="w-fit text-xs">{QUEUE_LABEL[v.queue_status] || v.queue_status}</Badge>
-                          </div>
-                        </div>
+                  <Badge variant={item.ready ? 'default' : 'outline'} className="rounded-none whitespace-nowrap">
+                    {item.ready ? 'Siap' : 'Lengkapi'}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </PatientSection>
+
+          <PatientSection title="Metadata Pasien" helper="Informasi sistem dipindahkan ke konten utama agar sidebar tetap ringkas.">
+            <div className="grid gap-x-6 gap-y-4 border border-border/70 bg-muted/[0.03] p-4 md:grid-cols-2 xl:grid-cols-3">
+              <PatientDetailItem label="Status" value={patient.is_active ? 'Aktif' : 'Nonaktif'} />
+              <PatientDetailItem label="Dibuat" value={formatDateTime(patient.created_at)} />
+              <PatientDetailItem label="Terakhir Diubah" value={formatDateTime(patient.updated_at)} />
+            </div>
+          </PatientSection>
+
+          <PatientSection title="Riwayat Kunjungan" helper="Daftar kunjungan ditampilkan dalam satu list terstruktur, bukan kartu per item, agar lebih ringkas saat audit riwayat pasien.">
+            {visits.length === 0 ? (
+              <div className="border border-dashed border-border/70 bg-muted/10 px-4 py-8 text-center text-sm text-muted-foreground">
+                Belum ada riwayat kunjungan.
+              </div>
+            ) : (
+              <div className="overflow-hidden border border-border/70 bg-background">
+                <div className="divide-y divide-border/70">
+                  {visits.map((visit) => (
+                    <div key={visit.id} className="grid gap-3 px-4 py-4 lg:grid-cols-[180px_220px_minmax(0,1fr)_170px]">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-foreground/95">{formatDate(visit.visit_date)}</p>
+                        <p className="text-[11px] font-mono text-muted-foreground">{visit.visit_number}</p>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Metadata</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 text-sm">
-              <div className="rounded-lg border p-3">
-                <p className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Status Pasien</p>
-                <p className="flex items-center gap-2 font-medium">
-                  {patient.is_active ? <CircleCheck className="h-4 w-4 text-muted-foreground" /> : <CircleX className="h-4 w-4 text-destructive" />}
-                  {patient.is_active ? 'Pasien Aktif' : 'Pasien Tidak Aktif'}
-                </p>
-              </div>
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-foreground/95">{(visit as any).polyclinic?.name || '-'}</p>
+                        <p className="text-[11px] text-muted-foreground">{(visit as any).doctor?.full_name || '-'}</p>
+                      </div>
 
-              <div className="rounded-lg border p-3">
-                <p className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Dibuat</p>
-                <p className="flex items-center gap-2 font-medium">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  {patient.created_at ? new Date(patient.created_at).toLocaleString('id-ID', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
-                </p>
-              </div>
+                      <div className="space-y-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Keluhan</p>
+                        <p className="text-sm leading-6 text-foreground/95">{formatValue(visit.complaint)}</p>
+                      </div>
 
-              <div className="rounded-lg border p-3">
-                <p className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Terakhir Diubah</p>
-                <p className="flex items-center gap-2 font-medium">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  {patient.updated_at ? new Date(patient.updated_at).toLocaleString('id-ID', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
-                </p>
+                      <div className="flex flex-wrap items-start gap-2 lg:justify-end">
+                        <Badge variant="outline" className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none">
+                          {STATUS_LABEL[visit.status] || visit.status}
+                        </Badge>
+                        <Badge variant="secondary" className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none">
+                          {QUEUE_LABEL[visit.queue_status] || visit.queue_status}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-
-              <Button className="w-full" variant="outline" onClick={() => navigate('/patients')}>
-                Kembali ke Daftar Pasien
-              </Button>
-            </CardContent>
-          </Card>
+            )}
+          </PatientSection>
         </div>
-      </div>
-    </div>
+      </PatientPageShell>
+    </>
   );
 }

@@ -5,6 +5,8 @@ import { Eye, Edit, Trash2, ArrowUpDown } from "lucide-react"
 import { createSelectColumn } from "@/components/ui/data-table"
 import type { Polyclinic } from "@/lib/api"
 
+const currencyFormatter = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 })
+
 interface PolyclinicColumnsProps {
   onView: (id: number) => void
   onEdit: (id: number) => void
@@ -56,6 +58,16 @@ export function createPolyclinicColumns({
         </Button>
       ),
       cell: ({ row }) => <div className="text-muted-foreground">{row.getValue("description") || '-'}</div>,
+    },
+    {
+      accessorKey: "admin_fee",
+      header: ({ column }) => (
+        <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} className="h-8 p-0 hover:bg-transparent">
+          Admin
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        </Button>
+      ),
+      cell: ({ row }) => <div className="text-sm font-medium">{currencyFormatter.format(Number(row.getValue("admin_fee") || 0))}</div>,
     },
     {
       accessorKey: "sort_order",

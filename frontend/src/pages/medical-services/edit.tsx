@@ -5,10 +5,29 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { SearchableSelect } from '@/components/ui/searchable-select';
-import { medicalServicesApi, serviceCategoriesApi, polyclinicsApi, type ServiceCategory, type Polyclinic } from '@/lib/api';
+import { medicalServicesApi, serviceCategoriesApi, polyclinicsApi, specimenTemplatesApi, type ServiceCategory, type Polyclinic, type SpecimenTemplate } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
+import { MedicalServiceParametersEditor, createMedicalServiceParameterDraft, type MedicalServiceParameterDraft } from './components/service-parameters-editor';
+import { MedicalServiceSpecimenEditor, createMedicalServiceSpecimenDraft, type MedicalServiceSpecimenDraft } from './components/service-specimen-editor';
+import { MasterDataAsideSection, MasterDataAsideStack, MasterDataLegacySections, MasterDataPageShell } from '@/pages/master-data/shared';
+
+const SERVICE_DOMAIN_OPTIONS = [
+  { value: 'general', label: 'Umum' },
+  { value: 'dental', label: 'Dental' },
+  { value: 'laboratory', label: 'Laboratorium' },
+  { value: 'radiology', label: 'Radiologi' },
+];
+
+const TARGET_SCOPE_OPTIONS = [
+  { value: 'none', label: 'Tanpa target anatomi' },
+  { value: 'full_mouth', label: 'Seluruh mulut' },
+  { value: 'arch', label: 'Rahang' },
+  { value: 'quadrant', label: 'Kuadran' },
+  { value: 'tooth', label: 'Gigi' },
+  { value: 'surface', label: 'Permukaan gigi' },
+];
 
 export default function MedicalServiceEdit() {
   const navigate = useNavigate();
@@ -18,31 +37,121 @@ export default function MedicalServiceEdit() {
   const [fetching, setFetching] = useState(true);
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
   const [polyclinics, setPolyclinics] = useState<Polyclinic[]>([]);
-  const [formData, setFormData] = useState({ code: '', name: '', category_id: 0, polyclinic_id: '', price: 0, description: '', is_active: true }); // code is display-only
+  const [specimenTemplates, setSpecimenTemplates] = useState<SpecimenTemplate[]>([]);
+  const [formData, setFormData] = useState<{ code: string; name: string; category_id: number; polyclinic_id: string; service_domain: string; target_scope: string; requires_consent: boolean; supports_odontogram_sync: boolean; price: number; description: string; is_active: boolean; parameters: MedicalServiceParameterDraft[]; specimen_options: MedicalServiceSpecimenDraft[] }>({ code: '', name: '', category_id: 0, polyclinic_id: '', service_domain: 'general', target_scope: 'none', requires_consent: false, supports_odontogram_sync: false, price: 0, description: '', is_active: true, parameters: [], specimen_options: [] });
 
   useEffect(() => {
     setPageTitle('Edit Layanan Medis');
-    Promise.all([medicalServicesApi.getById(Number(id)), serviceCategoriesApi.getAll(), polyclinicsApi.getAll()]).then(([sRes, cRes, pRes]) => {
+    Promise.all([medicalServicesApi.getById(Number(id)), serviceCategoriesApi.getAll(), polyclinicsApi.getAll(), specimenTemplatesApi.getAll('is_active=true')]).then(([sRes, cRes, pRes, tRes]) => {
       const d = sRes.data.data;
-      setFormData({ code: d.code, name: d.name, category_id: d.category_id, polyclinic_id: d.polyclinic_id ? String(d.polyclinic_id) : '', price: d.price, description: d.description, is_active: d.is_active });
-      setCategories(cRes.data.data); setPolyclinics(pRes.data.data);
+      setFormData({
+        code: d.code,
+        name: d.name,
+        category_id: d.category_id,
+        polyclinic_id: d.polyclinic_id ? String(d.polyclinic_id) : '',
+        service_domain: d.service_domain || 'general',
+        target_scope: d.target_scope || 'none',
+        requires_consent: Boolean(d.requires_consent),
+        supports_odontogram_sync: Boolean(d.supports_odontogram_sync),
+        price: d.price,
+        description: d.description,
+        is_active: d.is_active,
+        parameters: (d.parameters || []).map((parameter: any, index: number) => createMedicalServiceParameterDraft({
+          id: parameter.id,
+          code: parameter.code || '',
+          name: parameter.name || '',
+          input_type: parameter.input_type || 'text',
+          unit: parameter.unit || '',
+          reference_value_male: parameter.reference_value_male || '',
+          reference_value_female: parameter.reference_value_female || '',
+          sort_order: parameter.sort_order || index + 1,
+          is_required: parameter.is_required !== false,
+        })),
+        specimen_options: (d.specimen_options || []).map((option: any, index: number) => createMedicalServiceSpecimenDraft({
+          id: option.id,
+          specimen_template_id: option.specimen_template_id,
+          sort_order: option.sort_order || index + 1,
+          is_default: option.is_default === true,
+          notes: option.notes || '',
+        })),
+      });
+      setCategories(cRes.data.data); setPolyclinics(pRes.data.data); setSpecimenTemplates(tRes.data.data);
     }).catch(() => toast({ variant: "destructive", title: "Error!" })).finally(() => setFetching(false));
   }, [id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setLoading(true);
     try {
-      await medicalServicesApi.update(Number(id), { ...formData, category_id: Number(formData.category_id), polyclinic_id: formData.polyclinic_id ? Number(formData.polyclinic_id) : null, price: Number(formData.price) });
+      await medicalServicesApi.update(Number(id), {
+        ...formData,
+        category_id: Number(formData.category_id),
+        polyclinic_id: formData.polyclinic_id ? Number(formData.polyclinic_id) : null,
+        price: Number(formData.price),
+        parameters: formData.parameters.map(({ client_id, ...parameter }, index) => ({ ...parameter, sort_order: index + 1 })),
+        specimen_options: formData.specimen_options.map(({ client_id, ...option }, index) => ({ ...option, sort_order: index + 1 })),
+      });
       toast({ variant: "success", title: "Berhasil!" }); setTimeout(() => navigate('/medical-services'), 500);
     } catch (e: any) { toast({ variant: "destructive", title: "Error!", description: e.response?.data?.error || "Gagal." }); } finally { setLoading(false); }
   };
 
+  const selectedCategory = categories.find((category) => category.id === formData.category_id);
+  const isDentalService = formData.service_domain === 'dental';
+  const isLaboratoryService = formData.service_domain === 'laboratory';
+  const canSyncOdontogram = isDentalService && ['tooth', 'surface'].includes(formData.target_scope);
+  const specimenSummaries = formData.specimen_options.map((option, index) => {
+    const template = specimenTemplates.find((item) => item.id === option.specimen_template_id);
+    return {
+      key: option.client_id,
+      title: option.is_default ? `Specimen ${index + 1} · Default` : `Specimen ${index + 1}`,
+      templateName: template?.name || 'Template belum dipilih',
+      typeDisplay: template?.type_display || template?.type_code || '-',
+      collectionMethod: template?.collection_method_display || template?.collection_method_code || '-',
+      notes: option.notes || '',
+    };
+  });
+
   if (fetching) return <div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
   return (
-    <div className="p-6">
-      <form onSubmit={handleSubmit} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_280px]">
-        <div className="space-y-6">
+    <form id="medical-service-edit-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <MasterDataPageShell
+        title="Edit Layanan Medis"
+        subtitle="Perbarui layanan medis dan parameter pemeriksaan tanpa menghilangkan relasi data yang sudah dipakai."
+        onBack={() => navigate('/medical-services')}
+        actions={<Button type="submit" form="medical-service-edit-form" disabled={loading} className="rounded-none shadow-none">{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Update</Button>}
+        aside={
+          <MasterDataAsideStack>
+            <div>
+              <MasterDataAsideSection title="Ringkasan" helper="Preview layanan medis yang akan diperbarui.">
+                <div className="space-y-1"><p className="truncate font-medium">{formData.name || '-'}</p><p className="text-muted-foreground">Tarif: Rp {formData.price.toLocaleString('id-ID')}</p><p className="text-muted-foreground">Domain: {SERVICE_DOMAIN_OPTIONS.find((option) => option.value === formData.service_domain)?.label || '-'}</p><p className="text-muted-foreground">Target: {TARGET_SCOPE_OPTIONS.find((option) => option.value === formData.target_scope)?.label || '-'}</p><p className="text-muted-foreground">{formData.parameters.length} parameter template</p>{isLaboratoryService ? <p className="text-muted-foreground">{formData.specimen_options.length} specimen option</p> : null}</div>
+              </MasterDataAsideSection>
+            </div>
+            {isLaboratoryService ? (
+              <div>
+                <MasterDataAsideSection title="Mapping Specimen" helper="Ringkasan template specimen yang aktif untuk layanan laboratorium ini.">
+                  {specimenSummaries.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Belum ada specimen option.</p>
+                  ) : (
+                    <div className="space-y-4">
+                      {specimenSummaries.map((item) => (
+                        <div key={item.key} className="space-y-1.5 border-b border-border/60 pb-4 last:border-b-0 last:pb-0">
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{item.title}</p>
+                          <p className="text-sm font-medium">{item.templateName}</p>
+                          <p className="text-xs text-muted-foreground">SNOMED Type: {item.typeDisplay}</p>
+                          <p className="text-xs text-muted-foreground">Collection Method: {item.collectionMethod}</p>
+                          {item.notes ? <p className="text-xs text-muted-foreground">Catatan: {item.notes}</p> : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </MasterDataAsideSection>
+              </div>
+            ) : null}
+          </MasterDataAsideStack>
+        }
+      >
+        <MasterDataLegacySections>
+          <div className="space-y-6">
           <section className="space-y-4 rounded-lg border border-border/80 p-5">
             <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
               <div className="space-y-2"><Label className="text-xs font-medium">Kode</Label><div className="h-10 px-3 flex items-center rounded-md border bg-muted text-sm font-mono text-muted-foreground">{formData.code || '-'}</div></div>
@@ -70,18 +179,70 @@ export default function MedicalServiceEdit() {
               </div>
               <div className="space-y-2"><Label htmlFor="price" className="text-xs font-medium">Tarif (Rp)</Label><Input id="price" type="number" min="0" value={formData.price} onChange={e => setFormData({ ...formData, price: Number(e.target.value) })} className="h-10 text-sm" /></div>
             </div>
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+              <div className="space-y-2"><Label className="text-xs font-medium">Domain Layanan</Label>
+                <SearchableSelect
+                  options={SERVICE_DOMAIN_OPTIONS}
+                  value={formData.service_domain}
+                  onValueChange={value => setFormData((current) => ({
+                    ...current,
+                    service_domain: value,
+                    target_scope: value === 'dental' ? current.target_scope : 'none',
+                    supports_odontogram_sync: value === 'dental' ? current.supports_odontogram_sync : false,
+                    specimen_options: value === 'laboratory' ? current.specimen_options : [],
+                  }))}
+                  placeholder="Pilih domain"
+                  searchPlaceholder="Cari domain..."
+                />
+              </div>
+              <div className="space-y-2"><Label className="text-xs font-medium">Target Anatomi</Label>
+                <SearchableSelect
+                  options={TARGET_SCOPE_OPTIONS}
+                  value={formData.target_scope}
+                  onValueChange={value => setFormData((current) => ({
+                    ...current,
+                    target_scope: value,
+                    supports_odontogram_sync: ['tooth', 'surface'].includes(value) ? current.supports_odontogram_sync : false,
+                  }))}
+                  placeholder="Pilih target"
+                  searchPlaceholder="Cari target..."
+                  disabled={!isDentalService}
+                />
+                {!isDentalService && <p className="text-xs text-muted-foreground">Target anatomi hanya aktif untuk layanan dental.</p>}
+              </div>
+            </div>
             <div className="space-y-2"><Label htmlFor="description" className="text-xs font-medium">Deskripsi</Label><Input id="description" value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} className="h-10 text-sm" /></div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="flex items-center justify-between rounded-md border p-4">
+                <div className="space-y-0.5"><Label htmlFor="requires_consent" className="text-xs font-medium cursor-pointer">Butuh Informed Consent</Label><p className="text-xs text-muted-foreground">Aktifkan bila tindakan memerlukan persetujuan tindakan medis.</p></div>
+                <Switch id="requires_consent" checked={formData.requires_consent} onCheckedChange={checked => setFormData({ ...formData, requires_consent: checked })} />
+              </div>
+              <div className="flex items-center justify-between rounded-md border p-4">
+                <div className="space-y-0.5"><Label htmlFor="supports_odontogram_sync" className="text-xs font-medium cursor-pointer">Sinkron Odontogram</Label><p className="text-xs text-muted-foreground">Hanya aktif untuk layanan dental dengan target gigi atau permukaan.</p></div>
+                <Switch id="supports_odontogram_sync" checked={canSyncOdontogram ? formData.supports_odontogram_sync : false} disabled={!canSyncOdontogram} onCheckedChange={checked => setFormData({ ...formData, supports_odontogram_sync: checked })} />
+              </div>
+            </div>
             <div className="flex items-center justify-between rounded-md border p-4">
               <div className="space-y-0.5"><Label htmlFor="is_active" className="text-xs font-medium cursor-pointer">Status Aktif</Label><p className="text-xs text-muted-foreground">{formData.is_active ? 'Aktif' : 'Tidak aktif'}</p></div>
               <Switch id="is_active" checked={formData.is_active} onCheckedChange={checked => setFormData({ ...formData, is_active: checked })} />
             </div>
           </section>
-        </div>
-        <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
-          <div className="rounded-lg border border-border/80 p-4 text-sm"><p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Ringkasan</p><div className="space-y-1"><p className="truncate font-medium">{formData.name || '-'}</p><p className="text-muted-foreground">Tarif: Rp {formData.price.toLocaleString('id-ID')}</p></div></div>
-          <div className="rounded-lg border border-border/80 p-3"><div className="flex flex-col gap-2"><Button type="submit" disabled={loading} className="h-10">{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Update</Button><Button type="button" variant="outline" onClick={() => navigate('/medical-services')} className="h-10">Batal</Button></div></div>
-        </aside>
-      </form>
-    </div>
+
+          <MedicalServiceParametersEditor
+            categoryName={selectedCategory?.name}
+            parameters={formData.parameters}
+            onChange={(parameters) => setFormData({ ...formData, parameters })}
+          />
+
+          <MedicalServiceSpecimenEditor
+            visible={isLaboratoryService}
+            templates={specimenTemplates}
+            specimenOptions={formData.specimen_options}
+            onChange={(specimen_options) => setFormData({ ...formData, specimen_options })}
+          />
+          </div>
+        </MasterDataLegacySections>
+      </MasterDataPageShell>
+    </form>
   );
 }

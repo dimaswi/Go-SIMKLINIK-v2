@@ -63,34 +63,36 @@ export default function PatientsIndex() {
         searchPlaceholder="Cari nama, NIK, atau No. RM..."
         pageSize={20}
         toolbarActions={
-          <>
-            <SearchableSelect
-              options={[
-                { value: 'L', label: 'Laki-laki' },
-                { value: 'P', label: 'Perempuan' },
-              ]}
-              value={genderFilter}
-              onValueChange={setGenderFilter}
-              placeholder="Semua JK"
-              noneLabel="Semua JK"
-              className="w-36"
-            />
-            <SearchableSelect
-              options={[
-                { value: 'umum', label: 'Umum' },
-                { value: 'bpjs', label: 'BPJS' },
-                { value: 'asuransi', label: 'Asuransi' },
-              ]}
-              value={insuranceFilter}
-              onValueChange={setInsuranceFilter}
-              placeholder="Semua Asuransi"
-              noneLabel="Semua Asuransi"
-              className="w-44"
-            />
-            <Button onClick={() => navigate('/patients/create')}>
+          <div className="flex flex-wrap items-center gap-2 md:flex-nowrap">
+            <div className="w-36">
+              <SearchableSelect
+                options={[
+                  { value: 'L', label: 'Laki-laki' },
+                  { value: 'P', label: 'Perempuan' },
+                ]}
+                value={genderFilter}
+                onValueChange={setGenderFilter}
+                placeholder="Semua JK"
+                noneLabel="Semua JK"
+              />
+            </div>
+            <div className="w-44">
+              <SearchableSelect
+                options={[
+                  { value: 'umum', label: 'Umum' },
+                  { value: 'bpjs', label: 'BPJS' },
+                  { value: 'asuransi', label: 'Asuransi' },
+                ]}
+                value={insuranceFilter}
+                onValueChange={setInsuranceFilter}
+                placeholder="Semua Asuransi"
+                noneLabel="Semua Asuransi"
+              />
+            </div>
+            <Button className="h-10 whitespace-nowrap" onClick={() => navigate('/patients/create')}>
               <Plus className="h-4 w-4" />Tambah Pasien
             </Button>
-          </>
+          </div>
         }
       />
       <div className="flex items-center gap-2 text-sm text-muted-foreground px-1">

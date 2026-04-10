@@ -4,20 +4,61 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"starter/backend/database"
 	"starter/backend/models"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
-func generateMRN() string {
-	now := time.Now()
-	var count int64
-	database.DB.Model(&models.Patient{}).Unscoped().
-		Where("DATE(created_at) = ?", now.Format("2006-01-02")).Count(&count)
-	return fmt.Sprintf("RM-%s-%04d", now.Format("20060102"), count+1)
+func normalizeRegionLookupText(value string) string {
+	trimmed := strings.TrimSpace(strings.ToLower(value))
+	trimmed = strings.TrimPrefix(trimmed, "kabupaten ")
+	trimmed = strings.TrimPrefix(trimmed, "kab. ")
+	trimmed = strings.TrimPrefix(trimmed, "kota ")
+	trimmed = strings.NewReplacer(".", "", `"`, "", `'`, "").Replace(trimmed)
+	return strings.Join(strings.Fields(trimmed), " ")
+}
+
+func normalizeBirthPlace(tx *gorm.DB, birthPlace string) (string, error) {
+	trimmedBirthPlace := strings.TrimSpace(birthPlace)
+	if trimmedBirthPlace == "" {
+		return "", nil
+	}
+
+	if !tx.Migrator().HasTable(&models.Regency{}) {
+		return trimmedBirthPlace, nil
+	}
+
+	var regencies []models.Regency
+	if err := tx.Select("id", "name").Find(&regencies).Error; err != nil {
+		return "", err
+	}
+
+	normalizedBirthPlace := normalizeRegionLookupText(trimmedBirthPlace)
+	for _, regency := range regencies {
+		if normalizeRegionLookupText(regency.Name) == normalizedBirthPlace {
+			return regency.Name, nil
+		}
+	}
+
+	return trimmedBirthPlace, nil
+}
+
+func reservePatientIdentity(tx *gorm.DB) (uint, string, error) {
+	var nextID int64
+	if err := tx.Raw(`SELECT nextval(pg_get_serial_sequence('patients', 'id'))`).Scan(&nextID).Error; err != nil {
+		return 0, "", err
+	}
+
+	if nextID < 1 {
+		return 0, "", fmt.Errorf("invalid next patient id: %d", nextID)
+	}
+
+	return uint(nextID), fmt.Sprintf("%06d", nextID), nil
 }
 
 func GetPatients(c *gin.Context) {
@@ -118,45 +159,62 @@ func CreatePatient(c *gin.Context) {
 		}
 	}
 
-	patient := models.Patient{
-		MedicalRecordNumber:      generateMRN(),
-		NIK:                      req.NIK,
-		FullName:                 req.FullName,
-		BirthPlace:               req.BirthPlace,
-		Gender:                   req.Gender,
-		BloodType:                req.BloodType,
-		MaritalStatus:            req.MaritalStatus,
-		Religion:                 req.Religion,
-		Education:                req.Education,
-		Occupation:               req.Occupation,
-		Address:                  req.Address,
-		RT:                       req.RT,
-		RW:                       req.RW,
-		Kelurahan:                req.Kelurahan,
-		Kecamatan:                req.Kecamatan,
-		City:                     req.City,
-		Province:                 req.Province,
-		PostalCode:               req.PostalCode,
-		Phone:                    req.Phone,
-		Email:                    req.Email,
-		EmergencyContactName:     req.EmergencyContactName,
-		EmergencyContactPhone:    req.EmergencyContactPhone,
-		EmergencyContactRelation: req.EmergencyContactRelation,
-		InsuranceType:            req.InsuranceType,
-		InsuranceNumber:          req.InsuranceNumber,
-		Allergies:                req.Allergies,
-		Notes:                    req.Notes,
-		IsActive:                 true,
-	}
+	var patient models.Patient
 
-	if req.BirthDate != nil && *req.BirthDate != "" {
-		t, err := time.Parse("2006-01-02", *req.BirthDate)
-		if err == nil {
-			patient.BirthDate = &t
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		normalizedBirthPlace, err := normalizeBirthPlace(tx, req.BirthPlace)
+		if err != nil {
+			return err
 		}
-	}
 
-	if err := database.DB.Create(&patient).Error; err != nil {
+		patientID, medicalRecordNumber, err := reservePatientIdentity(tx)
+		if err != nil {
+			return err
+		}
+
+		patient = models.Patient{
+			ID:                       patientID,
+			MedicalRecordNumber:      medicalRecordNumber,
+			NIK:                      req.NIK,
+			FullName:                 req.FullName,
+			BirthPlace:               normalizedBirthPlace,
+			Gender:                   req.Gender,
+			BloodType:                req.BloodType,
+			MaritalStatus:            req.MaritalStatus,
+			Religion:                 req.Religion,
+			Education:                req.Education,
+			Occupation:               req.Occupation,
+			Address:                  req.Address,
+			RT:                       req.RT,
+			RW:                       req.RW,
+			Kelurahan:                req.Kelurahan,
+			Kecamatan:                req.Kecamatan,
+			City:                     req.City,
+			Province:                 req.Province,
+			PostalCode:               req.PostalCode,
+			Phone:                    req.Phone,
+			Email:                    req.Email,
+			EmergencyContactName:     req.EmergencyContactName,
+			EmergencyContactPhone:    req.EmergencyContactPhone,
+			EmergencyContactRelation: req.EmergencyContactRelation,
+			InsuranceType:            req.InsuranceType,
+			InsuranceNumber:          req.InsuranceNumber,
+			Allergies:                req.Allergies,
+			Notes:                    req.Notes,
+			IsActive:                 true,
+		}
+
+		if req.BirthDate != nil && *req.BirthDate != "" {
+			t, err := time.ParseInLocation("2006-01-02", *req.BirthDate, time.Local)
+			if err == nil {
+				patient.BirthDate = &t
+			}
+		}
+
+		return tx.Create(&patient).Error
+	})
+
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -193,10 +251,16 @@ func UpdatePatient(c *gin.Context) {
 		}
 	}
 
+	normalizedBirthPlace, err := normalizeBirthPlace(database.DB, req.BirthPlace)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	updates := map[string]interface{}{
 		"nik":                        req.NIK,
 		"full_name":                  req.FullName,
-		"birth_place":                req.BirthPlace,
+		"birth_place":                normalizedBirthPlace,
 		"gender":                     req.Gender,
 		"blood_type":                 req.BloodType,
 		"marital_status":             req.MaritalStatus,
@@ -223,7 +287,7 @@ func UpdatePatient(c *gin.Context) {
 	}
 
 	if req.BirthDate != nil && *req.BirthDate != "" {
-		t, err := time.Parse("2006-01-02", *req.BirthDate)
+		t, err := time.ParseInLocation("2006-01-02", *req.BirthDate, time.Local)
 		if err == nil {
 			updates["birth_date"] = t
 		}

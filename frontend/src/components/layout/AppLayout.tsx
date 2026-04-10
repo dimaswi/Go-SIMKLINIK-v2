@@ -2,6 +2,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppHeader } from "@/components/app-header";
 import { useState } from "react";
+import { useLocation } from "react-router-dom";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   // Get initial state from localStorage, default to true
@@ -11,6 +12,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   const [open, setOpen] = useState(getInitialState);
+  const location = useLocation();
+  const isEmrFormPage = /^\/emr\/\d+\/(form|sheets)\//.test(location.pathname);
 
   const handleOpenChange = (newOpen: boolean) => {
     setOpen(newOpen);
@@ -20,9 +23,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider open={open} onOpenChange={handleOpenChange}>
       <AppSidebar />
-      <SidebarInset>
+      <SidebarInset className={isEmrFormPage ? 'overflow-hidden' : undefined}>
         <AppHeader />
-        {children}
+        {isEmrFormPage ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {children}
+          </div>
+        ) : children}
       </SidebarInset>
     </SidebarProvider>
   );

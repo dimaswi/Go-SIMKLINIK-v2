@@ -74,9 +74,9 @@ func UploadLogo(c *gin.Context) {
 		return
 	}
 
-	// Get upload type (logo or favicon)
+	// Get upload type (logo, favicon, or print logo)
 	uploadType := c.PostForm("type")
-	if uploadType != "logo" && uploadType != "favicon" {
+	if uploadType != "logo" && uploadType != "favicon" && uploadType != "print_logo" {
 		uploadType = "logo"
 	}
 

@@ -1,0 +1,5 @@
+import SupportingOrdersPage from '../supporting-orders/page';
+
+export default function RadiologyIndex() {
+  return <SupportingOrdersPage unitType="radiology" mode="summary" />;
+}

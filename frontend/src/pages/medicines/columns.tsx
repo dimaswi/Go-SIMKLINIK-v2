@@ -30,6 +30,7 @@ export function createMedicineColumns({ onView, onEdit, onDelete, hasViewPermiss
           <div className="flex flex-col">
             <span className="font-medium">{med.name}</span>
             <span className="text-sm text-muted-foreground">{med.code} {med.generic_name ? `· ${med.generic_name}` : ''}</span>
+            <span className="text-xs text-muted-foreground">KFA: {med.kfa_code || '-'}</span>
           </div>
         )
       },

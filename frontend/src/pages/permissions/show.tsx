@@ -3,34 +3,16 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { setPageTitle } from '@/lib/page-title';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
 import { permissionsApi } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import {
-  ArrowLeft,
   Loader2,
   Edit,
   Trash2,
-  KeyRound,
-  Calendar,
-  Blocks,
-  ListChecks,
-  ShieldCheck,
 } from 'lucide-react';
 import { usePermission } from '@/hooks/usePermission';
-
-function formatDateTime(dateValue?: string) {
-  if (!dateValue) return '-';
-  return new Date(dateValue).toLocaleString('id-ID', {
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
+import { MasterDataAsideSection, MasterDataAsideStack, MasterDataDetailItem, MasterDataPageShell, MasterDataSection, formatMasterDataDateTime } from '@/pages/master-data/shared';
 
 export default function PermissionShow() {
   const navigate = useNavigate();
@@ -112,159 +94,35 @@ export default function PermissionShow() {
     );
   }
 
-  const permissionModule = permission.name?.split('.')[0] || 'general';
-  const permissionAction = permission.name?.split('.')[1] || 'action';
+  const parsedActions = (() => {
+    try {
+      const actions = typeof permission.actions === 'string' ? JSON.parse(permission.actions || '[]') : permission.actions;
+      return Array.isArray(actions) ? actions : [];
+    } catch {
+      return [];
+    }
+  })();
+  const permissionModule = permission.module || permission.name?.split('.')[0] || 'general';
+  const permissionAction = parsedActions[0] || permission.name?.split('.')[1] || 'action';
+  const permissionCategory = permission.category || '-';
 
   const moduleBadgeClass = permissionModule === 'users'
-    ? 'h-6 rounded-md border-0 bg-sky-500 px-2 text-[11px] font-semibold text-white'
+    ? 'h-5 rounded-none border-0 bg-sky-500 px-2 text-[10px] font-semibold uppercase tracking-wide text-white shadow-none'
     : permissionModule === 'roles'
-      ? 'h-6 rounded-md border-0 bg-violet-500 px-2 text-[11px] font-semibold text-white'
+      ? 'h-5 rounded-none border-0 bg-violet-500 px-2 text-[10px] font-semibold uppercase tracking-wide text-white shadow-none'
       : permissionModule === 'permissions'
-        ? 'h-6 rounded-md border-0 bg-emerald-500 px-2 text-[11px] font-semibold text-white'
-        : 'h-6 rounded-md border-0 bg-slate-500 px-2 text-[11px] font-semibold text-white';
+        ? 'h-5 rounded-none border-0 bg-emerald-500 px-2 text-[10px] font-semibold uppercase tracking-wide text-white shadow-none'
+        : 'h-5 rounded-none border-0 bg-slate-500 px-2 text-[10px] font-semibold uppercase tracking-wide text-white shadow-none';
 
   const normalizedAction = permissionAction.toLowerCase();
   const actionBadgeClass = normalizedAction === 'delete' || normalizedAction === 'remove'
-    ? 'h-6 rounded-md border-0 bg-rose-500 px-2 text-[11px] font-semibold text-white'
+    ? 'h-5 rounded-none border-0 bg-rose-500 px-2 text-[10px] font-semibold uppercase tracking-wide text-white shadow-none'
     : normalizedAction === 'create' || normalizedAction === 'update' || normalizedAction === 'edit' || normalizedAction === 'assign'
-      ? 'h-6 rounded-md border-0 bg-amber-500 px-2 text-[11px] font-semibold text-white'
-      : 'h-6 rounded-md border-0 bg-emerald-500 px-2 text-[11px] font-semibold text-white';
+      ? 'h-5 rounded-none border-0 bg-amber-500 px-2 text-[10px] font-semibold uppercase tracking-wide text-white shadow-none'
+      : 'h-5 rounded-none border-0 bg-emerald-500 px-2 text-[10px] font-semibold uppercase tracking-wide text-white shadow-none';
 
   return (
-    <div className="p-4">
-      <div className="space-y-6">
-        <section className="rounded-xl border bg-card p-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0">
-              <div className="flex items-center gap-3">
-                <Button variant="outline" size="icon" onClick={() => navigate('/permissions')} className="h-9 w-9 shrink-0 rounded-md">
-                  <ArrowLeft className="h-4 w-4" />
-                  <span className="sr-only">Kembali ke Permissions</span>
-                </Button>
-
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge className="h-6 rounded-md border-0 bg-sky-500 px-2 text-[11px] font-semibold text-white">ID #{permission.id}</Badge>
-                    <Badge className={moduleBadgeClass}>{permissionModule}</Badge>
-                    <Badge className={actionBadgeClass}>{permissionAction}</Badge>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {canPerform('role_management', 'update') && (
-                <Button size="sm" onClick={() => navigate(`/permissions/${id}/edit`)}>
-                  <Edit className="h-4 w-4" />
-                  Edit Permission
-                </Button>
-              )}
-              {canPerform('role_management', 'delete') && (
-                <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting}>
-                  {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                  Hapus Permission
-                </Button>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
-            <div className="rounded-md border px-3 py-2">
-              <p className="text-[11px] text-muted-foreground">Nama Permission</p>
-              <p className="truncate text-sm font-medium">{permission.name}</p>
-            </div>
-            <div className="rounded-md border px-3 py-2">
-              <p className="text-[11px] text-muted-foreground">Kategori</p>
-              <p className="text-sm font-medium">{permission.name?.split('.')[0] || '-'}</p>
-            </div>
-            <div className="rounded-md border px-3 py-2">
-              <p className="text-[11px] text-muted-foreground">Aksi</p>
-              <p className="text-sm font-medium">{permission.name?.split('.')[1] || '-'}</p>
-            </div>
-            <div className="rounded-md border px-3 py-2">
-              <p className="text-[11px] text-muted-foreground">Scope</p>
-              <p className="text-sm font-medium">Role & Access Control</p>
-            </div>
-          </div>
-        </section>
-
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <Card className="xl:col-span-2">
-            <CardHeader>
-              <CardTitle className="text-base">Detail Permission</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="rounded-lg border p-4">
-                  <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Identifier</p>
-                  <p className="flex items-center gap-2 text-sm font-medium">
-                    <KeyRound className="h-4 w-4 text-muted-foreground" />
-                    {permission.name}
-                  </p>
-                </div>
-                <div className="rounded-lg border p-4">
-                  <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Description</p>
-                  <p className="text-sm text-muted-foreground">
-                    {permission.description || 'Permission ini belum memiliki deskripsi teknis.'}
-                  </p>
-                </div>
-              </div>
-
-              <Separator />
-
-              <div className="rounded-lg border bg-muted/30 p-4">
-                <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Interpretasi Struktur</p>
-                <div className="space-y-1 text-sm">
-                  <p className="flex items-center gap-2">
-                    <Blocks className="h-4 w-4 text-muted-foreground" />
-                    Modul: <span className="font-medium">{permission.name?.split('.')[0] || '-'}</span>
-                  </p>
-                  <p className="flex items-center gap-2">
-                    <ListChecks className="h-4 w-4 text-muted-foreground" />
-                    Operasi: <span className="font-medium">{permission.name?.split('.')[1] || '-'}</span>
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Metadata</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 text-sm">
-              <div className="rounded-lg border p-3">
-                <p className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Tipe</p>
-                <p className="flex items-center gap-2 font-medium">
-                  <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-                  System Permission
-                </p>
-              </div>
-
-              <div className="rounded-lg border p-3">
-                <p className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Dibuat</p>
-                <p className="flex items-center gap-2 font-medium">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  {formatDateTime(permission.created_at)}
-                </p>
-              </div>
-
-              <div className="rounded-lg border p-3">
-                <p className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Terakhir Diubah</p>
-                <p className="flex items-center gap-2 font-medium">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  {formatDateTime(permission.updated_at)}
-                </p>
-              </div>
-
-              <Button className="w-full" variant="outline" onClick={() => navigate('/permissions')}>
-                Kembali ke Daftar Permission
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
+    <>
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
@@ -275,6 +133,66 @@ export default function PermissionShow() {
         cancelText="Batal"
         variant="destructive"
       />
-    </div>
+
+      <MasterDataPageShell
+        title={permission.name}
+        subtitle={permission.description || 'System permission'}
+        onBack={() => navigate('/permissions')}
+        badges={
+          <>
+            <Badge variant="secondary" className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none">ID #{permission.id}</Badge>
+            <Badge className={moduleBadgeClass}>{permissionModule}</Badge>
+            <Badge className={actionBadgeClass}>{permissionAction}</Badge>
+          </>
+        }
+        meta={
+          <>
+            <span>Category {permissionCategory}</span>
+            <span>Role & Access Control</span>
+          </>
+        }
+        actions={
+          <>
+            {canPerform('role_management', 'update') && <Button className="rounded-none shadow-none" onClick={() => navigate(`/permissions/${id}/edit`)}><Edit className="h-4 w-4" />Edit Permission</Button>}
+            {canPerform('role_management', 'delete') && <Button variant="destructive" className="rounded-none shadow-none" onClick={handleDelete} disabled={deleting}>{deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}Hapus Permission</Button>}
+          </>
+        }
+        aside={
+          <MasterDataAsideStack>
+            <div>
+              <MasterDataAsideSection title="Ringkasan" helper="Interpretasi cepat struktur permission yang sedang dilihat.">
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <p>Module: <span className="font-medium text-foreground">{permissionModule}</span></p>
+                  <p>Category: <span className="font-medium text-foreground">{permissionCategory}</span></p>
+                  <p>Action: <span className="font-medium text-foreground">{permissionAction}</span></p>
+                </div>
+              </MasterDataAsideSection>
+            </div>
+            <div>
+              <MasterDataAsideSection title="Metadata" helper="Riwayat pencatatan permission.">
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <p>Tipe: <span className="font-medium text-foreground">System Permission</span></p>
+                  <p>Dibuat: <span className="font-medium text-foreground">{formatMasterDataDateTime(permission.created_at)}</span></p>
+                  <p>Terakhir diubah: <span className="font-medium text-foreground">{formatMasterDataDateTime(permission.updated_at)}</span></p>
+                </div>
+              </MasterDataAsideSection>
+            </div>
+          </MasterDataAsideStack>
+        }
+      >
+        <div className="divide-y divide-border/70">
+          <MasterDataSection title="Detail Permission" helper="Identifier dan atribut utama permission untuk role management.">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <MasterDataDetailItem label="Identifier" value={permission.name} />
+              <MasterDataDetailItem label="Module" value={permissionModule} />
+              <MasterDataDetailItem label="Category" value={permissionCategory} />
+              <MasterDataDetailItem label="Action" value={permissionAction} />
+              <MasterDataDetailItem label="Semua Actions" value={parsedActions.length > 0 ? parsedActions.join(', ') : permissionAction} />
+              <MasterDataDetailItem label="Description" value={permission.description || 'Permission ini belum memiliki deskripsi teknis.'} />
+            </div>
+          </MasterDataSection>
+        </div>
+      </MasterDataPageShell>
+    </>
   );
 }

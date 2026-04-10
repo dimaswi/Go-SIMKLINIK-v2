@@ -10,6 +10,7 @@ import (
 	"starter/backend/models"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func generateVisitNumber() string {
@@ -163,7 +164,7 @@ func CreateVisit(c *gin.Context) {
 		return
 	}
 
-	visitDate, err := time.Parse("2006-01-02", req.VisitDate)
+	visitDate, err := time.ParseInLocation("2006-01-02", req.VisitDate, time.Local)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Format tanggal tidak valid (YYYY-MM-DD)"})
 		return
@@ -213,15 +214,30 @@ func CreateVisit(c *gin.Context) {
 		RegisteredBy:    registeredByUint,
 	}
 
-	if err := database.DB.Create(&visit).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	var createdInvoice models.Invoice
+	if err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&visit).Error; err != nil {
+			return err
+		}
+
+		invoice, invoiceErr := upsertVisitInvoice(tx, visit.ID, registeredByUint, true)
+		if invoiceErr != nil {
+			return invoiceErr
+		}
+		createdInvoice = invoice
+		return nil
+	}); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Reload with relations
 	database.DB.Preload("Patient").Preload("Polyclinic").Preload("Doctor").First(&visit, visit.ID)
 
-	c.JSON(http.StatusCreated, gin.H{"data": visit, "message": "Kunjungan berhasil didaftarkan"})
+	c.JSON(http.StatusCreated, gin.H{
+		"data":    visit,
+		"invoice": buildInvoiceResponse(createdInvoice),
+		"message": "Kunjungan berhasil didaftarkan dan invoice administrasi berhasil dibuat",
+	})
 }
 
 func UpdateVisit(c *gin.Context) {
@@ -287,8 +303,172 @@ func DeleteVisit(c *gin.Context) {
 		return
 	}
 
-	database.DB.Delete(&visit)
+	if err := database.DB.Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+
+		if err := tx.Model(&models.RegistrationQueue{}).
+			Where("visit_id = ?", visit.ID).
+			Updates(map[string]interface{}{
+				"status":       "cancelled",
+				"cancelled_at": &now,
+				"completed_at": nil,
+				"visit_id":     nil,
+			}).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Delete(&visit).Error; err != nil {
+			return err
+		}
+
+		return nil
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Kunjungan berhasil dihapus"})
+}
+
+func CancelVisitWorkspace(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	var visit models.Visit
+	if err := database.DB.First(&visit, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Visit not found"})
+		return
+	}
+
+	if visit.Status == "completed" || visit.Status == "cancelled" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Workspace rekam medis yang sudah final atau batal tidak dapat dibatalkan lagi"})
+		return
+	}
+
+	var invoiceCount int64
+	if err := database.DB.Model(&models.Invoice{}).Where("visit_id = ?", visit.ID).Count(&invoiceCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if invoiceCount > 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "Workspace tidak dapat dibatalkan karena tagihan untuk kunjungan ini sudah dibuat"})
+		return
+	}
+
+	var records []models.MedicalRecord
+	if err := database.DB.Where("visit_id = ?", visit.ID).Find(&records).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	hasActiveRecordData := false
+	for _, record := range records {
+		if record.Status == "final" {
+			c.JSON(http.StatusConflict, gin.H{"error": "Workspace tidak dapat dibatalkan karena sudah memiliki entri rekam medis final"})
+			return
+		}
+
+		if record.Status != "cancelled" {
+			hasActiveRecordData = true
+		}
+
+		switch normalizeMedicalRecordSection(record.SectionType) {
+		case "prescription":
+			if isPrescriptionWorkflowLocked(record.PrescriptionWorkflowStatus) {
+				c.JSON(http.StatusConflict, gin.H{"error": "Workspace tidak dapat dibatalkan karena order resep sudah dikirim atau diproses"})
+				return
+			}
+		case "laboratory":
+			if isSupportingOrderWorkflowLocked(record.LaboratoryWorkflowStatus) {
+				c.JSON(http.StatusConflict, gin.H{"error": "Workspace tidak dapat dibatalkan karena order laboratorium sudah dikirim atau diproses"})
+				return
+			}
+		case "radiology":
+			if isSupportingOrderWorkflowLocked(record.RadiologyWorkflowStatus) {
+				c.JSON(http.StatusConflict, gin.H{"error": "Workspace tidak dapat dibatalkan karena order radiologi sudah dikirim atau diproses"})
+				return
+			}
+		}
+	}
+
+	var odontogramEntries []models.OdontogramEntry
+	if err := database.DB.Where("visit_id = ?", visit.ID).Find(&odontogramEntries).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	hasActiveOdontogramData := false
+	for _, entry := range odontogramEntries {
+		if entry.Status == odontogramStatusFinal {
+			c.JSON(http.StatusConflict, gin.H{"error": "Workspace tidak dapat dibatalkan karena sudah memiliki entri odontogram final"})
+			return
+		}
+		if entry.Status != odontogramStatusCancel {
+			hasActiveOdontogramData = true
+		}
+	}
+
+	shouldDeleteVisit := visit.Status == "registered" && !hasActiveRecordData && !hasActiveOdontogramData
+
+	if err := database.DB.Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+
+		if err := tx.Model(&models.RegistrationQueue{}).
+			Where("visit_id = ?", visit.ID).
+			Updates(map[string]interface{}{
+				"status":       "cancelled",
+				"cancelled_at": &now,
+				"completed_at": nil,
+				"visit_id":     nil,
+			}).Error; err != nil {
+			return err
+		}
+
+		if hasActiveRecordData {
+			if err := tx.Model(&models.MedicalRecord{}).
+				Where("visit_id = ? AND status <> ?", visit.ID, "cancelled").
+				Update("status", "cancelled").Error; err != nil {
+				return err
+			}
+		}
+
+		if hasActiveOdontogramData {
+			if err := tx.Model(&models.OdontogramEntry{}).
+				Where("visit_id = ? AND status <> ?", visit.ID, odontogramStatusCancel).
+				Update("status", odontogramStatusCancel).Error; err != nil {
+				return err
+			}
+		}
+
+		if shouldDeleteVisit {
+			if err := tx.Delete(&visit).Error; err != nil {
+				return err
+			}
+			return nil
+		}
+
+		if err := tx.Model(&visit).Updates(map[string]interface{}{
+			"status":       "cancelled",
+			"queue_status": "cancelled",
+		}).Error; err != nil {
+			return err
+		}
+
+		return nil
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	message := "Workspace rekam medis berhasil dibatalkan"
+	if shouldDeleteVisit {
+		message = "Kunjungan berhasil dihapus"
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": message})
 }
 
 func UpdateVisitStatus(c *gin.Context) {
@@ -310,6 +490,11 @@ func UpdateVisitStatus(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Status == "completed" || req.QueueStatus == "done" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Status selesai hanya bisa ditetapkan melalui finalisasi kunjungan di EMR"})
 		return
 	}
 

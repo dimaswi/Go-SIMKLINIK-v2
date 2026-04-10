@@ -40,5 +40,7 @@ type Patient struct {
 	Allergies                string         `gorm:"type:text" json:"allergies"`
 	Notes                    string         `gorm:"type:text" json:"notes"`
 	Photo                    string         `gorm:"size:255" json:"photo"`
+	SatusehatPatientID       string         `gorm:"size:120;index" json:"satusehat_patient_id"`
+	SatusehatSyncedAt        *time.Time     `json:"satusehat_synced_at"`
 	IsActive                 bool           `gorm:"default:true" json:"is_active"`
 }

@@ -7,6 +7,22 @@ import type { MedicalService } from "@/lib/api"
 
 interface Props { onView: (id: number) => void; onEdit: (id: number) => void; onDelete: (id: number) => void; hasViewPermission: boolean; hasEditPermission: boolean; hasDeletePermission: boolean }
 
+const SERVICE_DOMAIN_LABELS: Record<string, string> = {
+  general: 'Umum',
+  dental: 'Dental',
+  laboratory: 'Laboratorium',
+  radiology: 'Radiologi',
+}
+
+const TARGET_SCOPE_LABELS: Record<string, string> = {
+  none: 'Tanpa target',
+  full_mouth: 'Full mouth',
+  arch: 'Rahang',
+  quadrant: 'Kuadran',
+  tooth: 'Gigi',
+  surface: 'Permukaan',
+}
+
 export function createMedicalServiceColumns({ onView, onEdit, onDelete, hasViewPermission, hasEditPermission, hasDeletePermission }: Props): ColumnDef<MedicalService>[] {
   return [
     createSelectColumn<MedicalService>(),
@@ -17,6 +33,11 @@ export function createMedicalServiceColumns({ onView, onEdit, onDelete, hasViewP
         <div className="flex flex-col">
           <span className="font-medium">{row.original.name}</span>
           <span className="text-sm text-muted-foreground">{row.original.code || '-'}</span>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            <Badge variant="secondary" className="rounded-none px-1.5 py-0 text-[10px] uppercase tracking-wide">{SERVICE_DOMAIN_LABELS[row.original.service_domain || 'general'] || row.original.service_domain || 'Umum'}</Badge>
+            <Badge variant="outline" className="rounded-none px-1.5 py-0 text-[10px] uppercase tracking-wide">{TARGET_SCOPE_LABELS[row.original.target_scope || 'none'] || row.original.target_scope || 'Tanpa target'}</Badge>
+            {row.original.requires_consent && <Badge className="rounded-none border-0 bg-amber-600 px-1.5 py-0 text-[10px] uppercase tracking-wide text-white">Consent</Badge>}
+          </div>
         </div>
       ),
     },

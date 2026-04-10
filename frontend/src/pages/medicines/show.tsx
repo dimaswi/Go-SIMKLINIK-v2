@@ -1,116 +1,255 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { medicinesApi } from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { usePermission } from '@/hooks/usePermission';
 import { useToast } from '@/hooks/use-toast';
-import { ConfirmDialog } from '@/components/confirm-dialog';
-import { ArrowLeft, Loader2, Edit, Trash2, Calendar, Pill, Hash, CircleCheck, CircleX } from 'lucide-react';
+import { medicinesApi, type KFAProductDetail, type Medicine } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
+import { Edit, Loader2, RefreshCw, Trash2 } from 'lucide-react';
+import {
+  MasterDataAsideSection,
+  MasterDataAsideStack,
+  MasterDataDetailItem,
+  MasterDataPageShell,
+  MasterDataSection,
+  formatMasterDataDateTime,
+} from '@/pages/master-data/shared';
+import { MedicineKFAMappingCard } from './components/medicine-kfa-mapping-card';
 
-function formatDateTime(dateValue?: string) {
-  if (!dateValue) return '-';
-  return new Date(dateValue).toLocaleString('id-ID', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+function formatCurrency(value?: number) {
+  if (typeof value !== 'number') return '-';
+  return `Rp ${value.toLocaleString('id-ID')}`;
 }
 
 export default function MedicineShow() {
   const navigate = useNavigate();
   const { id } = useParams();
   const { toast } = useToast();
-  const { hasPermission } = usePermission();
-  const [data, setData] = useState<any>(null);
+  const { hasAnyPermission, hasPermission } = usePermission();
+  const [data, setData] = useState<Medicine | null>(null);
+  const [kfaDetail, setKfaDetail] = useState<KFAProductDetail | null>(null);
+  const [loadingKFADetail, setLoadingKFADetail] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [syncingMedication, setSyncingMedication] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
+  const loadMedicine = useCallback(async () => {
+    const medicineId = Number(id);
+    if (!medicineId) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const res = await medicinesApi.getById(medicineId);
+      setData(res.data.data);
+    } catch {
+      toast({ variant: 'destructive', title: 'Error!' });
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [id, toast]);
+
   useEffect(() => {
     setPageTitle('Detail Obat');
-    medicinesApi.getById(Number(id)).then(res => setData(res.data.data)).catch(() => toast({ variant: "destructive", title: "Error!" })).finally(() => setLoading(false));
-  }, [id]);
+    void loadMedicine();
+  }, [loadMedicine]);
+
+  useEffect(() => {
+    const code = (data?.kfa_code || '').trim();
+    if (!code) {
+      setKfaDetail(null);
+      setLoadingKFADetail(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingKFADetail(true);
+    medicinesApi.getKFADetail(code)
+      .then((response) => {
+        if (cancelled) return;
+        setKfaDetail(response.data.data || null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setKfaDetail(null);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingKFADetail(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [data?.kfa_code]);
 
   const confirmDelete = async () => {
-    setDeleting(true); setDeleteDialogOpen(false);
-    try { await medicinesApi.delete(parseInt(id!)); toast({ variant: "success", title: "Berhasil!", description: "Obat berhasil dihapus." }); setTimeout(() => navigate('/medicines'), 500); }
-    catch (error: any) { toast({ variant: "destructive", title: "Error!", description: error.response?.data?.error || "Gagal menghapus." }); setDeleting(false); }
+    setDeleting(true);
+    setDeleteDialogOpen(false);
+    try {
+      await medicinesApi.delete(Number(id));
+      toast({ variant: 'success', title: 'Berhasil!', description: 'Obat berhasil dihapus.' });
+      setTimeout(() => navigate('/medicines'), 500);
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Error!', description: error.response?.data?.error || 'Gagal menghapus.' });
+      setDeleting(false);
+    }
   };
 
-  if (loading) return <div className="flex h-[70vh] items-center justify-center"><div className="rounded-xl border bg-card px-8 py-10 text-center shadow-sm"><Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin text-primary" /><p className="text-sm text-muted-foreground">Memuat data...</p></div></div>;
-  if (!data) return <div className="flex h-[70vh] items-center justify-center"><div className="rounded-xl border bg-card px-8 py-10 text-center shadow-sm"><p className="text-lg font-semibold">Data tidak ditemukan</p><Button onClick={() => navigate('/medicines')} className="mt-5">Kembali</Button></div></div>;
+  const handleSyncMedication = async () => {
+    if (!data?.id) return;
+    if (!data.kfa_code?.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Mapping KFA belum siap',
+        description: 'Isi mapping KFA lebih dulu sebelum sync Medication SATUSEHAT.',
+      });
+      return;
+    }
+
+    setSyncingMedication(true);
+    try {
+      const response = await medicinesApi.syncSatusehatMedication(data.id);
+      toast({
+        variant: 'success',
+        title: 'Sync berhasil',
+        description: response.data?.message || 'Medication master berhasil dikirim ke SATUSEHAT.',
+      });
+      const refreshed = await medicinesApi.getById(data.id);
+      setData(refreshed.data.data);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Gagal sync medication',
+        description: error.response?.data?.error || 'Sinkronisasi Medication SATUSEHAT gagal dijalankan.',
+      });
+    } finally {
+      setSyncingMedication(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="flex h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  }
+
+  if (!data) {
+    return <div className="flex h-64 items-center justify-center"><div className="text-center"><p className="text-lg font-semibold">Data tidak ditemukan</p><Button onClick={() => navigate('/medicines')} className="mt-5">Kembali</Button></div></div>;
+  }
+
+  const stockLow = Number(data.current_stock) <= Number(data.min_stock);
+  const canSyncMedication = hasAnyPermission(['settings.update', 'medicines.update']);
 
   return (
-    <div className="p-4">
-      <div className="space-y-6">
-        <section className="rounded-xl border bg-card p-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0">
-              <div className="flex items-center gap-3">
-                <Button variant="outline" size="icon" onClick={() => navigate('/medicines')} className="h-9 w-9 shrink-0 rounded-md"><ArrowLeft className="h-4 w-4" /></Button>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge className="h-6 rounded-md border-0 bg-sky-500 px-2 text-[11px] font-semibold text-white">ID #{data.id}</Badge>
-                    <Badge className={data.is_active ? 'h-6 rounded-md border-0 bg-emerald-500 px-2 text-[11px] font-semibold text-white' : 'h-6 rounded-md border-0 bg-rose-500 px-2 text-[11px] font-semibold text-white'}>{data.is_active ? 'AKTIF' : 'NONAKTIF'}</Badge>
-                  </div>
-                  <p className="mt-1.5 text-sm text-muted-foreground">{data.code} · {data.generic_name || '-'}</p>
-                </div>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {hasPermission('medicines.update') && <Button size="sm" onClick={() => navigate(`/medicines/${id}/edit`)}><Edit className="h-4 w-4" />Edit</Button>}
-              {hasPermission('medicines.delete') && <Button variant="destructive" size="sm" onClick={() => setDeleteDialogOpen(true)} disabled={deleting}>{deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}Hapus</Button>}
-            </div>
-          </div>
-
-          <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
-            <div className="rounded-md border px-3 py-2"><p className="text-[11px] text-muted-foreground">Kategori</p><p className="text-sm font-medium">{data.category?.name || '-'}</p></div>
-            <div className="rounded-md border px-3 py-2"><p className="text-[11px] text-muted-foreground">Tipe</p><p className="text-sm font-medium">{data.type?.toUpperCase() || '-'}</p></div>
-            <div className="rounded-md border px-3 py-2"><p className="text-[11px] text-muted-foreground">Stok</p><p className={`text-sm font-medium ${data.current_stock <= data.min_stock ? 'text-destructive' : ''}`}>{data.current_stock} {data.unit?.name || ''}</p></div>
-            <div className="rounded-md border px-3 py-2"><p className="text-[11px] text-muted-foreground">Harga Jual</p><p className="text-sm font-medium">Rp {data.selling_price?.toLocaleString('id-ID')}</p></div>
-          </div>
-        </section>
-
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <Card className="xl:col-span-2">
-            <CardHeader><CardTitle className="text-base">Informasi Obat</CardTitle></CardHeader>
-            <CardContent className="space-y-5">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="rounded-lg border p-4">
-                  <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Identitas</p>
-                  <div className="space-y-2 text-sm">
-                    <p className="flex items-center gap-2"><Hash className="h-4 w-4 text-muted-foreground" />{data.code}</p>
-                    <p className="flex items-center gap-2"><Pill className="h-4 w-4 text-muted-foreground" />{data.name}</p>
-                    <p className="text-muted-foreground">Generik: {data.generic_name || '-'}</p>
-                    <p className="text-muted-foreground">Bentuk: {data.form || '-'}</p>
-                    <p className="text-muted-foreground">Kekuatan: {data.strength || '-'}</p>
-                    <p className="text-muted-foreground">Produsen: {data.manufacturer || '-'}</p>
-                  </div>
-                </div>
-                <div className="rounded-lg border p-4">
-                  <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Stok & Harga</p>
-                  <div className="space-y-2 text-sm">
-                    <p>Stok Minimum: <span className="font-medium">{data.min_stock}</span></p>
-                    <p>Stok Saat Ini: <span className={`font-medium ${data.current_stock <= data.min_stock ? 'text-destructive' : ''}`}>{data.current_stock}</span></p>
-                    <p>Harga Beli: <span className="font-medium">Rp {data.purchase_price?.toLocaleString('id-ID')}</span></p>
-                    <p>Harga Jual: <span className="font-medium">Rp {data.selling_price?.toLocaleString('id-ID')}</span></p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle className="text-base">Metadata</CardTitle></CardHeader>
-            <CardContent className="space-y-4 text-sm">
-              <div className="rounded-lg border p-3"><p className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Status</p><p className="flex items-center gap-2 font-medium">{data.is_active ? <CircleCheck className="h-4 w-4 text-muted-foreground" /> : <CircleX className="h-4 w-4 text-destructive" />}{data.is_active ? 'Aktif' : 'Tidak Aktif'}</p></div>
-              <div className="rounded-lg border p-3"><p className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Dibuat</p><p className="flex items-center gap-2 font-medium"><Calendar className="h-4 w-4 text-muted-foreground" />{formatDateTime(data.created_at)}</p></div>
-              <div className="rounded-lg border p-3"><p className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Terakhir Diubah</p><p className="flex items-center gap-2 font-medium"><Calendar className="h-4 w-4 text-muted-foreground" />{formatDateTime(data.updated_at)}</p></div>
-              <Button className="w-full" variant="outline" onClick={() => navigate('/medicines')}>Kembali ke Daftar</Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+    <>
       <ConfirmDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen} onConfirm={confirmDelete} title="Hapus Obat" description="Apakah Anda yakin ingin menghapus obat ini?" confirmText="Hapus" cancelText="Batal" variant="destructive" />
-    </div>
+
+      <MasterDataPageShell
+        title={data.name}
+        subtitle={data.generic_name || 'Data identitas, stok, dan harga obat.'}
+        onBack={() => navigate('/medicines')}
+        badges={
+          <>
+            <Badge variant="secondary" className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none">ID #{data.id}</Badge>
+            <Badge className={data.is_active ? 'h-5 rounded-none border-0 bg-emerald-600 px-2 text-[10px] uppercase tracking-wide text-white shadow-none' : 'h-5 rounded-none border-0 bg-rose-600 px-2 text-[10px] uppercase tracking-wide text-white shadow-none'}>
+              {data.is_active ? 'Aktif' : 'Nonaktif'}
+            </Badge>
+          </>
+        }
+        meta={
+          <>
+            <span>Kode {data.code || '-'}</span>
+            <span>KFA {data.kfa_code || '-'}</span>
+            <span>Kategori {data.category?.name || '-'}</span>
+            <span>Tipe {data.type ? String(data.type).toUpperCase() : '-'}</span>
+          </>
+        }
+        actions={
+          <>
+            {canSyncMedication && <Button variant="outline" className="rounded-none shadow-none" onClick={() => void handleSyncMedication()} disabled={syncingMedication || !data.kfa_code?.trim()}><RefreshCw className={`h-4 w-4 ${syncingMedication ? 'animate-spin' : ''}`} />{data.satusehat_medication_id ? 'Sync Ulang Medication' : 'Sync Medication'}</Button>}
+            {hasPermission('medicines.update') && <Button className="rounded-none shadow-none" onClick={() => navigate(`/medicines/${id}/edit`)}><Edit className="h-4 w-4" />Edit</Button>}
+            {hasPermission('medicines.delete') && <Button variant="destructive" className="rounded-none shadow-none" onClick={() => setDeleteDialogOpen(true)} disabled={deleting}>{deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}Hapus</Button>}
+          </>
+        }
+        aside={
+          <MasterDataAsideStack>
+            <div>
+              <MasterDataAsideSection title="Status Integrasi" helper="Ringkasan kesiapan obat lokal terhadap alur SATUSEHAT farmasi.">
+                <div className="space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant={data.kfa_code ? 'default' : 'secondary'} className="rounded-none">{data.kfa_code ? 'Mapped ke KFA' : 'Belum mapped'}</Badge>
+                    {data.satusehat_medication_id ? <Badge className="rounded-none border-0 bg-emerald-600 text-white">Medication tersinkron</Badge> : <Badge variant="outline" className="rounded-none">Belum sync Medication</Badge>}
+                  </div>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>Kode KFA: <span className="font-medium text-foreground">{data.kfa_code || '-'}</span></p>
+                    <p>Medication SATUSEHAT: <span className="font-medium text-foreground">{data.satusehat_medication_id || '-'}</span></p>
+                    <p>Sync terakhir: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.satusehat_medication_synced_at)}</span></p>
+                  </div>
+                </div>
+              </MasterDataAsideSection>
+            </div>
+            <div>
+              <MasterDataAsideSection title="Stok & Status" helper="Ringkasan cepat kondisi stok dan status aktif obat.">
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <p>Status: <span className="font-medium text-foreground">{data.is_active ? 'Aktif' : 'Tidak aktif'}</span></p>
+                  <p>Stok saat ini: <span className={stockLow ? 'font-medium text-destructive' : 'font-medium text-foreground'}>{data.current_stock ?? '-'} {data.unit?.name || ''}</span></p>
+                  <p>Stok minimum: <span className="font-medium text-foreground">{data.min_stock ?? '-'}</span></p>
+                </div>
+              </MasterDataAsideSection>
+            </div>
+            <div>
+              <MasterDataAsideSection title="Metadata" helper="Jejak pembuatan dan pembaruan data obat.">
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <p>Dibuat: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.created_at)}</span></p>
+                  <p>Terakhir diubah: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.updated_at)}</span></p>
+                </div>
+              </MasterDataAsideSection>
+            </div>
+          </MasterDataAsideStack>
+        }
+      >
+        <div className="divide-y divide-border/70">
+          <MasterDataSection title="Mapping KFA & SATUSEHAT" helper="Panel ini menunjukkan identitas resmi KFA yang dipakai untuk membentuk Medication SATUSEHAT dari obat lokal ini.">
+            <MedicineKFAMappingCard
+              kfaCode={data.kfa_code}
+              kfaName={data.kfa_name}
+              detail={kfaDetail}
+              loading={loadingKFADetail}
+              medicationId={data.satusehat_medication_id}
+              medicationSyncedAt={data.satusehat_medication_synced_at}
+            />
+          </MasterDataSection>
+
+          <MasterDataSection title="Identitas Obat" helper="Informasi dasar obat yang dipakai pada farmasi, stok, dan resep.">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <MasterDataDetailItem label="Kode" value={data.code || '-'} />
+              <MasterDataDetailItem label="Nama" value={data.name} />
+              <MasterDataDetailItem label="Nama Generik" value={data.generic_name || '-'} />
+              <MasterDataDetailItem label="Kategori" value={data.category?.name || '-'} />
+              <MasterDataDetailItem label="Tipe" value={data.type ? String(data.type).toUpperCase() : '-'} />
+              <MasterDataDetailItem label="Satuan" value={data.unit?.name || '-'} />
+              <MasterDataDetailItem label="Bentuk" value={data.form || '-'} />
+              <MasterDataDetailItem label="Kekuatan" value={data.strength || '-'} />
+              <MasterDataDetailItem label="Produsen" value={data.manufacturer || '-'} />
+            </div>
+          </MasterDataSection>
+
+          <MasterDataSection title="Stok dan Harga" helper="Nilai stok dan harga yang dipakai untuk pengelolaan inventori dan penjualan.">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <MasterDataDetailItem label="Stok Minimum" value={data.min_stock ?? '-'} />
+              <MasterDataDetailItem label="Stok Saat Ini" value={<span className={stockLow ? 'text-destructive' : undefined}>{data.current_stock ?? '-'} {data.unit?.name || ''}</span>} />
+              <MasterDataDetailItem label="Harga Beli" value={formatCurrency(data.purchase_price)} />
+              <MasterDataDetailItem label="Harga Jual" value={formatCurrency(data.selling_price)} />
+            </div>
+          </MasterDataSection>
+        </div>
+      </MasterDataPageShell>
+    </>
   );
 }
