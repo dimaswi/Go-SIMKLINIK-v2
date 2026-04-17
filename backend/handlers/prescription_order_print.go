@@ -50,15 +50,16 @@ type prescriptionPrintMedicationTableRow struct {
 }
 
 type prescriptionPrintViewData struct {
-	GeneratedAt    time.Time
-	Record         models.MedicalRecord
-	PatientAge     string
-	PatientAddress string
-	ModeLabel      string
-	BatchNotes     string
-	Items          []prescriptionPrintItemView
-	Compounds      []prescriptionPrintCompoundView
-	PrintedBy      string
+	GeneratedAt       time.Time
+	Record            models.MedicalRecord
+	PatientAge        string
+	PatientAddress    string
+	ModeLabel         string
+	BatchNotes        string
+	Items             []prescriptionPrintItemView
+	Compounds         []prescriptionPrintCompoundView
+	PrintedBy         string
+	ValidationBaseURL string
 }
 
 func PrintPrescriptionOrder(c *gin.Context) {
@@ -170,15 +171,16 @@ func buildPrescriptionPrintViewData(c *gin.Context, record models.MedicalRecord)
 	}
 
 	return prescriptionPrintViewData{
-		GeneratedAt:    time.Now(),
-		Record:         record,
-		PatientAge:     calculatePatientAgeLabel(visit.Patient.BirthDate),
-		PatientAddress: formatPatientAddress(visit.Patient),
-		ModeLabel:      modeLabel,
-		BatchNotes:     strings.TrimSpace(record.Notes),
-		Items:          items,
-		Compounds:      compounds,
-		PrintedBy:      strings.TrimSpace(c.GetString("email")),
+		GeneratedAt:       time.Now(),
+		Record:            record,
+		PatientAge:        calculatePatientAgeLabel(visit.Patient.BirthDate),
+		PatientAddress:    formatPatientAddress(visit.Patient),
+		ModeLabel:         modeLabel,
+		BatchNotes:        strings.TrimSpace(record.Notes),
+		Items:             items,
+		Compounds:         compounds,
+		PrintedBy:         resolvePrintedByLabel(c),
+		ValidationBaseURL: resolveTTEVerificationBaseURLForRequest(c),
 	}
 }
 
@@ -358,35 +360,8 @@ func addPrescriptionCompoundCompositionSection(pdf *gofpdf.Fpdf, compounds []pre
 }
 
 func addPrescriptionSignatureSection(pdf *gofpdf.Fpdf, hospitalInfo initialAssessmentHospitalInfo, data prescriptionPrintViewData) {
-	ensureInitialAssessmentPDFSpace(pdf, 44)
-
-	datePrefix := strings.TrimSpace(hospitalInfo.City)
-	if datePrefix != "" {
-		datePrefix += ", "
-	}
-	dateLabel := datePrefix + formatDateIndonesian(data.GeneratedAt)
-
-	rightColumnWidth := 70.0
-	leftX := initialAssessmentPDFMarginLeft
-	rightX := 210.0 - initialAssessmentPDFMarginRight - rightColumnWidth
-	currentY := pdf.GetY()
-
-	pdf.SetFont("Arial", "", 10)
-	pdf.SetXY(rightX, currentY)
-	pdf.CellFormat(rightColumnWidth, 5, dateLabel, "", 0, "C", false, 0, "")
-	pdf.SetXY(rightX, currentY+7)
-	pdf.CellFormat(rightColumnWidth, 5, "Dokter Pemeriksa", "", 0, "C", false, 0, "")
-	pdf.SetXY(rightX, currentY+30)
-	pdf.CellFormat(rightColumnWidth, 5, fallbackText(data.Record.Visit.Doctor.FullName), "", 0, "C", false, 0, "")
-	pdf.Line(rightX+10, currentY+29, rightX+rightColumnWidth-10, currentY+29)
-
-	pdf.SetXY(leftX, currentY+7)
-	pdf.CellFormat(70, 5, "Pasien / Wali", "", 0, "C", false, 0, "")
-	pdf.SetXY(leftX, currentY+30)
-	pdf.CellFormat(70, 5, fallbackText(data.Record.Visit.Patient.FullName), "", 0, "C", false, 0, "")
-	pdf.Line(leftX+10, currentY+29, leftX+60, currentY+29)
-
-	pdf.SetY(currentY + 38)
+	tteSignature := loadTTESignedSignatureByDocumentKeyWithBaseURL(fmt.Sprintf("prescription:%d", data.Record.ID), data.ValidationBaseURL)
+	addOrderPrintSignatureSectionWithTTE(pdf, hospitalInfo, data.GeneratedAt, "Pasien / Wali", data.Record.Visit.Patient.FullName, "Dokter Pemeriksa", data.Record.Visit.Doctor.FullName, tteSignature)
 }
 
 func filterEmptyStrings(values []string) []string {

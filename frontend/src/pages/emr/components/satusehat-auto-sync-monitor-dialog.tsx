@@ -342,7 +342,18 @@ function buildMonitorSummary(items: SatusehatAutoSyncResourceResult[]): MonitorS
   return { total, synced, failed, skipped, existing, created, warningCount, completionPercent };
 }
 
-function getMonitorTone(summary: MonitorSummary) {
+function getMonitorTone(summary: MonitorSummary, jobStatus?: string) {
+  if (jobStatus === 'queued' || jobStatus === 'running') {
+    return {
+      panelClass: 'border-sky-200 bg-sky-50/80',
+      badgeClass: 'border-sky-300 bg-sky-100 text-sky-900',
+      progressClass: 'bg-sky-100',
+      indicatorClass: 'text-sky-500',
+      iconClass: 'border-sky-300 bg-white text-sky-700',
+      label: jobStatus === 'queued' ? 'Menunggu proses...' : 'Sedang sinkronisasi...',
+      helper: 'Auto sync SATUSEHAT sedang berjalan. Progres diperbarui otomatis setiap beberapa detik.',
+    };
+  }
   if (summary.total === 0) {
     return {
       panelClass: 'border-slate-200 bg-slate-50/80',
@@ -528,7 +539,10 @@ export function SatusehatAutoSyncMonitorDialog({
   const resourceItems = getResourceItems(result);
   const buckets = buildStatusBuckets(resourceItems);
   const summary = buildMonitorSummary(resourceItems);
-  const monitorTone = getMonitorTone(summary);
+  const monitorTone = getMonitorTone(summary, result?.job_status);
+  const statusHighlightTitle = (result?.job_status === 'queued' || result?.job_status === 'running')
+    ? 'Sedang Diproses'
+    : getStatusHighlightTitle(summary);
   const readyNodes = new Set(baselineReadyNodes.map((item) => normalize(item)));
   const nodeViews = RESOURCE_NODES.map((node, index) => {
     const aggregate = aggregates.get(node.key);
@@ -578,7 +592,12 @@ export function SatusehatAutoSyncMonitorDialog({
               </div>
               <div className="border border-border/70 bg-background px-4 py-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Job Status</p>
-                <p className="mt-1 text-sm font-medium text-foreground">{result?.job_status || (summary.failed > 0 ? 'partial-failed' : 'completed')}</p>
+                <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-foreground">
+                  {(result?.job_status === 'queued' || result?.job_status === 'running') && (
+                    <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-500" />
+                  )}
+                  {result?.job_status || (summary.failed > 0 ? 'partial-failed' : 'completed')}
+                </p>
               </div>
             </section>
 
@@ -640,8 +659,12 @@ export function SatusehatAutoSyncMonitorDialog({
                       <RefreshCcw className="h-4 w-4 text-foreground/70" />
                       <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Status Eksekusi</p>
                     </div>
-                    <p className="mt-1 text-sm font-medium text-foreground">{getStatusHighlightTitle(summary)}</p>
-                    <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{message || 'Urutan kirim resource dipetakan dari master ke resource klinis agar blocker cepat terlihat.'}</p>
+                    <p className="mt-1 text-sm font-medium text-foreground">{statusHighlightTitle}</p>
+                    <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+                      {(result?.job_status === 'queued' || result?.job_status === 'running')
+                        ? 'Auto sync SATUSEHAT diproses di background. Monitor akan otomatis update setiap beberapa detik.'
+                        : (message || 'Urutan kirim resource dipetakan dari master ke resource klinis agar blocker cepat terlihat.')}
+                    </p>
                   </div>
                 </div>
               </div>

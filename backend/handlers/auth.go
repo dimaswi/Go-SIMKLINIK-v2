@@ -5,12 +5,13 @@ import (
 	"starter/backend/database"
 	"starter/backend/middleware"
 	"starter/backend/models"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
 type LoginRequest struct {
-	Email    string `json:"email" binding:"required"`
+	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
 }
 
@@ -53,24 +54,25 @@ func Login(c *gin.Context) {
 	}
 
 	var user models.User
-	if err := database.DB.Preload("Role.Permissions").Where("email = ?", req.Email).First(&user).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+	username := strings.ToLower(strings.TrimSpace(req.Username))
+	if err := database.DB.Preload("Role.Permissions").Where("LOWER(username) = ?", username).First(&user).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Username atau password tidak valid"})
 		return
 	}
 
 	if !user.CheckPassword(req.Password) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Username atau password tidak valid"})
 		return
 	}
 
 	if !user.IsActive {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Account is inactive"})
+		c.JSON(http.StatusForbidden, gin.H{"error": "Akun tidak aktif"})
 		return
 	}
 
 	token, err := middleware.GenerateToken(&user)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat sesi login"})
 		return
 	}
 

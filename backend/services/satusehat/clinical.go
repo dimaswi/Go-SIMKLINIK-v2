@@ -25,7 +25,7 @@ func BuildClinicalImpressionPreview(record models.MedicalRecord, config Config) 
 	warnings := make([]string, 0, 6)
 	patientReference := strings.TrimSpace(record.Patient.SatusehatPatientID)
 	encounterReference := strings.TrimSpace(record.Visit.SatusehatEncounterID)
-	practitionerReference := strings.TrimSpace(record.Doctor.SatusehatPractitionerID)
+	practitionerActor := ResolveMedicalRecordRequesterActor(record)
 
 	if patientReference == "" {
 		warnings = append(warnings, "Patient belum memiliki SATUSEHAT Patient ID.")
@@ -92,13 +92,13 @@ func BuildClinicalImpressionPreview(record models.MedicalRecord, config Config) 
 	if strings.TrimSpace(record.SatusehatClinicalImpressionID) != "" {
 		resource["id"] = strings.TrimSpace(record.SatusehatClinicalImpressionID)
 	}
-	if practitionerReference != "" {
+	if practitionerActor.Ready() {
 		resource["assessor"] = map[string]any{
-			"reference": fmt.Sprintf("Practitioner/%s", practitionerReference),
-			"display":   record.Doctor.FullName,
+			"reference": practitionerActor.Reference(),
+			"display":   practitionerActor.Display,
 		}
 	} else {
-		warnings = append(warnings, "Doctor belum memiliki SATUSEHAT Practitioner ID; assessor akan diabaikan sementara.")
+		warnings = append(warnings, "Pegawai/dokter pemeriksa belum memiliki SATUSEHAT Practitioner ID; assessor akan diabaikan sementara.")
 	}
 	if len(problemReferences) > 0 {
 		resource["problem"] = problemReferences
@@ -118,7 +118,7 @@ func BuildVitalSignsPreview(record models.MedicalRecord, config Config) BatchRes
 
 	patientReference := strings.TrimSpace(record.Patient.SatusehatPatientID)
 	encounterReference := strings.TrimSpace(record.Visit.SatusehatEncounterID)
-	practitionerReference := strings.TrimSpace(record.Doctor.SatusehatPractitionerID)
+	practitionerActor := ResolveMedicalRecordRequesterActor(record)
 
 	if patientReference == "" {
 		warnings = append(warnings, "Patient belum memiliki SATUSEHAT Patient ID.")
@@ -126,8 +126,8 @@ func BuildVitalSignsPreview(record models.MedicalRecord, config Config) BatchRes
 	if encounterReference == "" {
 		warnings = append(warnings, "Encounter belum memiliki SATUSEHAT Encounter ID.")
 	}
-	if practitionerReference == "" {
-		warnings = append(warnings, "Doctor belum memiliki SATUSEHAT Practitioner ID; performer akan dikirim tanpa reference dokter.")
+	if !practitionerActor.Ready() {
+		warnings = append(warnings, "Pegawai/dokter pemeriksa belum memiliki SATUSEHAT Practitioner ID; performer akan dikirim tanpa reference practitioner.")
 	}
 
 	addQuantityObservation := func(key, code, display string, value float64, unit, unitCode string) {
@@ -174,10 +174,10 @@ func BuildVitalSignsPreview(record models.MedicalRecord, config Config) BatchRes
 			},
 		}
 
-		if practitionerReference != "" {
+		if practitionerActor.Ready() {
 			resource["performer"] = []map[string]any{{
-				"reference": fmt.Sprintf("Practitioner/%s", practitionerReference),
-				"display":   record.Doctor.FullName,
+				"reference": practitionerActor.Reference(),
+				"display":   practitionerActor.Display,
 			}}
 		}
 
@@ -216,7 +216,7 @@ func BuildDiagnosisPreview(diagnosis models.MedicalRecordDiagnosis, config Confi
 	warnings := make([]string, 0, 5)
 	patientReference := strings.TrimSpace(diagnosis.MedicalRecord.Patient.SatusehatPatientID)
 	encounterReference := strings.TrimSpace(diagnosis.MedicalRecord.Visit.SatusehatEncounterID)
-	practitionerReference := strings.TrimSpace(diagnosis.MedicalRecord.Doctor.SatusehatPractitionerID)
+	practitionerActor := ResolveMedicalRecordRequesterActor(diagnosis.MedicalRecord)
 
 	if patientReference == "" {
 		warnings = append(warnings, "Patient belum memiliki SATUSEHAT Patient ID.")
@@ -270,13 +270,13 @@ func BuildDiagnosisPreview(diagnosis models.MedicalRecordDiagnosis, config Confi
 		resource["id"] = strings.TrimSpace(diagnosis.SatusehatConditionID)
 	}
 
-	if practitionerReference != "" {
+	if practitionerActor.Ready() {
 		resource["recorder"] = map[string]any{
-			"reference": fmt.Sprintf("Practitioner/%s", practitionerReference),
-			"display":   diagnosis.MedicalRecord.Doctor.FullName,
+			"reference": practitionerActor.Reference(),
+			"display":   practitionerActor.Display,
 		}
 	} else {
-		warnings = append(warnings, "Doctor belum memiliki SATUSEHAT Practitioner ID; recorder akan diabaikan sementara.")
+		warnings = append(warnings, "Pegawai/dokter pemeriksa belum memiliki SATUSEHAT Practitioner ID; recorder akan diabaikan sementara.")
 	}
 
 	notes := make([]map[string]any, 0, 2)

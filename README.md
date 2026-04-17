@@ -73,6 +73,28 @@ Pastikan sudah terinstall:
 
 ## 🛠️ Instalasi
 
+## 🔧 Konfigurasi ENV
+
+Gunakan file env yang berbeda sesuai konteks kerja:
+
+- Root `.env`: untuk `docker-compose` dan deployment per klinik di VPS.
+- `backend/.env`: untuk `go run main.go` di lokal.
+- `frontend/.env.local`: untuk `npm run dev` di lokal.
+
+Template yang disediakan:
+
+- `/.env.example`
+- `/backend/.env.example`
+- `/frontend/.env.example`
+
+Catatan singkat:
+
+- Backend sekarang mendukung format env yang lebih rapi: `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_USER`, `DATABASE_PASSWORD`, `DATABASE_NAME`, `DATABASE_SSLMODE`, `DATABASE_TIMEZONE`.
+- Jika ingin, Anda tetap bisa memakai `DATABASE_DSN` langsung sebagai override.
+- CORS frontend sekarang bisa diatur dari `CORS_ALLOWED_ORIGINS`.
+
+Panduan backup dan rekomendasi operasional single-clinic ada di [docs/SINGLE-CLINIC-ENV-BACKUP.md](docs/SINGLE-CLINIC-ENV-BACKUP.md).
+
 ### 1. Clone Repository
 
 ```powershell

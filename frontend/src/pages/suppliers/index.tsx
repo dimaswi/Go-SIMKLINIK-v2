@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { setPageTitle } from '@/lib/page-title';
 import { Loader2, Plus } from 'lucide-react';
+import { MasterDataListShell } from '@/pages/master-data/shared';
 
 export default function SuppliersPage() {
   const navigate = useNavigate();
@@ -42,8 +43,14 @@ export default function SuppliersPage() {
 
   return (
     <div className="flex flex-1 min-h-0 flex-col gap-4 p-4">
-      <DataTable columns={columns} data={data} searchPlaceholder="Cari supplier..." pageSize={10}
-        toolbarActions={hasPermission('suppliers.create') ? <Button onClick={() => navigate('/suppliers/create')}><Plus className="h-4 w-4" />Tambah Supplier</Button> : undefined} />
+      <MasterDataListShell
+        title="Daftar Supplier"
+        subtitle="Kelola mitra supplier untuk mendukung proses pembelian obat dan perlengkapan klinik."
+        totalCount={data.length}
+      >
+        <DataTable columns={columns} data={data} searchPlaceholder="Cari supplier..." pageSize={10} className="h-full"
+          toolbarActions={hasPermission('suppliers.create') ? <Button onClick={() => navigate('/suppliers/create')} className="rounded-none shadow-none"><Plus className="h-4 w-4" />Tambah Supplier</Button> : undefined} />
+      </MasterDataListShell>
       <ConfirmDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen} onConfirm={confirmDelete} title="Hapus Supplier" description="Yakin hapus supplier ini?" confirmText="Hapus" cancelText="Batal" variant="destructive" />
     </div>
   );

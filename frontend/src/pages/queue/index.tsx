@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { SearchableSelect } from '@/components/ui/searchable-select';
-import { polyclinicsApi, queueApi, registrationQueueApi, visitsApi, type Polyclinic, type RegistrationQueueItem, type Visit } from '@/lib/api';
+import { queueApi, registrationQueueApi, visitsApi, type Polyclinic, type RegistrationQueueItem, type Visit } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import {
   ArrowUpRight,
@@ -264,6 +264,7 @@ export default function QueueDashboard() {
   const { toast } = useToast();
   const [clockLabel, setClockLabel] = useState('');
   const [polyclinics, setPolyclinics] = useState<Polyclinic[]>([]);
+  const [polyclinicsLoaded, setPolyclinicsLoaded] = useState(false);
   const [selectedPoli, setSelectedPoli] = useState('');
   const [queueData, setQueueData] = useState<QueueBuckets>(EMPTY_QUEUE);
   const [registrationTickets, setRegistrationTickets] = useState<RegistrationQueueItem[]>([]);
@@ -280,14 +281,16 @@ export default function QueueDashboard() {
 
   useEffect(() => {
     setPageTitle('Front Office · Dashboard Antrian');
-    polyclinicsApi.getAll().then((response) => {
+    queueApi.getPolyclinics().then((response) => {
       const list: Polyclinic[] = response.data.data || [];
       setPolyclinics(list);
       if (list.length > 0) {
         setSelectedPoli(String(list[0].id));
       }
+      setPolyclinicsLoaded(true);
     }).catch(() => {
-      toast({ variant: 'destructive', title: 'Error!', description: 'Gagal memuat daftar poliklinik.' });
+      setPolyclinicsLoaded(true);
+      toast({ variant: 'destructive', title: 'Error!', description: 'Gagal memuat opsi poliklinik untuk dashboard antrian.' });
     });
   }, [toast]);
 
@@ -472,6 +475,7 @@ export default function QueueDashboard() {
   const currentCall = queueData.in_consultation[0] || null;
   const nextWaiting = queueData.waiting[0] || null;
   const activeRegistrationTicket = registrationTickets.find((item) => item.status === 'processing') || registrationTickets.find((item) => item.status === 'called') || null;
+  const hasQueuePolyclinicAccess = polyclinics.length > 0;
 
   const registrationStats = useMemo(() => ({
     waiting: registrationTickets.filter((item) => item.status === 'waiting').length,
@@ -496,7 +500,7 @@ export default function QueueDashboard() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-var(--app-header-height))] min-h-0 flex-1 flex-col overflow-hidden gap-3 p-3 lg:p-4">
+    <div className="flex min-h-0 flex-col gap-3 overflow-visible p-3 md:h-[calc(100vh-var(--app-header-height))] md:flex-1 md:overflow-hidden lg:p-4">
       <section className="border border-border/70 bg-background">
         <div className="border-b border-border/70 px-4 py-3">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -634,7 +638,18 @@ export default function QueueDashboard() {
           </Button>
         </div>
 
-        {(currentCall || nextWaiting) ? (
+        {polyclinicsLoaded && !hasQueuePolyclinicAccess ? (
+          <div className="border-b border-border/70 px-4 py-6">
+            <div className="border border-dashed border-border/70 bg-muted/10 px-5 py-6 text-center">
+              <p className="text-sm font-semibold text-foreground">Belum ada poliklinik yang bisa diakses untuk antrean.</p>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                Jika Anda login sebagai dokter, tautkan profil dokter ke poliklinik atau jadwal aktif terlebih dahulu agar dashboard antrean bisa menampilkan lane poli yang relevan.
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        {hasQueuePolyclinicAccess && (currentCall || nextWaiting) ? (
           <div className="grid gap-3 border-b border-border/70 px-4 py-3 lg:grid-cols-2">
             <div className="border border-border/70 bg-muted/20 px-3 py-3">
               <div className="flex items-start justify-between gap-3">
@@ -675,7 +690,9 @@ export default function QueueDashboard() {
 
         <div className="grid min-h-0 flex-1 gap-4 overflow-hidden px-4 py-4 lg:grid-cols-2 2xl:grid-cols-4">
           <Lane title="Menunggu" helper="Pasien yang siap dipanggil ke ruang dokter." count={queueData.waiting.length}>
-          {queueData.waiting.length === 0 ? (
+          {!hasQueuePolyclinicAccess ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">Belum ada poli yang dapat ditampilkan pada akun ini.</p>
+          ) : queueData.waiting.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">Belum ada pasien yang menunggu.</p>
           ) : queueData.waiting.map((visit) => (
             <QueueTicket key={visit.id} visit={visit} />
@@ -683,7 +700,9 @@ export default function QueueDashboard() {
           </Lane>
 
           <Lane title="Konsultasi" helper="Pasien aktif yang sedang berada di poli." count={queueData.in_consultation.length}>
-          {queueData.in_consultation.length === 0 ? (
+          {!hasQueuePolyclinicAccess ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">Belum ada poli yang dapat ditampilkan pada akun ini.</p>
+          ) : queueData.in_consultation.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">Belum ada pasien di ruang konsultasi.</p>
           ) : queueData.in_consultation.map((visit) => (
             <QueueTicket
@@ -720,7 +739,9 @@ export default function QueueDashboard() {
           </Lane>
 
           <Lane title="Selesai" helper="Pasien yang sudah keluar dari alur poli hari ini." count={queueData.done.length}>
-          {queueData.done.length === 0 ? (
+          {!hasQueuePolyclinicAccess ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">Belum ada poli yang dapat ditampilkan pada akun ini.</p>
+          ) : queueData.done.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">Belum ada antrian yang selesai.</p>
           ) : queueData.done.map((visit) => (
             <QueueTicket key={visit.id} visit={visit} />
@@ -728,7 +749,9 @@ export default function QueueDashboard() {
           </Lane>
 
           <Lane title="Dibatalkan" helper="Kunjungan yang dibatalkan." count={queueData.cancelled.length}>
-          {queueData.cancelled.length === 0 ? (
+          {!hasQueuePolyclinicAccess ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">Belum ada poli yang dapat ditampilkan pada akun ini.</p>
+          ) : queueData.cancelled.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">Belum ada antrian yang dibatalkan.</p>
           ) : queueData.cancelled.map((visit) => (
             <QueueTicket key={visit.id} visit={visit} />
@@ -757,6 +780,7 @@ export default function QueueDashboard() {
               placeholder="Pilih poli display..."
               searchPlaceholder="Cari poli..."
               square
+              disabled={!hasQueuePolyclinicAccess}
             />
           </LabelledControl>
 
@@ -771,6 +795,7 @@ export default function QueueDashboard() {
                 openDisplayWindow(displayTargetPoli || 'all');
                 setDisplayPickerOpen(false);
               }}
+              disabled={!hasQueuePolyclinicAccess}
             >
               <Monitor className="mr-2 h-4 w-4" />
               Buka Display

@@ -4,8 +4,10 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -452,8 +454,8 @@ function ActionParameterDialog({
               <div className="space-y-3">
                 <div className="space-y-1">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-200/90">Workspace Parameter</p>
-                  <p className="text-lg font-semibold tracking-tight">{actionLabel || 'Tindakan'}</p>
-                  <p className="text-xs leading-5 text-stone-300">Ringkasan parameter di kiri, editor di kanan.</p>
+                  <DialogTitle className="text-lg font-semibold tracking-tight text-stone-50">{actionLabel || 'Tindakan'}</DialogTitle>
+                  <DialogDescription className="text-xs leading-5 text-stone-300">Ringkasan parameter di kiri, editor di kanan.</DialogDescription>
                 </div>
                 <div className="grid gap-3">
                   <SetupSummaryCard label="Terisi" value={`${filledCount}/${drafts.length}`} helper="Nilai atau catatan sudah masuk." />
@@ -709,8 +711,8 @@ function DentalProcedureSetupDialog({
               <div className="space-y-3">
                 <div className="space-y-1">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-200/90">Dental Workspace</p>
-                  <p className="text-lg font-semibold tracking-tight">{serviceName || 'Tindakan Gigi'}</p>
-                  <p className="text-xs leading-5 text-stone-300">Atur target gigi dan sinkronisasi odontogram dari panel ini.</p>
+                  <DialogTitle className="text-lg font-semibold tracking-tight text-stone-50">{serviceName || 'Tindakan Gigi'}</DialogTitle>
+                  <DialogDescription className="text-xs leading-5 text-stone-300">Atur target gigi dan sinkronisasi odontogram dari panel ini.</DialogDescription>
                 </div>
                 <div className="grid gap-3">
                   <SetupSummaryCard label="Target" value={TARGET_SCOPE_LABELS[targetScope]} helper={targetGuide} />
@@ -1055,8 +1057,8 @@ function DentalActionDetailDialog({
               <div className="space-y-3">
                 <div className="space-y-1">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-200/90">Dental Workspace</p>
-                  <p className="text-lg font-semibold tracking-tight">{actionLabel}</p>
-                  <p className="text-xs leading-5 text-stone-300">Ringkasan target dan referensi odontogram tindakan.</p>
+                  <DialogTitle className="text-lg font-semibold tracking-tight text-stone-50">{actionLabel}</DialogTitle>
+                  <DialogDescription className="text-xs leading-5 text-stone-300">Ringkasan target dan referensi odontogram tindakan.</DialogDescription>
                 </div>
                 <div className="grid gap-3">
                   <SetupSummaryCard label="Target" value={TARGET_SCOPE_LABELS[actionTargetScope]} helper="Jenis target anatomi yang tersimpan." />

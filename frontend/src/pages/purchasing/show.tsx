@@ -130,7 +130,12 @@ export default function PurchasingShow() {
       title={po.po_number}
       subtitle={`Purchase order untuk ${po.supplier?.name || 'supplier tidak diketahui'} pada ${formatDate(po.order_date)}.`}
       onBack={() => navigate('/purchasing')}
-      badges={<Badge variant={statusInfo.variant} className={statusInfo.className ? `rounded-none shadow-none ${statusInfo.className}` : 'rounded-none shadow-none'}>{statusInfo.label}</Badge>}
+      badges={
+        <>
+          <Badge variant="secondary" className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none">ID #{po.id}</Badge>
+          <Badge variant={statusInfo.variant} className={statusInfo.className ? `rounded-none shadow-none ${statusInfo.className}` : 'rounded-none shadow-none'}>{statusInfo.label}</Badge>
+        </>
+      }
       meta={
         <>
           <span>{(po.items || []).length} item</span>
@@ -256,7 +261,7 @@ export default function PurchasingShow() {
                   <Truck className="h-4 w-4 text-primary" />
                   Hanya item yang belum terpenuhi yang ditampilkan di bawah.
                 </p>
-                <Button variant="ghost" size="sm" onClick={() => setShowReceiveForm(false)}>Batal</Button>
+                <Button variant="ghost" size="sm" className="rounded-none" onClick={() => setShowReceiveForm(false)}>Batal</Button>
               </div>
 
               <div className="overflow-x-auto rounded-md border border-border/70 bg-background">

@@ -13,6 +13,7 @@ interface SearchableSelectProps {
   options: SearchableSelectOption[]
   value: string
   onValueChange: (value: string) => void
+  onSearchChange?: (value: string) => void
   placeholder?: string
   searchPlaceholder?: string
   emptyText?: string
@@ -28,6 +29,7 @@ export function SearchableSelect({
   options,
   value,
   onValueChange,
+  onSearchChange,
   placeholder = 'Pilih...',
   searchPlaceholder = 'Cari...',
   emptyText = 'Tidak ditemukan.',
@@ -180,7 +182,9 @@ export function SearchableSelect({
           }
         }}
         onChange={(event) => {
-          setSearchText(event.target.value)
+          const nextValue = event.target.value
+          setSearchText(nextValue)
+          onSearchChange?.(nextValue)
           if (!disabled) {
             setOpen(true)
           }

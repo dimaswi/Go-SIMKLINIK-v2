@@ -32,6 +32,15 @@ logs/
 # Docker
 docker-compose.override.yml
 
+# Runtime generated files
+backend/uploads/**
+!backend/uploads/.gitkeep
+backend/backups/**/*.dump
+backend/backups/**/*.sql
+backend/backups/**/*.tar.gz
+backend/backups/**/*.zip
+backend/backups/**/*.bak
+
 # Build
 dist/
 build/

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { informedConsentsApi, type FinalizeVisitPayload, type MedicalRecord, type SatusehatVisitAutoSyncResult, type UpdateInformedConsentPayload, type Visit } from '@/lib/api';
+import { createControlScheduleWhatsAppPayloadFromVisit } from '@/lib/control-schedule-whatsapp';
 import { cn } from '@/lib/utils';
 import { formatDate, formatDateTime, formatDateTimeLocal, type VisitInformedConsent } from '../utils';
 import { FinalizeVisitDialog } from './finalize-visit-dialog';
@@ -23,6 +24,9 @@ type InformedConsentSheetPageProps = {
   outcomeRecord: MedicalRecord | null;
   onBack: () => void;
   onFinalizeVisit: (payload: FinalizeVisitPayload) => Promise<void>;
+  onPrintControlLetter: () => Promise<void>;
+  showControlLetter: boolean;
+  printingControlLetter: boolean;
   onUpdateConsent: (consentId: number, payload: UpdateInformedConsentPayload) => Promise<void>;
   onPrintMedicalResume: () => Promise<void>;
   printingMedicalResume: boolean;
@@ -74,6 +78,9 @@ export function InformedConsentSheetPage({
   outcomeRecord,
   onBack,
   onFinalizeVisit,
+  onPrintControlLetter,
+  showControlLetter,
+  printingControlLetter,
   onUpdateConsent,
   onPrintMedicalResume,
   printingMedicalResume,
@@ -93,6 +100,10 @@ export function InformedConsentSheetPage({
   const selectedConsent = useMemo(
     () => consents.find((consent) => consent.id === selectedConsentId) || consents[0] || null,
     [consents, selectedConsentId]
+  );
+  const controlWhatsAppPayload = useMemo(
+    () => createControlScheduleWhatsAppPayloadFromVisit(visit, outcomeRecord),
+    [outcomeRecord, visit]
   );
 
   useEffect(() => {
@@ -188,7 +199,7 @@ export function InformedConsentSheetPage({
         visit={visit}
         completedSections={completedSections}
         isLocked={workspaceLocked}
-        sticky={false}
+        sticky
         sectionLabel="Informed Consent"
         allergyInfo={allergyInfo}
         onBack={onBack}
@@ -201,6 +212,11 @@ export function InformedConsentSheetPage({
           </Button>
         ) : visit.status === 'completed' ? (
           <FinalizedVisitActions
+            visitId={visit.id}
+            showControlLetter={showControlLetter}
+            controlWhatsAppPayload={controlWhatsAppPayload}
+            onPrintControlLetter={onPrintControlLetter}
+            printingControlLetter={printingControlLetter}
             onPrintMedicalResume={onPrintMedicalResume}
             printingMedicalResume={printingMedicalResume}
             onCancelFinalization={onCancelFinalization}

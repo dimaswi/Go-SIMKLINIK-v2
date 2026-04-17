@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { BpjsReferencePicker } from "@/components/bpjs-reference-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { useBpjsAntreanEnabled } from "@/hooks/use-bpjs-antrean-enabled";
 import { polyclinicsApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Building2, Palette } from "lucide-react";
@@ -18,6 +20,7 @@ export default function PolyclinicCreate() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const { bpjsAntreanEnabled } = useBpjsAntreanEnabled();
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -26,6 +29,7 @@ export default function PolyclinicCreate() {
     color: "#3B82F6",
     icon: "",
     sort_order: 0,
+    bpjs_poli_code: "",
   });
 
   useEffect(() => {
@@ -103,6 +107,13 @@ export default function PolyclinicCreate() {
                   <Label htmlFor="sort_order" className="text-xs font-medium">Urutan</Label>
                   <Input id="sort_order" type="number" min="0" value={formData.sort_order} onChange={e => setFormData({ ...formData, sort_order: Number(e.target.value) })} className="h-10 text-sm" />
                 </div>
+                {bpjsAntreanEnabled ? (
+                  <div className="space-y-2 md:col-span-2 xl:col-span-2">
+                    <Label htmlFor="bpjs_poli_code" className="text-xs font-medium">Kode Poli BPJS</Label>
+                    <Input id="bpjs_poli_code" placeholder="Contoh: 001" value={formData.bpjs_poli_code} onChange={e => setFormData({ ...formData, bpjs_poli_code: e.target.value })} className="h-10 text-sm" />
+                    <BpjsReferencePicker type="poli" value={formData.bpjs_poli_code} onValueChange={(value) => setFormData({ ...formData, bpjs_poli_code: value })} disabled={loading} />
+                  </div>
+                ) : null}
               </div>
               <div className="flex items-center justify-between rounded-md border p-4">
                 <div className="space-y-0.5">

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 export function MasterDataPageShell({
@@ -23,8 +24,8 @@ export function MasterDataPageShell({
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="shrink-0 border-b border-border/60 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="px-4 py-3 lg:px-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="px-3 py-3 sm:px-4 lg:px-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
             <div className="min-w-0 flex-1">
               {badges ? <div className="flex flex-wrap items-center gap-1.5">{badges}</div> : null}
               <h1 className="text-[15px] font-semibold tracking-tight lg:text-base">{title}</h1>
@@ -32,23 +33,23 @@ export function MasterDataPageShell({
               {meta ? <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">{meta}</div> : null}
             </div>
 
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <Button variant="outline" type='button' className="rounded-none shadow-none" onClick={onBack}>Kembali</Button>
+            <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+              <Button variant="outline" type='button' className="w-full rounded-none shadow-none sm:w-auto" onClick={onBack}>Kembali</Button>
               {actions}
             </div>
           </div>
         </div>
       </div>
 
-      <div className="min-h-0 overflow-auto px-4 py-4 lg:px-5">
+      <div className="min-h-0 overflow-auto px-3 py-3 sm:px-4 lg:px-5 lg:py-4">
         <div className={aside ? 'grid items-start gap-4 xl:grid-cols-[320px_minmax(0,1fr)]' : ''}>
           {aside ? (
-            <aside className="overflow-hidden border border-border/70 bg-background xl:sticky xl:top-0 xl:self-start">
+            <aside className="order-2 overflow-hidden border border-border/70 bg-background xl:order-1 xl:sticky xl:top-0 xl:self-start">
               {aside}
             </aside>
           ) : null}
 
-          <div className="overflow-hidden border border-border/70 bg-background">
+          <div className="order-1 overflow-hidden border border-border/70 bg-background xl:order-2">
             <div className="min-w-0 bg-background">{children}</div>
           </div>
         </div>
@@ -119,4 +120,42 @@ export function formatMasterDataDateTime(value?: string) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+export function MasterDataListShell({
+  title,
+  subtitle,
+  totalCount,
+  badges,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  totalCount: number;
+  badges?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden border border-border/70 bg-background">
+      <div className="shrink-0 border-b border-border/70 px-3 py-3 sm:px-4 lg:px-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <h2 className="text-sm font-semibold tracking-tight text-foreground">{title}</h2>
+            <p className="text-[11px] leading-5 text-muted-foreground">{subtitle}</p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className="rounded-none px-2.5 py-1 text-[10px] uppercase tracking-[0.16em]">
+              {totalCount} data
+            </Badge>
+            {badges}
+          </div>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 p-3 sm:p-4 lg:p-5">
+        {children}
+      </div>
+    </section>
+  );
 }

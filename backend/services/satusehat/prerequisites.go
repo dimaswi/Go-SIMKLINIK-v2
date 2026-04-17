@@ -18,6 +18,8 @@ type ResourcePrerequisite struct {
 
 func BuildLaboratoryPrerequisites(item models.LaboratoryOrderItem, config Config) []ResourcePrerequisite {
 	record := item.MedicalRecord
+	requesterActor := ResolveMedicalRecordRequesterActor(record)
+	performerActor := ResolveLaboratoryPerformerActor(item)
 	resultReady := hasLaboratoryResults(item)
 	loincCode := strings.TrimSpace(item.TestCodeSnapshot)
 	loincReady := looksLikeLOINCCode(loincCode)
@@ -31,9 +33,10 @@ func BuildLaboratoryPrerequisites(item models.LaboratoryOrderItem, config Config
 
 	return []ResourcePrerequisite{
 		makePrerequisite("patient", "Patient", true, strings.TrimSpace(record.Patient.SatusehatPatientID) != "", strings.TrimSpace(record.Patient.SatusehatPatientID), "Patient SATUSEHAT diperlukan sebagai subject untuk ServiceRequest, Observation, dan DiagnosticReport.", "Sinkronkan Patient lebih dulu."),
-		makePrerequisite("practitioner", "Practitioner", false, strings.TrimSpace(record.Doctor.SatusehatPractitionerID) != "", strings.TrimSpace(record.Doctor.SatusehatPractitionerID), "Practitioner dipakai sebagai requester agar order laboratorium lengkap.", "Sinkronkan Practitioner bila requester ingin dikirim lengkap."),
+		makePrerequisite("practitioner", "Practitioner Requester", false, requesterActor.Ready(), requesterActor.ResourceID, "Practitioner dipakai sebagai requester agar order laboratorium lengkap.", "Sinkronkan Practitioner pegawai/dokter pengaju bila requester ingin dikirim lengkap."),
 		makePrerequisite("encounter", "Encounter", true, strings.TrimSpace(record.Visit.SatusehatEncounterID) != "", strings.TrimSpace(record.Visit.SatusehatEncounterID), "Encounter aktif diperlukan sebagai referensi order dan hasil laboratorium.", "Sinkronkan Encounter lebih dulu."),
 		makePrerequisite("specimen", "Specimen", resultReady, specimenReady, specimenValue, "Collection contoh SATUSEHAT laboratorium memakai resource Specimen yang direferensikan dari Observation dan terhubung ke ServiceRequest.", "Pastikan item laboratorium sudah memiliki specimen transaksi sebelum mengirim hasil laboratorium final."),
+		makePrerequisite("performer-practitioner", "Practitioner Performer", false, performerActor.Ready(), performerActor.ResourceID, "Pegawai laboratorium/result user dapat dipakai sebagai performer resource laboratorium sebelum fallback ke Organization.", "Lengkapi SATUSEHAT Practitioner ID pada master pegawai petugas laboratorium bila performer practitioner ingin dipakai."),
 		makePrerequisite("organization", "Organization Induk", false, strings.TrimSpace(config.OrganizationID) != "", strings.TrimSpace(config.OrganizationID), "Organization induk saat ini dipakai sebagai performer laboratorium.", "Isi Organization ID SATUSEHAT pada settings jika performer ingin dikirim."),
 		makePrerequisite("lab-master", "Master Pemeriksaan Laboratorium", true, strings.TrimSpace(item.TestNameSnapshot) != "", strings.TrimSpace(firstNonEmptyText(item.TestCodeSnapshot, item.TestNameSnapshot)), "Nama dan kode pemeriksaan menjadi code untuk resource laboratorium.", "Pastikan snapshot layanan laboratorium terisi."),
 		makePrerequisite("lab-loinc", "Kode LOINC Laboratorium", resultReady, loincReady, loincCode, "DiagnosticReport laboratorium memerlukan kode LOINC valid pada elemen code.coding.", "Lengkapi kode LOINC pada master pemeriksaan laboratorium agar DiagnosticReport bisa dikirim."),
@@ -43,14 +46,17 @@ func BuildLaboratoryPrerequisites(item models.LaboratoryOrderItem, config Config
 
 func BuildRadiologyPrerequisites(item models.RadiologyOrderItem, config Config) []ResourcePrerequisite {
 	record := item.MedicalRecord
+	requesterActor := ResolveMedicalRecordRequesterActor(record)
+	performerActor := ResolveRadiologyPerformerActor(item)
 	resultReady := hasRadiologyResults(item)
 	loincCode := strings.TrimSpace(item.ServiceCodeSnapshot)
 	loincReady := looksLikeLOINCCode(loincCode)
 
 	return []ResourcePrerequisite{
 		makePrerequisite("patient", "Patient", true, strings.TrimSpace(record.Patient.SatusehatPatientID) != "", strings.TrimSpace(record.Patient.SatusehatPatientID), "Patient SATUSEHAT diperlukan sebagai subject untuk ServiceRequest dan DiagnosticReport radiologi.", "Sinkronkan Patient lebih dulu."),
-		makePrerequisite("practitioner", "Practitioner", false, strings.TrimSpace(record.Doctor.SatusehatPractitionerID) != "", strings.TrimSpace(record.Doctor.SatusehatPractitionerID), "Practitioner dipakai sebagai requester order radiologi.", "Sinkronkan Practitioner bila requester ingin dikirim lengkap."),
+		makePrerequisite("practitioner", "Practitioner Requester", false, requesterActor.Ready(), requesterActor.ResourceID, "Practitioner dipakai sebagai requester order radiologi.", "Sinkronkan Practitioner pegawai/dokter pengaju bila requester ingin dikirim lengkap."),
 		makePrerequisite("encounter", "Encounter", true, strings.TrimSpace(record.Visit.SatusehatEncounterID) != "", strings.TrimSpace(record.Visit.SatusehatEncounterID), "Encounter diperlukan sebagai konteks order dan hasil radiologi.", "Sinkronkan Encounter lebih dulu."),
+		makePrerequisite("performer-practitioner", "Practitioner Performer", false, performerActor.Ready(), performerActor.ResourceID, "Pegawai radiologi/result user dapat dipakai sebagai performer resource radiologi sebelum fallback ke Organization.", "Lengkapi SATUSEHAT Practitioner ID pada master pegawai petugas radiologi bila performer practitioner ingin dipakai."),
 		makePrerequisite("organization", "Organization Induk", false, strings.TrimSpace(config.OrganizationID) != "", strings.TrimSpace(config.OrganizationID), "Organization induk saat ini dipakai sebagai performer radiologi.", "Isi Organization ID SATUSEHAT pada settings jika performer ingin dikirim."),
 		makePrerequisite("radiology-master", "Master Pemeriksaan Radiologi", true, strings.TrimSpace(item.ServiceNameSnapshot) != "", strings.TrimSpace(firstNonEmptyText(item.ServiceCodeSnapshot, item.ServiceNameSnapshot)), "Nama dan kode layanan radiologi menjadi code untuk resource radiologi.", "Pastikan snapshot layanan radiologi terisi."),
 		makePrerequisite("radiology-loinc", "Kode LOINC Radiologi", resultReady, loincReady, loincCode, "DiagnosticReport radiologi memerlukan kode LOINC valid pada elemen code.coding.", "Lengkapi kode LOINC pada master layanan radiologi agar DiagnosticReport bisa dikirim."),
@@ -60,6 +66,7 @@ func BuildRadiologyPrerequisites(item models.RadiologyOrderItem, config Config) 
 
 func BuildMedicationRequestPrerequisites(prescription models.Prescription, config Config) []ResourcePrerequisite {
 	record := prescription.MedicalRecord
+	requesterActor := ResolveMedicalRecordRequesterActor(record)
 	medicine := prescription.Medicine
 	medicineName := firstNonEmptyText(prescription.Medicine.Name, prescription.Medicine.GenericName)
 	kfaCode := strings.TrimSpace(medicine.KFACode)
@@ -68,7 +75,7 @@ func BuildMedicationRequestPrerequisites(prescription models.Prescription, confi
 
 	return []ResourcePrerequisite{
 		makePrerequisite("patient", "Patient", true, strings.TrimSpace(record.Patient.SatusehatPatientID) != "", strings.TrimSpace(record.Patient.SatusehatPatientID), "MedicationRequest membutuhkan Patient SATUSEHAT sebagai subject.", "Sinkronkan Patient lebih dulu."),
-		makePrerequisite("practitioner", "Practitioner", false, strings.TrimSpace(record.Doctor.SatusehatPractitionerID) != "", strings.TrimSpace(record.Doctor.SatusehatPractitionerID), "Practitioner dipakai sebagai requester resep.", "Sinkronkan Practitioner bila requester ingin dikirim lengkap."),
+		makePrerequisite("practitioner", "Practitioner Requester", false, requesterActor.Ready(), requesterActor.ResourceID, "Practitioner dipakai sebagai requester resep.", "Sinkronkan Practitioner pegawai/dokter pengaju bila requester ingin dikirim lengkap."),
 		makePrerequisite("encounter", "Encounter", true, strings.TrimSpace(record.Visit.SatusehatEncounterID) != "", strings.TrimSpace(record.Visit.SatusehatEncounterID), "Encounter diperlukan sebagai konteks resep pada kunjungan.", "Sinkronkan Encounter lebih dulu."),
 		makePrerequisite("medication-master", "Medication Master", true, medicationMasterReady, medicationMasterValue, "MedicationRequest SATUSEHAT merujuk ke resource Medication yang dapat dibentuk dari master obat ber-mapping KFA.", "Lengkapi mapping KFA agar resource Medication bisa dibentuk dan disinkronkan otomatis."),
 		makePrerequisite("kfa-code", "Kode KFA Obat", true, looksLikeKFACode(kfaCode), kfaCode, "Collection contoh Medication memakai coding system http://sys-ids.kemkes.go.id/kfa untuk code obat.", "Isi kode KFA pada master obat; kode internal lokal belum cukup."),
@@ -81,6 +88,7 @@ func BuildMedicationRequestPrerequisites(prescription models.Prescription, confi
 
 func BuildMedicationDispensePrerequisites(dispensing models.Dispensing, config Config) []ResourcePrerequisite {
 	record := dispensing.MedicalRecord
+	performerActor := ResolveDispensingPerformerActor(dispensing)
 	medicine := resolveDispensingMedicine(dispensing)
 	medicineName := firstNonEmptyText(medicine.Name, medicine.GenericName)
 	linkedMedicationRequestID := strings.TrimSpace(dispensing.Prescription.SatusehatMedicationRequestID)
@@ -91,6 +99,7 @@ func BuildMedicationDispensePrerequisites(dispensing models.Dispensing, config C
 	return []ResourcePrerequisite{
 		makePrerequisite("patient", "Patient", true, strings.TrimSpace(record.Patient.SatusehatPatientID) != "", strings.TrimSpace(record.Patient.SatusehatPatientID), "MedicationDispense membutuhkan Patient SATUSEHAT sebagai subject.", "Sinkronkan Patient lebih dulu."),
 		makePrerequisite("encounter", "Encounter", true, strings.TrimSpace(record.Visit.SatusehatEncounterID) != "", strings.TrimSpace(record.Visit.SatusehatEncounterID), "Encounter diperlukan sebagai konteks dispensing.", "Sinkronkan Encounter lebih dulu."),
+		makePrerequisite("performer-practitioner", "Practitioner Performer", false, performerActor.Ready(), performerActor.ResourceID, "Pegawai farmasi/dispenser dapat dipakai sebagai performer MedicationDispense.", "Lengkapi SATUSEHAT Practitioner ID pada master pegawai petugas farmasi bila performer practitioner ingin dipakai."),
 		makePrerequisite("medication-request", "MedicationRequest", true, linkedMedicationRequestID != "", linkedMedicationRequestID, "Dispense membutuhkan referensi authorizingPrescription dari MedicationRequest yang sudah tersinkron.", "Sinkronkan MedicationRequest resep lebih dulu."),
 		makePrerequisite("medication-master", "Medication Master", true, medicationMasterReady, medicationMasterValue, "MedicationDispense idealnya merujuk ke master Medication yang sama dengan MedicationRequest.", "Lengkapi mapping KFA agar resource Medication bisa dibentuk dan disinkronkan otomatis."),
 		makePrerequisite("kfa-code", "Kode KFA Obat", true, looksLikeKFACode(kfaCode), kfaCode, "Master farmasi SATUSEHAT biasanya memakai kode KFA pada resource Medication.", "Isi kode KFA pada master obat sebelum sync farmasi."),
@@ -103,20 +112,22 @@ func BuildMedicationDispensePrerequisites(dispensing models.Dispensing, config C
 
 func BuildProcedurePrerequisites(action models.MedicalAction, config Config) []ResourcePrerequisite {
 	record := action.MedicalRecord
+	practitionerActor := ResolveMedicalRecordRequesterActor(record)
 	procedureName := strings.TrimSpace(firstNonEmptyText(action.ServiceNameSnapshot, action.MedicalService.Name))
 	procedureCode := strings.TrimSpace(firstNonEmptyText(action.ServiceCodeSnapshot, action.MedicalService.Code))
 
 	return []ResourcePrerequisite{
 		makePrerequisite("patient", "Patient", true, strings.TrimSpace(record.Patient.SatusehatPatientID) != "", strings.TrimSpace(record.Patient.SatusehatPatientID), "Procedure membutuhkan Patient SATUSEHAT sebagai subject tindakan.", "Sinkronkan Patient lebih dulu."),
 		makePrerequisite("encounter", "Encounter", true, strings.TrimSpace(record.Visit.SatusehatEncounterID) != "", strings.TrimSpace(record.Visit.SatusehatEncounterID), "Procedure perlu konteks Encounter kunjungan.", "Sinkronkan Encounter lebih dulu."),
-		makePrerequisite("practitioner", "Practitioner", false, strings.TrimSpace(record.Doctor.SatusehatPractitionerID) != "", strings.TrimSpace(record.Doctor.SatusehatPractitionerID), "Practitioner dipakai sebagai performer tindakan.", "Sinkronkan Practitioner bila performer ingin terkirim lengkap."),
+		makePrerequisite("practitioner", "Practitioner", false, practitionerActor.Ready(), practitionerActor.ResourceID, "Practitioner dipakai sebagai performer tindakan.", "Sinkronkan Practitioner pegawai/dokter pelaksana bila performer ingin terkirim lengkap."),
 		makePrerequisite("procedure-master", "Master Tindakan", true, procedureName != "", strings.TrimSpace(firstNonEmptyText(procedureCode, procedureName)), "Nama dan kode tindakan dibutuhkan untuk membentuk code Procedure.", "Lengkapi snapshot layanan tindakan pada data medical action."),
 	}
 }
 
 func BuildCarePlanPrerequisites(record models.MedicalRecord, config Config) []ResourcePrerequisite {
 	planSummary := strings.TrimSpace(firstNonEmptyText(record.Plan, record.FollowUpInstruction))
-	authorReference := strings.TrimSpace(record.Doctor.SatusehatPractitionerID)
+	authorActor := ResolveMedicalRecordRequesterActor(record)
+	authorReference := strings.TrimSpace(authorActor.ResourceID)
 	organizationReference := strings.TrimSpace(config.OrganizationID)
 	patientReference := strings.TrimSpace(record.Patient.SatusehatPatientID)
 	authorReady := authorReference != "" || organizationReference != "" || patientReference != ""
@@ -140,6 +151,7 @@ func BuildCarePlanPrerequisites(record models.MedicalRecord, config Config) []Re
 
 func BuildGoalPrerequisites(record models.MedicalRecord, config Config) []ResourcePrerequisite {
 	goalSummary := strings.TrimSpace(firstNonEmptyText(record.Plan, record.FollowUpInstruction, record.Assessment))
+	practitionerActor := ResolveMedicalRecordRequesterActor(record)
 
 	conditionReady := false
 	conditionValue := ""
@@ -155,7 +167,7 @@ func BuildGoalPrerequisites(record models.MedicalRecord, config Config) []Resour
 		makePrerequisite("patient", "Patient", true, strings.TrimSpace(record.Patient.SatusehatPatientID) != "", strings.TrimSpace(record.Patient.SatusehatPatientID), "Goal membutuhkan Patient SATUSEHAT sebagai subject.", "Sinkronkan Patient lebih dulu."),
 		makePrerequisite("goal-content", "Konten Goal", true, goalSummary != "", goalSummary, "Goal dibentuk dari plan, follow-up instruction, atau assessment rekam medis.", "Isi plan/follow-up instruction/assessment pada rekam medis."),
 		makePrerequisite("condition", "Condition (Diagnosis)", true, conditionReady, conditionValue, "Goal.addresses membutuhkan reference ke Condition yang sudah tersinkron; Encounter tidak diperbolehkan.", "Sinkronkan minimal satu diagnosis (Condition) terlebih dahulu."),
-		makePrerequisite("practitioner", "Practitioner", false, strings.TrimSpace(record.Doctor.SatusehatPractitionerID) != "", strings.TrimSpace(record.Doctor.SatusehatPractitionerID), "Practitioner opsional untuk expressedBy pada Goal.", "Sinkronkan Practitioner jika ingin expressedBy ikut terkirim."),
+		makePrerequisite("practitioner", "Practitioner", false, practitionerActor.Ready(), practitionerActor.ResourceID, "Practitioner opsional untuk expressedBy pada Goal.", "Sinkronkan Practitioner pegawai/dokter pemeriksa jika ingin expressedBy ikut terkirim."),
 		makePrerequisite("follow-up-date", "Tanggal Kontrol", false, record.FollowUpAt != nil && !record.FollowUpAt.IsZero(), "follow_up_at", "Tanggal kontrol dapat dikirim sebagai target dueDate pada Goal.", "Isi jadwal follow-up bila ingin menambahkan target tanggal kontrol."),
 	}
 }
@@ -188,12 +200,13 @@ func BuildCompositionPrerequisites(record models.MedicalRecord, config Config) [
 		record.Assessment,
 		record.Plan,
 	)) != ""
+	practitionerActor := ResolveMedicalRecordRequesterActor(record)
 
 	return []ResourcePrerequisite{
 		makePrerequisite("patient", "Patient", true, strings.TrimSpace(record.Patient.SatusehatPatientID) != "", strings.TrimSpace(record.Patient.SatusehatPatientID), "Composition membutuhkan Patient SATUSEHAT sebagai subject dokumen.", "Sinkronkan Patient lebih dulu."),
 		makePrerequisite("encounter", "Encounter", true, strings.TrimSpace(record.Visit.SatusehatEncounterID) != "", strings.TrimSpace(record.Visit.SatusehatEncounterID), "Composition membutuhkan Encounter SATUSEHAT sebagai konteks episode kunjungan.", "Sinkronkan Encounter lebih dulu."),
 		makePrerequisite("composition-content", "Konten Resume", true, hasContent, "Anamnesis, pemeriksaan, assessment, rencana", "Composition dibentuk dari ringkasan konten rekam medis.", "Lengkapi minimal salah satu bagian rekam medis agar dokumen dapat dibentuk."),
-		makePrerequisite("practitioner", "Practitioner", false, strings.TrimSpace(record.Doctor.SatusehatPractitionerID) != "", strings.TrimSpace(record.Doctor.SatusehatPractitionerID), "Practitioner digunakan sebagai author dokumen Composition.", "Sinkronkan Practitioner bila author ingin terkirim lengkap."),
+		makePrerequisite("practitioner", "Practitioner", false, practitionerActor.Ready(), practitionerActor.ResourceID, "Practitioner digunakan sebagai author dokumen Composition.", "Sinkronkan Practitioner pegawai/dokter pemeriksa bila author ingin terkirim lengkap."),
 	}
 }
 

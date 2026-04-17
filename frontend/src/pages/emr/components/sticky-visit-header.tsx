@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { usePermission } from '@/hooks/usePermission';
 import { useToast } from '@/hooks/use-toast';
 import { satusehatApi, type SatusehatVisitAutoSyncResult, type Visit } from '@/lib/api';
@@ -110,8 +110,8 @@ export function StickyVisitHeader({
   const { hasAnyPermission } = usePermission();
   const [isPatientInfoCollapsed, setIsPatientInfoCollapsed] = useState(true);
   const [runningAutoSync, setRunningAutoSync] = useState(false);
-  const [loadingMonitorSnapshot, setLoadingMonitorSnapshot] = useState(false);
   const [monitorDialogOpen, setMonitorDialogOpen] = useState(false);
+  const [monitorAutoRefreshEnabled, setMonitorAutoRefreshEnabled] = useState(false);
   const [monitorResult, setMonitorResult] = useState<SatusehatVisitAutoSyncResult | null>(null);
   const [monitorMessage, setMonitorMessage] = useState('');
   const patient = visit.patient;
@@ -127,7 +127,7 @@ export function StickyVisitHeader({
   const emergencyLabel = [patient?.emergency_contact_name, patient?.emergency_contact_relation].filter(Boolean).join(' · ');
   const allergyLabel = (allergyInfo || patient?.allergies || '').trim();
   const ToggleIcon = isPatientInfoCollapsed ? ChevronRight : ChevronDown;
-  const stickyOffsetStyle = sticky ? { top: 'var(--app-header-height, 0px)' } : undefined;
+  const stickyOffsetStyle = sticky ? { top: 0 } : undefined;
   const encounterRequirements = buildEncounterRequirements(visit);
   const encounterReadyCount = encounterRequirements.filter((item) => item.ready).length;
   const encounterReady = encounterReadyCount === 4;
@@ -147,6 +147,77 @@ export function StickyVisitHeader({
   };
   const canRunAutoSync = hasAnyPermission(['settings.update', 'visits.update']);
   const canMonitorAutoSync = hasAnyPermission(['settings.view', 'visits.view']);
+
+  // Poll for progress updates while dialog is open and job is running/queued
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const monitorSourceRef = useRef<'view' | 'run' | null>(null);
+  const isJobActive = monitorResult?.job_status === 'queued' || monitorResult?.job_status === 'running';
+
+  const fetchLatestSnapshot = useCallback(async () => {
+    if (!visit.id) return;
+    try {
+      const response = await satusehatApi.getAutoSyncVisit(visit.id);
+      const nextResult = response.data?.data || null;
+      const nextMessage = (response.data?.message || '').trim();
+      if (nextResult) {
+        setMonitorResult(nextResult);
+        if (nextMessage) setMonitorMessage(nextMessage);
+        persistMonitorSnapshot(visit.id, nextResult, nextMessage);
+      }
+    } catch {
+      // Ignore polling errors
+    }
+  }, [visit.id]);
+
+  useEffect(() => {
+    if (monitorDialogOpen && monitorAutoRefreshEnabled && isJobActive) {
+      // Start polling every 3 seconds
+      pollIntervalRef.current = setInterval(fetchLatestSnapshot, 3000);
+      return () => {
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        }
+      };
+    }
+
+    // Clear interval when dialog closes or job completes
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+  }, [monitorAutoRefreshEnabled, monitorDialogOpen, isJobActive, fetchLatestSnapshot]);
+
+  useEffect(() => {
+    if (monitorDialogOpen) {
+      return;
+    }
+
+    monitorAutoRefreshEnabled && setMonitorAutoRefreshEnabled(false);
+    if (monitorSourceRef.current === 'view') {
+      monitorSourceRef.current = null;
+    }
+  }, [monitorAutoRefreshEnabled, monitorDialogOpen]);
+
+  // Notify parent when async job completes (detected by polling)
+  const prevJobStatusRef = useRef(monitorResult?.job_status);
+  useEffect(() => {
+    const prevStatus = prevJobStatusRef.current;
+    const currStatus = monitorResult?.job_status;
+    prevJobStatusRef.current = currStatus;
+
+    if ((prevStatus === 'queued' || prevStatus === 'running') && (currStatus === 'completed' || currStatus === 'failed')) {
+      toast({
+        variant: currStatus === 'completed' ? 'success' : 'destructive',
+        title: currStatus === 'completed' ? 'Auto-sync SATUSEHAT selesai' : 'Auto-sync SATUSEHAT gagal',
+        description: `${monitorResult?.sent_count || 0} resource terkirim, ${monitorResult?.unsent_count || 0} belum terkirim.`,
+      });
+      setMonitorAutoRefreshEnabled(false);
+      if (monitorSourceRef.current === 'run') {
+        onEncounterSynced?.();
+      }
+    }
+  }, [monitorResult?.job_status]);
 
   useEffect(() => {
     const snapshot = loadStoredMonitorSnapshot(visit.id);
@@ -168,39 +239,16 @@ export function StickyVisitHeader({
   }, [prefetchedMonitorMessage, prefetchedMonitorResult]);
 
   const handleOpenMonitor = async () => {
+    monitorSourceRef.current = 'view';
+    setMonitorAutoRefreshEnabled(false);
     setMonitorDialogOpen(true);
 
-    if (!visit.id || loadingMonitorSnapshot) {
+    if (monitorResult || monitorMessage.trim()) {
       return;
     }
 
-    setLoadingMonitorSnapshot(true);
-    try {
-      const response = await satusehatApi.getAutoSyncVisit(visit.id);
-      const nextResult = response.data?.data || null;
-      const nextMessage = (response.data?.message || '').trim();
-      if (nextResult) {
-        setMonitorResult(nextResult);
-        if (nextMessage) {
-          setMonitorMessage(nextMessage);
-        }
-        persistMonitorSnapshot(visit.id, nextResult, nextMessage);
-      }
-    } catch (error: any) {
-      const statusCode = Number(error?.response?.status || 0);
-      if (statusCode === 404) {
-        if (!monitorResult) {
-          setMonitorMessage('Belum ada hasil auto-sync SATUSEHAT pada kunjungan ini. Jalankan auto-sync terlebih dahulu.');
-        }
-      } else {
-        toast({
-          variant: 'destructive',
-          title: 'Gagal memuat snapshot auto-sync',
-          description: error?.response?.data?.error || 'Tidak dapat memuat data monitor dari backend.',
-        });
-      }
-    } finally {
-      setLoadingMonitorSnapshot(false);
+    if (!monitorResult) {
+      setMonitorMessage('Monitor hanya menampilkan snapshot terakhir. Jalankan auto-sync atau finalisasi kunjungan untuk memperbarui data.');
     }
   };
 
@@ -215,6 +263,8 @@ export function StickyVisitHeader({
       const nextResult = response.data?.data || null;
       const nextMessage = response.data?.message || 'Auto-sync SATUSEHAT diproses.';
       const backgroundRun = response.status === 202 || nextResult?.job_status === 'queued' || nextResult?.job_status === 'running';
+      monitorSourceRef.current = 'run';
+      setMonitorAutoRefreshEnabled(backgroundRun);
       setMonitorResult(nextResult);
       setMonitorMessage(nextMessage);
       persistMonitorSnapshot(visit.id, nextResult, nextMessage);
@@ -232,6 +282,8 @@ export function StickyVisitHeader({
     } catch (error: any) {
       const backendMessage = error.response?.data?.error || 'Auto-sync SATUSEHAT gagal dijalankan.';
       const errorResult = error.response?.data?.data as SatusehatVisitAutoSyncResult | undefined;
+      monitorSourceRef.current = 'run';
+      setMonitorAutoRefreshEnabled(false);
       if (errorResult) {
         setMonitorResult(errorResult);
         setMonitorMessage(backendMessage);
@@ -263,23 +315,23 @@ export function StickyVisitHeader({
 
       <div className={sticky ? 'sticky z-40 border-b border-border/60 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85' : 'border-b border-border/60 bg-background'} style={stickyOffsetStyle}>
         <div className="px-4 py-2.5 lg:px-5">
-          <div className="flex flex-wrap items-start justify-between gap-2.5">
+          <div className="flex flex-col gap-2.5 lg:flex-row lg:items-start lg:justify-between">
             <button
               type="button"
               onClick={() => setIsPatientInfoCollapsed((current) => !current)}
               aria-expanded={!isPatientInfoCollapsed}
-              className="min-w-0 flex-1 text-left"
+              className="w-full min-w-0 text-left lg:flex-1"
             >
               <div className="flex flex-wrap items-center gap-1">
                 <Badge variant={isLocked ? 'default' : 'secondary'} className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none">
                   {isLocked ? 'Kunjungan Final' : 'Workspace Aktif'}
                 </Badge>
                 <Badge variant="outline" className="h-5 rounded-none px-2 text-[10px] font-medium shadow-none">{visit.visit_number}</Badge>
-                <Badge variant="outline" className="h-5 rounded-none px-2 text-[10px] font-medium shadow-none">{completedSections}/{CORE_COMPLETION_TOTAL} inti lengkap</Badge>
+                <Badge variant="outline" className="hidden h-5 rounded-none px-2 text-[10px] font-medium shadow-none sm:inline-flex">{completedSections}/{CORE_COMPLETION_TOTAL} inti lengkap</Badge>
                 <Badge className={visit.satusehat_encounter_id ? 'h-5 rounded-none border-0 bg-emerald-600 px-2 text-[10px] uppercase tracking-wide text-white shadow-none' : encounterReady ? 'h-5 rounded-none border-0 bg-amber-500 px-2 text-[10px] uppercase tracking-wide text-white shadow-none' : 'h-5 rounded-none border-0 bg-slate-500 px-2 text-[10px] uppercase tracking-wide text-white shadow-none'}>
                   {visit.satusehat_encounter_id ? 'Encounter Sync' : `${encounterReadyCount}/4 Encounter`}
                 </Badge>
-                {sectionLabel ? <Badge variant="outline" className="h-5 rounded-none px-2 text-[10px] font-medium shadow-none">Form {sectionLabel}</Badge> : null}
+                {sectionLabel ? <Badge variant="outline" className="hidden h-5 rounded-none px-2 text-[10px] font-medium shadow-none sm:inline-flex">Form {sectionLabel}</Badge> : null}
               </div>
 
               <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -356,7 +408,7 @@ export function StickyVisitHeader({
               ) : null}
             </button>
 
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:justify-end">
               <Button variant="outline" className="rounded-none shadow-none" onClick={onBack}>Kembali</Button>
               {canMonitorAutoSync ? (
                 <Button variant="outline" className="gap-1.5 rounded-none shadow-none" onClick={handleOpenMonitor} title="Pantau hasil Auto Sync SATUSEHAT" disabled={!visit.id}>

@@ -75,6 +75,7 @@ func LookupPractitionerByNIK(ctx context.Context, config Config, nik string) (Pr
 	request.Header.Set("Accept", "application/json")
 
 	client := &http.Client{Timeout: 45 * time.Second}
+	throttleSATUSEHATCall()
 	response, err := client.Do(request)
 	if err != nil {
 		RecordActivityLog(ActivityLogEntry{Operation: "lookup", ResourceType: "Practitioner", Mode: config.ActiveMode, Method: http.MethodGet, Endpoint: endpoint, Success: false, ErrorMessage: err.Error()})

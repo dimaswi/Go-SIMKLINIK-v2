@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"starter/backend/database"
 	"starter/backend/models"
@@ -131,6 +132,24 @@ type initialAssessmentPrintViewData struct {
 }
 
 var initialAssessmentSectionOrder = []string{"anamnesis", "physical_exam", "assessment"}
+var suratSectionOrder = []string{"assessment", "outcome"}
+
+type suratPrintViewData struct {
+	GeneratedAt       time.Time
+	Visit             models.Visit
+	EntryGroupKey     string
+	EntryRecordDate   *time.Time
+	SuratType         string
+	SuratTypeLabel    string
+	PrintedByLabel    string
+	ValidationBaseURL string
+	DocumentFields    []initialAssessmentPrintField
+	PatientFields     []initialAssessmentPrintField
+	VisitFields       []initialAssessmentPrintField
+	AssessmentFields  []initialAssessmentPrintField
+	OutcomeFields     []initialAssessmentPrintField
+	StatementTemplate string
+}
 
 func PreviewPrintHeaderPDF(c *gin.Context) {
 	var request printHeaderPreviewRequest
@@ -210,6 +229,62 @@ func PrintInitialAssessmentEntry(c *gin.Context) {
 	c.Data(http.StatusOK, "application/pdf", pdfBytes)
 }
 
+func PrintSuratEntry(c *gin.Context) {
+	visitID, err := strconv.ParseUint(c.Param("visitId"), 10, 64)
+	if err != nil || visitID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID kunjungan tidak valid"})
+		return
+	}
+
+	entryGroupKey := strings.TrimSpace(c.Query("entry_group_key"))
+	recordIDs := parseMedicalRecordPrintIDs(c.Query("record_ids"))
+	if entryGroupKey == "" && len(recordIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Parameter entri cetak tidak lengkap"})
+		return
+	}
+
+	var visit models.Visit
+	if err := database.DB.
+		Preload("Patient").
+		Preload("Doctor").
+		Preload("Polyclinic").
+		First(&visit, uint(visitID)).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Kunjungan tidak ditemukan"})
+		return
+	}
+
+	records, err := getSuratRecordsForPrint(uint(visitID), entryGroupKey, recordIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if len(records) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Entri surat tidak ditemukan"})
+		return
+	}
+
+	resolvedEntryGroupKey := strings.TrimSpace(entryGroupKey)
+	if resolvedEntryGroupKey == "" {
+		for _, record := range records {
+			if trimmed := strings.TrimSpace(record.EntryGroupKey); trimmed != "" {
+				resolvedEntryGroupKey = trimmed
+				break
+			}
+		}
+	}
+
+	viewData := buildSuratPrintViewData(c, visit, resolvedEntryGroupKey, records)
+	hospitalInfo := getInitialAssessmentHospitalInfo()
+	pdfBytes, fileName, err := renderSuratEntryPDF(hospitalInfo, viewData)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat PDF surat"})
+		return
+	}
+
+	c.Header("Content-Disposition", fmt.Sprintf("inline; filename=%q", fileName))
+	c.Data(http.StatusOK, "application/pdf", pdfBytes)
+}
+
 func parseMedicalRecordPrintIDs(rawValue string) []uint {
 	trimmed := strings.TrimSpace(rawValue)
 	if trimmed == "" {
@@ -252,6 +327,30 @@ func getInitialAssessmentRecordsForPrint(visitID uint, entryGroupKey string, rec
 	return records, nil
 }
 
+func getSuratRecordsForPrint(visitID uint, entryGroupKey string, recordIDs []uint) ([]models.MedicalRecord, error) {
+	query := preloadMedicalRecordRelations(database.DB).
+		Where("visit_id = ?", visitID).
+		Where("sheet_key = ?", medicalRecordSheetKeySurat).
+		Where("section_type IN ?", suratSectionOrder).
+		Order("record_date ASC").
+		Order("created_at ASC")
+
+	if entryGroupKey != "" {
+		query = query.Where("entry_group_key = ?", entryGroupKey)
+	} else if len(recordIDs) > 0 {
+		query = query.Where("id IN ?", recordIDs)
+	} else {
+		return nil, fmt.Errorf("parameter entri cetak tidak valid")
+	}
+
+	var records []models.MedicalRecord
+	if err := query.Find(&records).Error; err != nil {
+		return nil, err
+	}
+
+	return records, nil
+}
+
 func buildInitialAssessmentPrintViewData(c *gin.Context, visit models.Visit, sheetKey string, entryGroupKey string, records []models.MedicalRecord) initialAssessmentPrintViewData {
 	bySection := make(map[string]*models.MedicalRecord, len(initialAssessmentSectionOrder))
 	for index := range records {
@@ -267,6 +366,7 @@ func buildInitialAssessmentPrintViewData(c *gin.Context, visit models.Visit, she
 	assessment := bySection["assessment"]
 	entryRecordDate := firstNonZeroRecordDate(anamnesis, physicalExam, assessment)
 	resolvedEntryLabel := resolveInitialAssessmentEntryLabel(entryGroupKey, records)
+	printedBy := resolvePrintedByLabel(c)
 
 	return initialAssessmentPrintViewData{
 		GeneratedAt:        time.Now(),
@@ -286,8 +386,320 @@ func buildInitialAssessmentPrintViewData(c *gin.Context, visit models.Visit, she
 		HasAnamnesis:       anamnesis != nil,
 		HasPhysicalExam:    physicalExam != nil,
 		HasAssessment:      assessment != nil,
-		PrintedByLabel:     strings.TrimSpace(c.GetString("email")),
+		PrintedByLabel:     printedBy,
 	}
+}
+
+func buildSuratPrintViewData(c *gin.Context, visit models.Visit, entryGroupKey string, records []models.MedicalRecord) suratPrintViewData {
+	bySection := make(map[string]*models.MedicalRecord, len(suratSectionOrder))
+	for index := range records {
+		record := &records[index]
+		sectionKey := normalizeMedicalRecordSection(record.SectionType)
+		if bySection[sectionKey] == nil {
+			bySection[sectionKey] = record
+		}
+	}
+
+	assessmentRecord := bySection["assessment"]
+	outcomeRecord := bySection["outcome"]
+	suratType := inferSuratTypeFromEntryGroupKey(entryGroupKey)
+	if suratType == "" {
+		for _, record := range records {
+			if inferred := inferSuratTypeFromEntryGroupKey(record.EntryGroupKey); inferred != "" {
+				suratType = inferred
+				break
+			}
+		}
+	}
+
+	generatedAt := time.Now()
+	printedBy := resolvePrintedByLabel(c)
+
+	return suratPrintViewData{
+		GeneratedAt:       generatedAt,
+		Visit:             visit,
+		EntryGroupKey:     entryGroupKey,
+		EntryRecordDate:   firstNonZeroRecordDate(assessmentRecord, outcomeRecord),
+		SuratType:         suratType,
+		SuratTypeLabel:    getSuratTypeLabel(suratType),
+		PrintedByLabel:    printedBy,
+		ValidationBaseURL: resolveTTEVerificationBaseURLForRequest(c),
+		DocumentFields:    buildSuratDocumentFields(generatedAt, printedBy, suratType, entryGroupKey),
+		PatientFields:     buildInitialAssessmentPatientFields(visit.Patient),
+		VisitFields:       buildSuratVisitFields(visit),
+		AssessmentFields:  buildSuratAssessmentFields(assessmentRecord, suratType),
+		OutcomeFields:     buildSuratOutcomeFields(outcomeRecord, suratType),
+		StatementTemplate: buildSuratStatementTemplate(visit, suratType),
+	}
+}
+
+func buildSuratVisitFields(visit models.Visit) []initialAssessmentPrintField {
+	return []initialAssessmentPrintField{
+		{Label: "No. Kunjungan", Value: fallbackText(visit.VisitNumber)},
+		{Label: "Tanggal Kunjungan", Value: visit.VisitDate.Format("02 Jan 2006 15:04")},
+		{Label: "Poliklinik", Value: fallbackText(visit.Polyclinic.Name)},
+		{Label: "Dokter", Value: fallbackText(visit.Doctor.FullName)},
+		{Label: "Jenis Kunjungan", Value: fallbackText(visit.VisitType)},
+		{Label: "Pembiayaan", Value: fallbackText(visit.PaymentType)},
+	}
+}
+
+type suratPrintFieldLabels struct {
+	assessmentSummaryLabel string
+	purposeLabel           string
+	assessmentNoteLabel    string
+	outcomeSummaryLabel    string
+	validityLabel          string
+	outcomeNoteLabel       string
+}
+
+func buildSuratPrintFieldLabels(suratType string) suratPrintFieldLabels {
+	switch normalizeSuratTypeValue(suratType) {
+	case medicalRecordEntryGroupPrefixSuratSakit:
+		return suratPrintFieldLabels{
+			assessmentSummaryLabel: "Keterangan",
+			purposeLabel:           "Kebutuhan Administratif",
+			assessmentNoteLabel:    "Catatan Tambahan",
+			outcomeSummaryLabel:    "Kalimat Keterangan",
+			validityLabel:          "Durasi / Instruksi Istirahat",
+			outcomeNoteLabel:       "Catatan Administratif",
+		}
+	case medicalRecordEntryGroupPrefixSuratSehat:
+		return suratPrintFieldLabels{
+			assessmentSummaryLabel: "Dasar Pernyataan Sehat",
+			purposeLabel:           "Peruntukan Surat Sehat",
+			assessmentNoteLabel:    "Catatan Tambahan",
+			outcomeSummaryLabel:    "Kalimat Keterangan",
+			validityLabel:          "Masa Berlaku Keterangan",
+			outcomeNoteLabel:       "Catatan Administratif",
+		}
+	case medicalRecordEntryGroupPrefixSuratMCU:
+		return suratPrintFieldLabels{
+			assessmentSummaryLabel: "Ringkasan Hasil MCU",
+			purposeLabel:           "Ruang Lingkup MCU",
+			assessmentNoteLabel:    "Catatan Tambahan",
+			outcomeSummaryLabel:    "Kalimat Keterangan",
+			validityLabel:          "Masa Berlaku Hasil MCU",
+			outcomeNoteLabel:       "Catatan Administratif",
+		}
+	case medicalRecordEntryGroupPrefixSuratButaWarna:
+		return suratPrintFieldLabels{
+			assessmentSummaryLabel: "Ringkasan Pemeriksaan Buta Warna",
+			purposeLabel:           "Kebutuhan Surat Buta Warna",
+			assessmentNoteLabel:    "Catatan Tambahan Skrining",
+			outcomeSummaryLabel:    "Kalimat Hasil Skrining",
+			validityLabel:          "Masa Berlaku Surat",
+			outcomeNoteLabel:       "Catatan Administratif",
+		}
+	default:
+		return suratPrintFieldLabels{
+			assessmentSummaryLabel: "Dasar Pertimbangan Dokter",
+			purposeLabel:           "Peruntukan / Keperluan Surat",
+			assessmentNoteLabel:    "Catatan Tambahan",
+			outcomeSummaryLabel:    "Kalimat Keterangan",
+			validityLabel:          "Masa Berlaku / Instruksi",
+			outcomeNoteLabel:       "Catatan Administratif",
+		}
+	}
+}
+
+func buildSuratAssessmentFields(record *models.MedicalRecord, suratType string) []initialAssessmentPrintField {
+	if record == nil {
+		return nil
+	}
+
+	labels := buildSuratPrintFieldLabels(suratType)
+
+	return []initialAssessmentPrintField{
+		{Label: labels.assessmentSummaryLabel, Value: fallbackText(record.Assessment)},
+		{Label: labels.purposeLabel, Value: fallbackText(record.Plan)},
+		{Label: labels.assessmentNoteLabel, Value: fallbackText(record.Notes)},
+	}
+}
+
+func buildSuratOutcomeFields(record *models.MedicalRecord, suratType string) []initialAssessmentPrintField {
+	if record == nil {
+		return nil
+	}
+
+	labels := buildSuratPrintFieldLabels(suratType)
+	validityPeriod := formatSuratValidityPeriod(record.ReferralDestination, record.ReferralReason)
+	validityDescription := strings.TrimSpace(record.FollowUpInstruction)
+	if validityDescription == "" {
+		validityDescription = "-"
+	}
+
+	return []initialAssessmentPrintField{
+		{Label: "Status Surat", Value: formatSuratDisposition(record.Disposition)},
+		{Label: labels.outcomeSummaryLabel, Value: fallbackText(record.DischargeCondition)},
+		{Label: "Periode Berlaku", Value: validityPeriod},
+		{Label: labels.validityLabel, Value: validityDescription},
+		{Label: labels.outcomeNoteLabel, Value: fallbackText(record.Notes)},
+	}
+}
+
+func formatSuratValidityPeriod(startDate string, endDate string) string {
+	start := strings.TrimSpace(startDate)
+	end := strings.TrimSpace(endDate)
+
+	if start == "" && end == "" {
+		return "-"
+	}
+
+	startLabel := start
+	if parsedStart, err := time.Parse("2006-01-02", start); err == nil {
+		startLabel = formatDateIndonesian(parsedStart)
+	}
+
+	endLabel := end
+	if parsedEnd, err := time.Parse("2006-01-02", end); err == nil {
+		endLabel = formatDateIndonesian(parsedEnd)
+	}
+
+	if startLabel == "" {
+		return endLabel
+	}
+	if endLabel == "" {
+		return startLabel
+	}
+
+	return startLabel + " s/d " + endLabel
+}
+
+func formatSuratDisposition(value string) string {
+	normalized := strings.TrimSpace(strings.ToLower(value))
+	switch normalized {
+	case "surat_diterbitkan":
+		return "Surat Diterbitkan"
+	case "surat_ditunda":
+		return "Surat Ditunda"
+	case "surat_tidak_diterbitkan":
+		return "Surat Tidak Diterbitkan"
+	default:
+		return fallbackText(value)
+	}
+}
+
+func buildSuratDocumentFields(generatedAt time.Time, printedBy string, suratType string, _ string) []initialAssessmentPrintField {
+	return []initialAssessmentPrintField{
+		{Label: "Jenis Dokumen", Value: getSuratTypeLabel(suratType)},
+		{Label: "Tanggal Cetak", Value: formatDateTimeIndonesian(generatedAt)},
+		{Label: "Petugas Cetak", Value: fallbackText(printedBy)},
+	}
+}
+
+func buildSuratStatementTemplate(visit models.Visit, suratType string) string {
+	patientName := fallbackText(visit.Patient.FullName)
+	visitNumber := fallbackText(visit.VisitNumber)
+
+	switch suratType {
+	case medicalRecordEntryGroupPrefixSuratSakit:
+		return "Berdasarkan pemeriksaan klinis pada kunjungan " + visitNumber + ", pasien atas nama " + patientName + " dianjurkan beristirahat sesuai evaluasi dokter pemeriksa."
+	case medicalRecordEntryGroupPrefixSuratSehat:
+		return "Berdasarkan pemeriksaan klinis pada kunjungan " + visitNumber + ", pasien atas nama " + patientName + " dinyatakan dalam kondisi sehat sesuai hasil evaluasi dokter pemeriksa."
+	case medicalRecordEntryGroupPrefixSuratMCU:
+		return "Dokumen ini merupakan ringkasan surat MCU pasien atas nama " + patientName + " pada kunjungan " + visitNumber + ". Detail pemeriksaan mengikuti hasil penilaian klinis dokter."
+	case medicalRecordEntryGroupPrefixSuratButaWarna:
+		return "Dokumen ini merupakan surat hasil skrining buta warna pasien atas nama " + patientName + " pada kunjungan " + visitNumber + ". Hasil akhir mengikuti pemeriksaan dokter."
+	default:
+		return "Dokumen ini merupakan surat keterangan medis pasien atas nama " + patientName + " pada kunjungan " + visitNumber + "."
+	}
+}
+
+type suratPDFSectionMeta struct {
+	assessmentTitle string
+	assessmentEmpty string
+	outcomeTitle    string
+	outcomeEmpty    string
+}
+
+func buildSuratPDFSectionMeta(suratType string) suratPDFSectionMeta {
+	switch normalizeSuratTypeValue(suratType) {
+	case medicalRecordEntryGroupPrefixSuratSakit:
+		return suratPDFSectionMeta{
+			assessmentTitle: "PERTIMBANGAN SURAT SAKIT",
+			assessmentEmpty: "Pertimbangan surat sakit belum diisi.",
+			outcomeTitle:    "KETERANGAN SURAT SAKIT",
+			outcomeEmpty:    "Keterangan surat sakit belum diisi.",
+		}
+	case medicalRecordEntryGroupPrefixSuratSehat:
+		return suratPDFSectionMeta{
+			assessmentTitle: "PERTIMBANGAN SURAT SEHAT",
+			assessmentEmpty: "Pertimbangan surat sehat belum diisi.",
+			outcomeTitle:    "KETERANGAN SURAT SEHAT",
+			outcomeEmpty:    "Keterangan surat sehat belum diisi.",
+		}
+	case medicalRecordEntryGroupPrefixSuratMCU:
+		return suratPDFSectionMeta{
+			assessmentTitle: "PERTIMBANGAN SURAT MCU",
+			assessmentEmpty: "Pertimbangan surat MCU belum diisi.",
+			outcomeTitle:    "KETERANGAN SURAT MCU",
+			outcomeEmpty:    "Keterangan surat MCU belum diisi.",
+		}
+	case medicalRecordEntryGroupPrefixSuratButaWarna:
+		return suratPDFSectionMeta{
+			assessmentTitle: "PERTIMBANGAN SKRINING BUTA WARNA",
+			assessmentEmpty: "Pertimbangan skrining buta warna belum diisi.",
+			outcomeTitle:    "HASIL SKRINING BUTA WARNA",
+			outcomeEmpty:    "Hasil skrining buta warna belum diisi.",
+		}
+	default:
+		return suratPDFSectionMeta{
+			assessmentTitle: "PERTIMBANGAN SURAT",
+			assessmentEmpty: "Pertimbangan surat belum diisi.",
+			outcomeTitle:    "KETERANGAN SURAT",
+			outcomeEmpty:    "Keterangan surat belum diisi.",
+		}
+	}
+}
+
+func renderSuratEntryPDF(hospitalInfo initialAssessmentHospitalInfo, data suratPrintViewData) ([]byte, string, error) {
+	pdf := gofpdf.New("P", "mm", "A4", "")
+	defer clearInitialAssessmentPDFPageContentStartOverrides(pdf)
+	documentTitle := data.SuratTypeLabel
+	sectionMeta := buildSuratPDFSectionMeta(data.SuratType)
+	tteSignature := (*ttePrintSignatureInfo)(nil)
+	if strings.TrimSpace(data.EntryGroupKey) != "" {
+		tteSignature = loadTTESignedSignatureByDocumentKeyWithBaseURL(buildTTESuratDocumentKey(data.Visit.ID, data.EntryGroupKey), data.ValidationBaseURL)
+	}
+	pdf.SetMargins(initialAssessmentPDFMarginLeft, initialAssessmentPDFMarginTop, initialAssessmentPDFMarginRight)
+	pdf.SetAutoPageBreak(true, initialAssessmentPDFMarginBottom)
+	pdf.AliasNbPages("")
+	pdf.SetTitle(documentTitle, false)
+	pdf.SetAuthor(data.PrintedByLabel, false)
+	pdf.SetCreator("SIMKLINIK", false)
+	pdf.SetHeaderFuncMode(func() {
+		if pdf.PageNo() != 1 {
+			return
+		}
+		addInitialAssessmentPDFHeader(pdf, hospitalInfo, strings.ToUpper(documentTitle), fallbackText(data.Visit.VisitNumber))
+	}, true)
+	pdf.SetFooterFunc(func() {
+		pdf.SetY(-8)
+		pdf.SetFont("Arial", "", 8)
+		pdf.SetTextColor(90, 90, 90)
+		pdf.CellFormat(90, 4, "Dicetak: "+formatDateTimeIndonesian(data.GeneratedAt), "", 0, "L", false, 0, "")
+		pdf.CellFormat(0, 4, fmt.Sprintf("Halaman %d/{nb}", pdf.PageNo()), "", 0, "R", false, 0, "")
+		pdf.SetTextColor(0, 0, 0)
+	})
+	pdf.AddPage()
+	pdf.SetY(initialAssessmentPDFPageContentStartForPDF(pdf, pdf.PageNo()))
+
+	addInitialAssessmentCompactFieldSection(pdf, "INFORMASI SURAT", data.DocumentFields, "")
+	addInitialAssessmentCompactFieldSection(pdf, "DATA PASIEN", data.PatientFields, "Data pasien tidak tersedia.")
+	addInitialAssessmentCompactFieldSection(pdf, "DATA KUNJUNGAN", data.VisitFields, "Data kunjungan tidak tersedia.")
+	addInitialAssessmentFieldSection(pdf, "PERNYATAAN", []initialAssessmentPrintField{{Label: "Ringkasan", Value: data.StatementTemplate}}, "-")
+	addInitialAssessmentFieldSection(pdf, sectionMeta.assessmentTitle, data.AssessmentFields, sectionMeta.assessmentEmpty)
+	addInitialAssessmentFieldSection(pdf, sectionMeta.outcomeTitle, data.OutcomeFields, sectionMeta.outcomeEmpty)
+	addOrderPrintSignatureSectionWithTTE(pdf, hospitalInfo, data.GeneratedAt, "Pasien / Keluarga", data.Visit.Patient.FullName, "Dokter Pemeriksa", data.Visit.Doctor.FullName, tteSignature)
+
+	var output bytes.Buffer
+	if err := pdf.Output(&output); err != nil {
+		return nil, "", err
+	}
+
+	fileName := fmt.Sprintf("%s-%s-%s.pdf", getSuratTypeFileSlug(data.SuratType), sanitizePDFFileName(data.Visit.Patient.FullName), sanitizePDFFileName(data.Visit.VisitNumber))
+	return output.Bytes(), fileName, nil
 }
 
 func getInitialAssessmentHospitalInfo() initialAssessmentHospitalInfo {
@@ -659,6 +1071,9 @@ func addInitialAssessmentCompactFieldSection(pdf *gofpdf.Fpdf, title string, fie
 func isInitialAssessmentFieldCompactFriendly(pdf *gofpdf.Fpdf, field initialAssessmentPrintField) bool {
 	trimmedLabel := sanitizePDFSingleLineText(field.Label)
 	trimmedValue := sanitizePDFSingleLineText(field.Value)
+	if strings.EqualFold(trimmedLabel, "Alamat") {
+		return false
+	}
 	if trimmedLabel == "" || trimmedValue == "" {
 		return true
 	}
@@ -682,7 +1097,10 @@ func drawInitialAssessmentCompactFieldPair(pdf *gofpdf.Fpdf, leftField initialAs
 	contentWidth := pageWidth - left - right
 	halfWidth := contentWidth / 2
 	labelWidth := resolveInitialAssessmentCompactFieldLabelWidth(halfWidth)
-	rowHeight := 6.5
+	rowHeight := maxFloat64(
+		measureInitialAssessmentCompactFieldBoxHeight(pdf, halfWidth, labelWidth, leftField),
+		measureInitialAssessmentCompactFieldBoxHeight(pdf, halfWidth, labelWidth, rightField),
+	)
 	ensureInitialAssessmentPDFSpace(pdf, rowHeight)
 
 	y := pdf.GetY()
@@ -697,7 +1115,10 @@ func drawInitialAssessmentCompactSingleFieldRow(pdf *gofpdf.Fpdf, field initialA
 	contentWidth := pageWidth - left - right
 	halfWidth := contentWidth / 2
 	labelWidth := resolveInitialAssessmentCompactFieldLabelWidth(halfWidth)
-	rowHeight := 6.5
+	rowHeight := maxFloat64(
+		measureInitialAssessmentCompactFieldBoxHeight(pdf, halfWidth, labelWidth, field),
+		6.5,
+	)
 	ensureInitialAssessmentPDFSpace(pdf, rowHeight)
 
 	y := pdf.GetY()
@@ -708,20 +1129,35 @@ func drawInitialAssessmentCompactSingleFieldRow(pdf *gofpdf.Fpdf, field initialA
 
 func drawInitialAssessmentCompactFieldBox(pdf *gofpdf.Fpdf, x float64, y float64, totalWidth float64, rowHeight float64, labelWidth float64, field initialAssessmentPrintField) {
 	valueWidth := totalWidth - labelWidth
-	trimmedLabel := firstNonEmpty(sanitizePDFSingleLineText(field.Label), "-")
-	trimmedValue := firstNonEmpty(sanitizePDFSingleLineText(field.Value), "-")
+	trimmedLabel := firstNonEmpty(strings.TrimSpace(sanitizePDFText(field.Label)), "-")
+	trimmedValue := firstNonEmpty(strings.TrimSpace(sanitizePDFText(field.Value)), "-")
 
 	pdf.SetDrawColor(120, 120, 120)
 	pdf.SetFillColor(245, 245, 245)
 	pdf.Rect(x, y, labelWidth, rowHeight, "DF")
 	pdf.Rect(x+labelWidth, y, valueWidth, rowHeight, "D")
 
+	pdf.SetFont("Arial", "", 9)
 	pdf.SetXY(x+1.5, y+0.4)
-	pdf.SetFont("Arial", "", 9)
-	pdf.CellFormat(labelWidth-3, rowHeight-0.8, trimmedLabel, "", 0, "L", false, 0, "")
+	pdf.MultiCell(labelWidth-3, 4.5, trimmedLabel, "", "L", false)
 	pdf.SetXY(x+labelWidth+1.5, y+0.4)
+	pdf.MultiCell(valueWidth-3, 4.5, trimmedValue, "", "L", false)
+}
+
+func measureInitialAssessmentCompactFieldBoxHeight(pdf *gofpdf.Fpdf, totalWidth float64, labelWidth float64, field initialAssessmentPrintField) float64 {
+	valueWidth := totalWidth - labelWidth
+	trimmedLabel := firstNonEmpty(strings.TrimSpace(sanitizePDFText(field.Label)), "-")
+	trimmedValue := firstNonEmpty(strings.TrimSpace(sanitizePDFText(field.Value)), "-")
+
 	pdf.SetFont("Arial", "", 9)
-	pdf.CellFormat(valueWidth-3, rowHeight-0.8, trimmedValue, "", 0, "L", false, 0, "")
+	labelLines := pdf.SplitLines([]byte(trimmedLabel), labelWidth-3)
+	valueLines := pdf.SplitLines([]byte(trimmedValue), valueWidth-3)
+	lineCount := maxInt(len(labelLines), len(valueLines))
+	if lineCount < 1 {
+		lineCount = 1
+	}
+
+	return float64(lineCount)*4.5 + 1.6
 }
 
 func drawInitialAssessmentCompactBlankFieldBox(pdf *gofpdf.Fpdf, x float64, y float64, totalWidth float64, rowHeight float64, labelWidth float64) {
@@ -841,7 +1277,8 @@ func addInitialAssessmentKeyValueRow(pdf *gofpdf.Fpdf, label string, value strin
 	left, _, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
 	contentWidth := pageWidth - left - right
-	labelWidth := 42.0
+	halfWidth := contentWidth / 2
+	labelWidth := resolveInitialAssessmentCompactFieldLabelWidth(halfWidth)
 	valueWidth := contentWidth - labelWidth
 
 	trimmedLabel := firstNonEmpty(strings.TrimSpace(sanitizePDFText(label)), "-")
@@ -1188,28 +1625,172 @@ func calculatePatientAgeLabel(birthDate *time.Time) string {
 }
 
 func formatPatientAddress(patient models.Patient) string {
-	parts := make([]string, 0, 7)
-	if value := strings.TrimSpace(patient.Address); value != "" {
-		parts = append(parts, value)
-	}
-
-	rtRw := strings.TrimSpace(strings.Trim(strings.Join([]string{strings.TrimSpace(patient.RT), strings.TrimSpace(patient.RW)}, "/"), "/"))
-	if rtRw != "" {
-		parts = append(parts, "RT/RW "+rtRw)
-	}
-
-	for _, value := range []string{patient.Kelurahan, patient.Kecamatan, patient.City, patient.Province, patient.PostalCode} {
-		trimmed := strings.TrimSpace(value)
-		if trimmed != "" {
-			parts = append(parts, trimmed)
+	streetLine := compactAddressStreetText(normalizeAddressDisplayCase(patient.Address))
+	rtRw := strings.Trim(strings.Join([]string{normalizeAddressPart(patient.RT), normalizeAddressPart(patient.RW)}, "/"), "/")
+	if rtRw != "" && !hasRTRWFragment(streetLine) {
+		if streetLine == "" {
+			streetLine = "RT " + strings.ReplaceAll(rtRw, "/", "/RW ")
+		} else {
+			streetLine = streetLine + ", RT " + strings.ReplaceAll(rtRw, "/", "/RW ")
 		}
 	}
 
+	areaParts := make([]string, 0, 2)
+	if kelurahan := normalizeAddressDisplayCase(patient.Kelurahan); kelurahan != "" {
+		areaParts = append(areaParts, "Kel. "+kelurahan)
+	}
+	if kecamatan := normalizeAddressDisplayCase(patient.Kecamatan); kecamatan != "" {
+		areaParts = append(areaParts, "Kec. "+kecamatan)
+	}
+
+	regionParts := make([]string, 0, 3)
+	if city := normalizeAddressDisplayCase(patient.City); city != "" {
+		regionParts = append(regionParts, formatCityAddressPart(city))
+	}
+	if province := normalizeAddressDisplayCase(patient.Province); province != "" {
+		regionParts = append(regionParts, formatProvinceAddressPart(province))
+	}
+	if postalCode := normalizeAddressPart(patient.PostalCode); postalCode != "" {
+		regionParts = append(regionParts, "Kode Pos "+postalCode)
+	}
+
+	parts := make([]string, 0, 3)
+	if streetLine != "" {
+		parts = append(parts, streetLine)
+	}
+	if len(areaParts) > 0 {
+		parts = append(parts, strings.Join(deduplicateAddressParts(areaParts), ", "))
+	}
+	if len(regionParts) > 0 {
+		parts = append(parts, strings.Join(deduplicateAddressParts(regionParts), ", "))
+	}
+
+	parts = deduplicateAddressParts(parts)
 	if len(parts) == 0 {
 		return "-"
 	}
 
 	return strings.Join(parts, ", ")
+}
+
+func compactAddressStreetText(value string) string {
+	if value == "" {
+		return ""
+	}
+
+	replacer := strings.NewReplacer(
+		"Jalan ", "Jl. ",
+		"jalan ", "Jl. ",
+		"Nomor ", "No. ",
+		"nomor ", "No. ",
+		"Gang ", "Gg. ",
+		"gang ", "Gg. ",
+		"Perumahan ", "Perum. ",
+		"perumahan ", "Perum. ",
+	)
+
+	return replacer.Replace(value)
+}
+
+func normalizeAddressPart(value string) string {
+	cleaned := strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
+	return strings.Trim(cleaned, ",;/")
+}
+
+func normalizeAddressDisplayCase(value string) string {
+	normalized := normalizeAddressPart(value)
+	if normalized == "" || !looksMostlyUppercase(normalized) {
+		return normalized
+	}
+
+	words := strings.Fields(strings.ToLower(normalized))
+	for index, word := range words {
+		if word == "" {
+			continue
+		}
+		runes := []rune(word)
+		runes[0] = unicode.ToUpper(runes[0])
+		words[index] = string(runes)
+	}
+
+	return strings.Join(words, " ")
+}
+
+func looksMostlyUppercase(value string) bool {
+	letterCount := 0
+	upperCount := 0
+	for _, r := range value {
+		if !unicode.IsLetter(r) {
+			continue
+		}
+		letterCount++
+		if unicode.IsUpper(r) {
+			upperCount++
+		}
+	}
+
+	if letterCount == 0 {
+		return false
+	}
+
+	return upperCount*100/letterCount >= 80
+}
+
+func hasRTRWFragment(value string) bool {
+	upper := strings.ToUpper(normalizeAddressPart(value))
+	if upper == "" {
+		return false
+	}
+
+	return strings.Contains(upper, "RT/RW") || (strings.Contains(upper, "RT") && strings.Contains(upper, "RW"))
+}
+
+func formatCityAddressPart(value string) string {
+	normalized := normalizeAddressPart(value)
+	lower := strings.ToLower(normalized)
+	if normalized == "" {
+		return ""
+	}
+	if strings.Contains(lower, "kab") || strings.Contains(lower, "kota") {
+		return normalized
+	}
+	return "Kab/Kota " + normalized
+}
+
+func formatProvinceAddressPart(value string) string {
+	normalized := normalizeAddressPart(value)
+	if normalized == "" {
+		return ""
+	}
+	if strings.Contains(strings.ToLower(normalized), "prov") {
+		return normalized
+	}
+	return "Prov. " + normalized
+}
+
+func deduplicateAddressParts(parts []string) []string {
+	if len(parts) == 0 {
+		return nil
+	}
+
+	filtered := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		normalized := normalizeAddressPart(part)
+		if normalized == "" {
+			continue
+		}
+
+		key := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(normalized, ".", ""), " ", ""))
+		if _, exists := seen[key]; exists {
+			continue
+		}
+
+		seen[key] = struct{}{}
+		filtered = append(filtered, normalized)
+	}
+
+	return filtered
 }
 
 func buildInitialAssessmentVisitFields(visit models.Visit) []initialAssessmentPrintField {

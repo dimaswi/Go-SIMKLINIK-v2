@@ -15,9 +15,10 @@ import (
 )
 
 type orderPrintBaseViewData struct {
-	GeneratedAt time.Time
-	Record      models.MedicalRecord
-	PrintedBy   string
+	GeneratedAt       time.Time
+	Record            models.MedicalRecord
+	PrintedBy         string
+	ValidationBaseURL string
 }
 
 type pharmacyTicketEntryView struct {
@@ -193,9 +194,10 @@ func PrintRadiologyResult(c *gin.Context) {
 
 func buildOrderPrintBaseViewData(c *gin.Context, record models.MedicalRecord) orderPrintBaseViewData {
 	return orderPrintBaseViewData{
-		GeneratedAt: time.Now(),
-		Record:      record,
-		PrintedBy:   strings.TrimSpace(c.GetString("email")),
+		GeneratedAt:       time.Now(),
+		Record:            record,
+		PrintedBy:         resolvePrintedByLabel(c),
+		ValidationBaseURL: resolveTTEVerificationBaseURLForRequest(c),
 	}
 }
 
@@ -363,6 +365,8 @@ func renderLaboratoryTicketPDF(hospitalInfo initialAssessmentHospitalInfo, data 
 func renderLaboratoryResultPDF(hospitalInfo initialAssessmentHospitalInfo, data orderPrintBaseViewData) ([]byte, string, error) {
 	visit := resolvePrintVisit(data.Record)
 	pdf := newInitialAssessmentStyledPDF("HASIL LABORATORIUM", data.PrintedBy, data.GeneratedAt)
+	doctorTTESignature := loadTTESignedSignatureByDocumentKeyWithBaseURL(fmt.Sprintf("laboratory_result:%d", data.Record.ID), data.ValidationBaseURL)
+	staffTTESignature := loadTTESignedSignatureByDocumentKeyWithBaseURL(fmt.Sprintf("laboratory_result_staff:%d", data.Record.ID), data.ValidationBaseURL)
 
 	for index, item := range data.Record.LaboratoryOrderItems {
 		beginInitialAssessmentStyledSection(pdf, hospitalInfo, "HASIL LABORATORIUM", buildSupportingOrderSectionSubtitle(visit.VisitNumber, resolveLaboratoryItemTitle(item)))
@@ -370,7 +374,7 @@ func renderLaboratoryResultPDF(hospitalInfo initialAssessmentHospitalInfo, data 
 		addInitialAssessmentCompactFieldSection(pdf, "DATA PASIEN", buildSupportingOrderPatientFields(visit.Patient), "Data pasien tidak tersedia.")
 		addInitialAssessmentCompactFieldSection(pdf, "DATA KUNJUNGAN", buildInitialAssessmentVisitFields(visit), "Data kunjungan tidak tersedia.")
 		addLaboratoryResultItemSection(pdf, item)
-		addOrderPrintSignatureSection(pdf, hospitalInfo, data.GeneratedAt, "Petugas Laboratorium", resolveLaboratoryItemResultUserName(item), "Dokter Pemeriksa", visit.Doctor.FullName)
+		addOrderPrintSignatureSectionWithDualTTE(pdf, hospitalInfo, data.GeneratedAt, "Petugas Laboratorium", resolveLaboratoryItemResultUserName(item), staffTTESignature, "Dokter Pemeriksa", visit.Doctor.FullName, doctorTTESignature)
 	}
 
 	pdfBytes, err := outputInitialAssessmentStyledPDF(pdf)
@@ -414,6 +418,8 @@ func renderRadiologyTicketPDF(hospitalInfo initialAssessmentHospitalInfo, data o
 func renderRadiologyResultPDF(hospitalInfo initialAssessmentHospitalInfo, data orderPrintBaseViewData) ([]byte, string, error) {
 	visit := resolvePrintVisit(data.Record)
 	pdf := newInitialAssessmentStyledPDF("HASIL RADIOLOGI", data.PrintedBy, data.GeneratedAt)
+	doctorTTESignature := loadTTESignedSignatureByDocumentKeyWithBaseURL(fmt.Sprintf("radiology_result:%d", data.Record.ID), data.ValidationBaseURL)
+	staffTTESignature := loadTTESignedSignatureByDocumentKeyWithBaseURL(fmt.Sprintf("radiology_result_staff:%d", data.Record.ID), data.ValidationBaseURL)
 
 	for index, item := range data.Record.RadiologyOrderItems {
 		beginInitialAssessmentStyledSection(pdf, hospitalInfo, "HASIL RADIOLOGI", buildSupportingOrderSectionSubtitle(visit.VisitNumber, resolveRadiologyItemTitle(item)))
@@ -421,7 +427,7 @@ func renderRadiologyResultPDF(hospitalInfo initialAssessmentHospitalInfo, data o
 		addInitialAssessmentCompactFieldSection(pdf, "DATA PASIEN", buildSupportingOrderPatientFields(visit.Patient), "Data pasien tidak tersedia.")
 		addInitialAssessmentCompactFieldSection(pdf, "DATA KUNJUNGAN", buildInitialAssessmentVisitFields(visit), "Data kunjungan tidak tersedia.")
 		addRadiologyResultItemSection(pdf, item)
-		addOrderPrintSignatureSection(pdf, hospitalInfo, data.GeneratedAt, "Petugas Radiologi", resolveRadiologyItemResultUserName(item), "Dokter Pemeriksa", visit.Doctor.FullName)
+		addOrderPrintSignatureSectionWithDualTTE(pdf, hospitalInfo, data.GeneratedAt, "Petugas Radiologi", resolveRadiologyItemResultUserName(item), staffTTESignature, "Dokter Pemeriksa", visit.Doctor.FullName, doctorTTESignature)
 	}
 
 	pdfBytes, err := outputInitialAssessmentStyledPDF(pdf)
@@ -1013,18 +1019,31 @@ func resolveRadiologyParameterName(parameter models.RadiologyOrderParameterResul
 }
 
 func addOrderPrintSignatureSection(pdf *gofpdf.Fpdf, hospitalInfo initialAssessmentHospitalInfo, generatedAt time.Time, leftLabel string, leftName string, rightLabel string, rightName string) {
-	ensureInitialAssessmentPDFSpace(pdf, 40)
+	addOrderPrintSignatureSectionWithDualTTE(pdf, hospitalInfo, generatedAt, leftLabel, leftName, nil, rightLabel, rightName, nil)
+}
+
+func addOrderPrintSignatureSectionWithTTE(pdf *gofpdf.Fpdf, hospitalInfo initialAssessmentHospitalInfo, generatedAt time.Time, leftLabel string, leftName string, rightLabel string, rightName string, rightSignature *ttePrintSignatureInfo) {
+	addOrderPrintSignatureSectionWithDualTTE(pdf, hospitalInfo, generatedAt, leftLabel, leftName, nil, rightLabel, rightName, rightSignature)
+}
+
+func addOrderPrintSignatureSectionWithDualTTE(pdf *gofpdf.Fpdf, hospitalInfo initialAssessmentHospitalInfo, generatedAt time.Time, leftLabel string, leftName string, leftSignature *ttePrintSignatureInfo, rightLabel string, rightName string, rightSignature *ttePrintSignatureInfo) {
 	left, _, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
 	contentWidth := pageWidth - left - right
 	columnGap := 12.0
 	columnWidth := (contentWidth - columnGap) / 2
+	requiresQRCodeSpace := hasTTEQRCode(leftSignature) || hasTTEQRCode(rightSignature)
+	requiredHeight := 40.0
+	if requiresQRCodeSpace {
+		requiredHeight = 52.0 + maxFloat64(resolveTTESignatureAnnotationReservedHeight(columnWidth, leftSignature), resolveTTESignatureAnnotationReservedHeight(columnWidth, rightSignature))
+	}
+	ensureInitialAssessmentPDFSpace(pdf, requiredHeight)
 	leftColumnX := left
 	rightColumnX := left + columnWidth + columnGap
 	currentY := pdf.GetY() + 4
 
 	datePrefix := strings.TrimSpace(hospitalInfo.City)
-	dateLabel := formatDateIndonesian(generatedAt)
+	dateLabel := formatDateIndonesian(resolveTTEPrintSignatureTime(firstNonNilTTESignature(rightSignature, leftSignature), generatedAt))
 	if datePrefix != "" {
 		dateLabel = datePrefix + ", " + dateLabel
 	}
@@ -1038,11 +1057,17 @@ func addOrderPrintSignatureSection(pdf *gofpdf.Fpdf, hospitalInfo initialAssessm
 	pdf.CellFormat(columnWidth, 5, fallbackText(leftLabel), "", 0, "C", false, 0, "")
 	pdf.SetXY(rightColumnX, currentY)
 	pdf.CellFormat(columnWidth, 5, fallbackText(rightLabel), "", 1, "C", false, 0, "")
+	annotationY := currentY + 5.2
+	drawTTESignatureAnnotation(pdf, leftColumnX, annotationY, columnWidth, leftSignature)
+	drawTTESignatureAnnotation(pdf, rightColumnX, annotationY, columnWidth, rightSignature)
 
 	lineWidth := minFloat64(52, columnWidth-26)
 	leftLineX := leftColumnX + ((columnWidth - lineWidth) / 2)
 	rightLineX := rightColumnX + ((columnWidth - lineWidth) / 2)
-	signatureLineY := pdf.GetY() + 16
+	signatureLineY := pdf.GetY() + 16.0
+	if requiresQRCodeSpace {
+		signatureLineY = annotationY + maxFloat64(resolveTTESignatureAnnotationReservedHeight(columnWidth, leftSignature), resolveTTESignatureAnnotationReservedHeight(columnWidth, rightSignature)) + 0.55
+	}
 	pdf.SetDrawColor(60, 60, 60)
 	pdf.Line(leftLineX, signatureLineY, leftLineX+lineWidth, signatureLineY)
 	pdf.Line(rightLineX, signatureLineY, rightLineX+lineWidth, signatureLineY)
@@ -1050,11 +1075,20 @@ func addOrderPrintSignatureSection(pdf *gofpdf.Fpdf, hospitalInfo initialAssessm
 	pdf.SetFont("Arial", "B", 10)
 	pdf.SetY(signatureLineY + 2.5)
 	pdf.SetXY(leftColumnX, pdf.GetY())
-	pdf.CellFormat(columnWidth, 5, fallbackText(leftName), "", 0, "C", false, 0, "")
+	pdf.CellFormat(columnWidth, 5, fallbackText(resolveTTEPrintSignatureName(leftSignature, leftName)), "", 0, "C", false, 0, "")
 	pdf.SetXY(rightColumnX, pdf.GetY())
-	pdf.CellFormat(columnWidth, 5, fallbackText(rightName), "", 1, "C", false, 0, "")
+	pdf.CellFormat(columnWidth, 5, fallbackText(resolveTTEPrintSignatureName(rightSignature, rightName)), "", 1, "C", false, 0, "")
 	pdf.SetFont("Arial", "", 9)
 	pdf.SetY(pdf.GetY() + 4)
+}
+
+func firstNonNilTTESignature(values ...*ttePrintSignatureInfo) *ttePrintSignatureInfo {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
 }
 
 func resolveOrderDateLabel(value *time.Time, fallback time.Time) string {

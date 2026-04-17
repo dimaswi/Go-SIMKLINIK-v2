@@ -2,12 +2,29 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link id="app-favicon" rel="icon" type="image/svg+xml" href="/simklinik-favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <title>StarterKits</title>
+    <title>SIMKLINIK</title>
+    <script>
+      (function () {
+        try {
+          var appName = localStorage.getItem('appName') || 'SIMKLINIK';
+          var favicon = localStorage.getItem('appFavicon');
+          document.title = appName;
+          if (favicon) {
+            var link = document.getElementById('app-favicon');
+            if (link) {
+              link.setAttribute('href', /^https?:\/\//i.test(favicon) ? favicon : window.location.origin + favicon);
+            }
+          }
+        } catch (error) {
+          // Keep static branding when storage is unavailable.
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

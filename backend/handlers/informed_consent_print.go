@@ -33,6 +33,7 @@ type informedConsentPrintViewData struct {
 	SignatureDoctor          string
 	SignatureDoctorNIP       string
 	SignatureWitness         string
+	DoctorTTESignature       *ttePrintSignatureInfo
 }
 
 func PrintInformedConsent(c *gin.Context) {
@@ -90,13 +91,14 @@ func buildInformedConsentPrintViewData(c *gin.Context, record models.MedicalReco
 	consentGiverName := fallbackText(resolveInformedConsentConsentGiverName(consent, &patient))
 	consentGiverRelation := fallbackText(resolveInformedConsentConsentGiverRelation(consent, &patient))
 	consentGiverIDNumber := fallbackText(resolveInformedConsentConsentGiverIDNumber(consent, &patient))
+	printedBy := resolvePrintedByLabel(c)
 
 	return informedConsentPrintViewData{
 		GeneratedAt:              time.Now(),
-		PrintedByLabel:           strings.TrimSpace(c.GetString("email")),
+		PrintedByLabel:           printedBy,
 		Consent:                  consent,
 		Record:                   record,
-		DocumentFields:           buildInformedConsentDocumentFields(record, consent, c.GetString("email")),
+		DocumentFields:           buildInformedConsentDocumentFields(record, consent, printedBy),
 		PatientFields:            buildInformedConsentPatientFields(patient),
 		VisitFields:              buildInformedConsentVisitFields(record, doctor),
 		ConsentGiverFields:       buildInformedConsentConsentGiverFields(consent, patient),
@@ -109,6 +111,7 @@ func buildInformedConsentPrintViewData(c *gin.Context, record models.MedicalReco
 		SignatureDoctor:          fallbackText(doctor.FullName),
 		SignatureDoctorNIP:       fallbackText(doctor.NIPNumber),
 		SignatureWitness:         fallbackText(consent.WitnessName),
+		DoctorTTESignature:       loadTTESignedSignatureByDocumentKeyWithBaseURL(fmt.Sprintf("informed_consent:%d", consent.ID), resolveTTEVerificationBaseURLForRequest(c)),
 	}
 }
 
@@ -281,13 +284,17 @@ func addInformedConsentWideKeyValueRow(pdf *gofpdf.Fpdf, label string, value str
 }
 
 func addInformedConsentSignatureSection(pdf *gofpdf.Fpdf, hospitalInfo initialAssessmentHospitalInfo, data informedConsentPrintViewData) {
-	const signatureBlockHeight = 36.0
-	ensureInitialAssessmentPDFSpace(pdf, signatureBlockHeight+16)
 	left, _, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
 	contentWidth := pageWidth - left - right
 	columnGap := 8.0
 	columnWidth := (contentWidth - (2 * columnGap)) / 3
+	signatureLineOffset := 42.0
+	if hasTTEQRCode(data.DoctorTTESignature) {
+		signatureLineOffset = 6.2 + resolveTTESignatureAnnotationReservedHeight(columnWidth, data.DoctorTTESignature) + 0.55
+	}
+	signatureBlockHeight := signatureLineOffset + 10.5
+	ensureInitialAssessmentPDFSpace(pdf, signatureBlockHeight+16)
 	currentY := pdf.GetY() + 4
 
 	signatureLocation := strings.TrimSpace(hospitalInfo.City)
@@ -307,6 +314,7 @@ func addInformedConsentSignatureSection(pdf *gofpdf.Fpdf, hospitalInfo initialAs
 		left,
 		currentY,
 		columnWidth,
+		signatureLineOffset,
 		"Pemberi Persetujuan / Wali",
 		data.SignaturePatient,
 		"",
@@ -316,6 +324,7 @@ func addInformedConsentSignatureSection(pdf *gofpdf.Fpdf, hospitalInfo initialAs
 		left+columnWidth+columnGap,
 		currentY,
 		columnWidth,
+		signatureLineOffset,
 		"Saksi",
 		data.SignatureWitness,
 		"",
@@ -325,25 +334,27 @@ func addInformedConsentSignatureSection(pdf *gofpdf.Fpdf, hospitalInfo initialAs
 		left+(2*(columnWidth+columnGap)),
 		currentY,
 		columnWidth,
+		signatureLineOffset,
 		"Dokter Pemberi Penjelasan",
-		data.SignatureDoctor,
+		resolveTTEPrintSignatureName(data.DoctorTTESignature, data.SignatureDoctor),
 		buildInformedConsentDoctorSignatureIdentity(data.SignatureDoctorNIP),
 	)
+	drawTTESignatureAnnotation(pdf, left+(2*(columnWidth+columnGap)), currentY+6.2, columnWidth, data.DoctorTTESignature)
 
 	pdf.SetFont("Arial", "", 9)
 	pdf.SetY(currentY + signatureBlockHeight + 4)
-	addInitialAssessmentFullWidthRow(pdf, "Bubuhkan tanda tangan basah pada area yang disediakan di setiap kolom. Dokumen ini dicetak dari SIMKLINIK sebagai salinan informed consent pada kunjungan pasien.", false)
+	addInitialAssessmentFullWidthRow(pdf, "Tanda tangan pasien/wali dan saksi dibubuhkan pada area yang disediakan. Tanda tangan dokter diverifikasi melalui QR validasi pada dokumen ini.", false)
 	pdf.SetY(pdf.GetY() + 2)
 }
 
-func drawInformedConsentSignatureBlock(pdf *gofpdf.Fpdf, x float64, y float64, width float64, title string, name string, detail string) {
-	const totalHeight = 36.0
+func drawInformedConsentSignatureBlock(pdf *gofpdf.Fpdf, x float64, y float64, width float64, signatureLineOffset float64, title string, name string, detail string) {
+	totalHeight := signatureLineOffset + 10.5
 
 	pdf.SetFont("Arial", "B", 8.5)
 	pdf.SetXY(x, y)
 	pdf.CellFormat(width, 4.5, firstNonEmpty(sanitizePDFSingleLineText(title), "-"), "", 0, "C", false, 0, "")
 
-	signatureLineY := y + 20.0
+	signatureLineY := y + signatureLineOffset
 	lineInset := 14.0
 	pdf.SetDrawColor(80, 80, 80)
 	pdf.Line(x+lineInset, signatureLineY, x+width-lineInset, signatureLineY)

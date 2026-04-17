@@ -6,16 +6,16 @@ services:
     image: postgres:15-alpine
     container_name: simklinik-database-dev
     environment:
-      POSTGRES_USER: simklinik
-      POSTGRES_PASSWORD: simklinik123
-      POSTGRES_DB: simklinik
+      POSTGRES_USER: ${POSTGRES_USER:-simklinik}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-simklinik123}
+      POSTGRES_DB: ${POSTGRES_DB:-simklinik}
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "5434:5432"
+      - "${POSTGRES_PORT:-5434}:5432"
     volumes:
       - simklinik_postgres_dev:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U simklinik -d simklinik"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-simklinik} -d ${POSTGRES_DB:-simklinik}"]
       interval: 10s
       timeout: 5s
       retries: 5

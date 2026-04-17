@@ -9,6 +9,7 @@ import { usePermission } from '@/hooks/usePermission';
 import { useToast } from '@/hooks/use-toast';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { Loader2, Plus } from 'lucide-react';
+import { MasterDataListShell } from '@/pages/master-data/shared';
 
 export default function PermissionsPage() {
   const navigate = useNavigate();
@@ -96,20 +97,27 @@ export default function PermissionsPage() {
 
   return (
     <div className="flex flex-1 min-h-0 flex-col gap-4 p-4">
-      <DataTable
-        columns={columns}
-        data={permissions}
-        searchPlaceholder="Search permissions by name or description..."
-        pageSize={10}
-        toolbarActions={
-          hasPermission('permissions.create') ? (
-            <Button onClick={() => navigate('/permissions/create')}>
-              <Plus className="h-4 w-4" />
-              Add Permission
-            </Button>
-          ) : undefined
-        }
-      />
+      <MasterDataListShell
+        title="Daftar Permission"
+        subtitle="Pantau permission module.action untuk mengatur granularitas akses user."
+        totalCount={permissions.length}
+      >
+        <DataTable
+          className="h-full"
+          columns={columns}
+          data={permissions}
+          searchPlaceholder="Search permissions by name or description..."
+          pageSize={10}
+          toolbarActions={
+            hasPermission('permissions.create') ? (
+              <Button onClick={() => navigate('/permissions/create')} className="rounded-none shadow-none">
+                <Plus className="h-4 w-4" />
+                Add Permission
+              </Button>
+            ) : undefined
+          }
+        />
+      </MasterDataListShell>
 
       <ConfirmDialog
         open={deleteDialogOpen}

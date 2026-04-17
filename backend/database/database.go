@@ -1,14 +1,17 @@
 package database
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"starter/backend/models"
 	"strings"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var DB *gorm.DB
@@ -456,6 +459,19 @@ func Connect(dsn string) error {
 	return nil
 }
 
+func ensureDoctorCompatibilityColumns() error {
+	if !DB.Migrator().HasColumn(&models.Doctor{}, "nip_number") {
+		if err := DB.Exec("ALTER TABLE doctors ADD COLUMN IF NOT EXISTS nip_number VARCHAR(50)").Error; err != nil {
+			return err
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_doctors_nip_number ON doctors (nip_number)").Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func Migrate() error {
 	prepareMedicalRecordSchema()
 
@@ -467,6 +483,9 @@ func Migrate() error {
 		&models.RolePermission{},
 		&models.User{},
 		&models.Setting{},
+		&models.SystemBackupFile{},
+		&models.DocumentSignatureRequest{},
+		&models.BPJSLog{},
 		&models.SATUSEHATLog{},
 		&models.SATUSEHATAutoSyncSnapshot{},
 
@@ -483,6 +502,7 @@ func Migrate() error {
 		&models.Regency{},
 		&models.District{},
 		&models.Village{},
+		&models.Employee{},
 		&models.Doctor{},
 		&models.DoctorSchedule{},
 		&models.Medicine{},
@@ -536,6 +556,10 @@ func Migrate() error {
 		return err
 	}
 
+	if err := ensureDoctorCompatibilityColumns(); err != nil {
+		return err
+	}
+
 	if err := backfillMedicalServiceMetadata(); err != nil {
 		return err
 	}
@@ -571,6 +595,8 @@ func CleanMigrate() error {
 	DB.Exec("DROP TABLE IF EXISTS stock_movements CASCADE")
 	DB.Exec("DROP TABLE IF EXISTS purchase_order_items CASCADE")
 	DB.Exec("DROP TABLE IF EXISTS purchase_orders CASCADE")
+	DB.Exec("DROP TABLE IF EXISTS document_signature_requests CASCADE")
+	DB.Exec("DROP TABLE IF EXISTS bpjs_logs CASCADE")
 	DB.Exec("DROP TABLE IF EXISTS odontogram_surface_findings CASCADE")
 	DB.Exec("DROP TABLE IF EXISTS odontogram_teeth CASCADE")
 	DB.Exec("DROP TABLE IF EXISTS odontogram_entries CASCADE")
@@ -605,6 +631,7 @@ func CleanMigrate() error {
 	DB.Exec("DROP TABLE IF EXISTS patients CASCADE")
 	DB.Exec("DROP TABLE IF EXISTS doctor_polyclinics CASCADE")
 	DB.Exec("DROP TABLE IF EXISTS doctor_schedules CASCADE")
+	DB.Exec("DROP TABLE IF EXISTS employees CASCADE")
 	DB.Exec("DROP TABLE IF EXISTS medical_service_parameters CASCADE")
 	DB.Exec("DROP TABLE IF EXISTS medical_services CASCADE")
 	DB.Exec("DROP TABLE IF EXISTS medicines CASCADE")
@@ -653,6 +680,7 @@ func SeedData() error {
 
 		// System & Dashboard
 		{Name: "dashboard.view", Module: "Dashboard", Category: "Analytics", Description: "Access dashboard and reports", Actions: `["read"]`},
+		{Name: "reports.view", Module: "Laporan", Category: "Reports", Description: "Access report center and report exports", Actions: `["read"]`},
 		{Name: "settings.view", Module: "System Settings", Category: "Settings", Description: "View system settings", Actions: `["read"]`},
 		{Name: "settings.update", Module: "System Settings", Category: "Settings", Description: "Update system settings", Actions: `["update"]`},
 		{Name: "profile.view", Module: "Profile Management", Category: "Account", Description: "View own profile", Actions: `["read"]`},
@@ -663,6 +691,11 @@ func SeedData() error {
 		{Name: "polyclinics.create", Module: "Master Data", Category: "Polyclinics", Description: "Create polyclinics", Actions: `["create"]`},
 		{Name: "polyclinics.update", Module: "Master Data", Category: "Polyclinics", Description: "Update polyclinics", Actions: `["update"]`},
 		{Name: "polyclinics.delete", Module: "Master Data", Category: "Polyclinics", Description: "Delete polyclinics", Actions: `["delete"]`},
+
+		{Name: "employees.view", Module: "Master Data", Category: "Employees", Description: "View employees", Actions: `["read"]`},
+		{Name: "employees.create", Module: "Master Data", Category: "Employees", Description: "Create employees", Actions: `["create"]`},
+		{Name: "employees.update", Module: "Master Data", Category: "Employees", Description: "Update employees", Actions: `["update"]`},
+		{Name: "employees.delete", Module: "Master Data", Category: "Employees", Description: "Delete employees", Actions: `["delete"]`},
 
 		{Name: "doctors.view", Module: "Master Data", Category: "Doctors", Description: "View doctors", Actions: `["read"]`},
 		{Name: "doctors.create", Module: "Master Data", Category: "Doctors", Description: "Create doctors", Actions: `["create"]`},
@@ -706,6 +739,8 @@ func SeedData() error {
 
 		{Name: "laboratory.view", Module: "Penunjang", Category: "Laboratorium", Description: "View laboratory orders and results", Actions: `["read"]`},
 		{Name: "laboratory.process", Module: "Penunjang", Category: "Laboratorium", Description: "Process laboratory orders and fill results", Actions: `["process"]`},
+		{Name: "pharmacy.view", Module: "Penunjang", Category: "Farmasi", Description: "View pharmacy queues and prescription handover status", Actions: `["read"]`},
+		{Name: "pharmacy.process", Module: "Penunjang", Category: "Farmasi", Description: "Process pharmacy workflow from receiving to dispensing", Actions: `["process"]`},
 		{Name: "radiology.view", Module: "Penunjang", Category: "Radiologi", Description: "View radiology orders and results", Actions: `["read"]`},
 		{Name: "radiology.process", Module: "Penunjang", Category: "Radiologi", Description: "Process radiology orders and fill results", Actions: `["process"]`},
 
@@ -749,6 +784,10 @@ func SeedData() error {
 		{Name: "medical_records.update", Module: "EMR", Category: "Medical Records", Description: "Update medical records", Actions: `["update"]`},
 		{Name: "medical_records.finalize", Module: "EMR", Category: "Medical Records", Description: "Finalize medical records", Actions: `["finalize"]`},
 
+		{Name: "document_signatures.view", Module: "EMR", Category: "TTE Internal", Description: "View internal TTE request status and documents", Actions: `["read"]`},
+		{Name: "document_signatures.request", Module: "EMR", Category: "TTE Internal", Description: "Create or update internal TTE requests", Actions: `["request"]`},
+		{Name: "document_signatures.approve", Module: "EMR", Category: "TTE Internal", Description: "Approve internal TTE requests assigned to user", Actions: `["approve"]`},
+
 		{Name: "prescriptions.view", Module: "EMR", Category: "Prescriptions", Description: "View prescriptions", Actions: `["read"]`},
 		{Name: "prescriptions.create", Module: "EMR", Category: "Prescriptions", Description: "Create prescriptions", Actions: `["create"]`},
 		{Name: "prescriptions.update", Module: "EMR", Category: "Prescriptions", Description: "Update prescriptions", Actions: `["update"]`},
@@ -790,7 +829,7 @@ func SeedData() error {
 
 	// Assign limited permissions to user role
 	var limitedPermissions []models.Permission
-	DB.Where("name IN ?", []string{"profile.view", "profile.update", "dashboard.view"}).Find(&limitedPermissions)
+	DB.Where("name IN ?", []string{"profile.view", "profile.update", "dashboard.view", "reports.view"}).Find(&limitedPermissions)
 	if len(limitedPermissions) > 0 {
 		DB.Model(&userRole).Association("Permissions").Replace(limitedPermissions)
 	}
@@ -815,10 +854,17 @@ func SeedData() error {
 	defaultSettings := []models.Setting{
 		{Key: "app_name", Value: "SIMKLINIK"},
 		{Key: "app_subtitle", Value: "Sistem Informasi Manajemen Klinik"},
+		{Key: "system_backup_auto_enabled", Value: "1"},
+		{Key: "system_backup_cron", Value: "0 2 * * *"},
+		{Key: "system_backup_retention_days", Value: "7"},
+		{Key: "system_backup_include_uploads", Value: "1"},
+		{Key: "system_backup_last_status", Value: "idle"},
+		{Key: "system_backup_last_message", Value: "Belum ada backup yang dijalankan."},
 		{Key: "satusehat_sandbox_auth_url", Value: "https://api-satusehat-stg.dto.kemkes.go.id/oauth2/v1"},
 		{Key: "satusehat_production_auth_url", Value: "https://api-satusehat.kemkes.go.id/oauth2/v1"},
 		{Key: "satusehat_sandbox_fhir_url", Value: "https://api-satusehat-stg.dto.kemkes.go.id/fhir-r4/v1"},
 		{Key: "satusehat_production_fhir_url", Value: "https://api-satusehat.kemkes.go.id/fhir-r4/v1"},
+		{Key: "satusehat_enabled", Value: "1"},
 		{Key: "satusehat_active_mode", Value: "sandbox"},
 		{Key: "satusehat_organization_id", Value: ""},
 		{Key: "satusehat_client_id", Value: ""},
@@ -1096,52 +1142,172 @@ func seedMasterData() {
 		DB.Where(models.Polyclinic{Code: p.Code}).FirstOrCreate(&p)
 	}
 
-	// Seed ICD-10 Codes (common diagnoses)
-	icd10Codes := []models.ICD10{
-		{Code: "J00", Name: "Acute nasopharyngitis (common cold)", NameID: "Nasofaringitis akut (flu)", Category: "Diseases of the respiratory system", Chapter: "X"},
-		{Code: "J06.9", Name: "Acute upper respiratory infection, unspecified", NameID: "ISPA (Infeksi Saluran Pernapasan Atas)", Category: "Diseases of the respiratory system", Chapter: "X"},
-		{Code: "J20.9", Name: "Acute bronchitis, unspecified", NameID: "Bronkitis akut", Category: "Diseases of the respiratory system", Chapter: "X"},
-		{Code: "J18.9", Name: "Pneumonia, unspecified organism", NameID: "Pneumonia", Category: "Diseases of the respiratory system", Chapter: "X"},
-		{Code: "J45.9", Name: "Asthma, unspecified", NameID: "Asma", Category: "Diseases of the respiratory system", Chapter: "X"},
-		{Code: "K29.7", Name: "Gastritis, unspecified", NameID: "Gastritis (Maag)", Category: "Diseases of the digestive system", Chapter: "XI"},
-		{Code: "K30", Name: "Functional dyspepsia", NameID: "Dispepsia fungsional", Category: "Diseases of the digestive system", Chapter: "XI"},
-		{Code: "A09", Name: "Infectious gastroenteritis and colitis, unspecified", NameID: "Gastroenteritis (diare)", Category: "Certain infectious and parasitic diseases", Chapter: "I"},
-		{Code: "E11", Name: "Type 2 diabetes mellitus", NameID: "Diabetes Melitus Tipe 2", Category: "Endocrine, nutritional and metabolic diseases", Chapter: "IV"},
-		{Code: "E11.9", Name: "Type 2 diabetes mellitus without complications", NameID: "DM Tipe 2 tanpa komplikasi", Category: "Endocrine, nutritional and metabolic diseases", Chapter: "IV"},
-		{Code: "I10", Name: "Essential (primary) hypertension", NameID: "Hipertensi primer", Category: "Diseases of the circulatory system", Chapter: "IX"},
-		{Code: "I11.9", Name: "Hypertensive heart disease without heart failure", NameID: "Penyakit jantung hipertensi tanpa gagal jantung", Category: "Diseases of the circulatory system", Chapter: "IX"},
-		{Code: "M54.5", Name: "Low back pain", NameID: "Nyeri punggung bawah", Category: "Diseases of the musculoskeletal system", Chapter: "XIII"},
-		{Code: "M79.3", Name: "Panniculitis, unspecified", NameID: "Panikulitis", Category: "Diseases of the musculoskeletal system", Chapter: "XIII"},
-		{Code: "R50.9", Name: "Fever, unspecified", NameID: "Demam", Category: "Symptoms and signs", Chapter: "XVIII"},
-		{Code: "R51", Name: "Headache", NameID: "Sakit kepala (Cephalgia)", Category: "Symptoms and signs", Chapter: "XVIII"},
-		{Code: "R10.4", Name: "Other and unspecified abdominal pain", NameID: "Nyeri perut", Category: "Symptoms and signs", Chapter: "XVIII"},
-		{Code: "R11", Name: "Nausea and vomiting", NameID: "Mual dan muntah", Category: "Symptoms and signs", Chapter: "XVIII"},
-		{Code: "L30.9", Name: "Dermatitis, unspecified", NameID: "Dermatitis", Category: "Diseases of the skin", Chapter: "XII"},
-		{Code: "L20.9", Name: "Atopic dermatitis, unspecified", NameID: "Dermatitis atopik", Category: "Diseases of the skin", Chapter: "XII"},
-		{Code: "B35.4", Name: "Tinea corporis", NameID: "Tinea korporis (kurap)", Category: "Certain infectious and parasitic diseases", Chapter: "I"},
-		{Code: "H10.9", Name: "Conjunctivitis, unspecified", NameID: "Konjungtivitis", Category: "Diseases of the eye", Chapter: "VII"},
-		{Code: "H66.9", Name: "Otitis media, unspecified", NameID: "Otitis media", Category: "Diseases of the ear", Chapter: "VIII"},
-		{Code: "J02.9", Name: "Acute pharyngitis, unspecified", NameID: "Faringitis akut", Category: "Diseases of the respiratory system", Chapter: "X"},
-		{Code: "J03.9", Name: "Acute tonsillitis, unspecified", NameID: "Tonsilitis akut", Category: "Diseases of the respiratory system", Chapter: "X"},
-		{Code: "N39.0", Name: "Urinary tract infection, site not specified", NameID: "Infeksi saluran kemih (ISK)", Category: "Diseases of the genitourinary system", Chapter: "XIV"},
-		{Code: "K04.7", Name: "Periapical abscess without sinus", NameID: "Abses periapikal (gigi)", Category: "Diseases of the digestive system", Chapter: "XI"},
-		{Code: "K02.9", Name: "Dental caries, unspecified", NameID: "Karies gigi", Category: "Diseases of the digestive system", Chapter: "XI"},
-		{Code: "K05.1", Name: "Chronic gingivitis", NameID: "Gingivitis kronis", Category: "Diseases of the digestive system", Chapter: "XI"},
-		{Code: "E78.5", Name: "Hyperlipidemia, unspecified", NameID: "Hiperlipidemia", Category: "Endocrine, nutritional and metabolic diseases", Chapter: "IV"},
-		{Code: "E79.0", Name: "Hyperuricemia without signs of gout", NameID: "Hiperurisemia (asam urat tinggi)", Category: "Endocrine, nutritional and metabolic diseases", Chapter: "IV"},
-		{Code: "M10.9", Name: "Gout, unspecified", NameID: "Gout (asam urat)", Category: "Diseases of the musculoskeletal system", Chapter: "XIII"},
-		{Code: "G43.9", Name: "Migraine, unspecified", NameID: "Migrain", Category: "Diseases of the nervous system", Chapter: "VI"},
-		{Code: "R42", Name: "Dizziness and giddiness", NameID: "Pusing (vertigo)", Category: "Symptoms and signs", Chapter: "XVIII"},
-		{Code: "B01.9", Name: "Varicella without complication", NameID: "Cacar air (varicella)", Category: "Certain infectious and parasitic diseases", Chapter: "I"},
-		{Code: "A01.0", Name: "Typhoid fever", NameID: "Demam tifoid (tipes)", Category: "Certain infectious and parasitic diseases", Chapter: "I"},
-		{Code: "A15.0", Name: "Tuberculosis of lung", NameID: "TBC paru", Category: "Certain infectious and parasitic diseases", Chapter: "I"},
-		{Code: "B82.9", Name: "Intestinal parasitism, unspecified", NameID: "Cacingan", Category: "Certain infectious and parasitic diseases", Chapter: "I"},
-		{Code: "L50.9", Name: "Urticaria, unspecified", NameID: "Urtikaria (biduran)", Category: "Diseases of the skin", Chapter: "XII"},
-		{Code: "T78.4", Name: "Allergy, unspecified", NameID: "Alergi", Category: "Injury and poisoning", Chapter: "XIX"},
-	}
-	for _, icd := range icd10Codes {
-		DB.Where(models.ICD10{Code: icd.Code}).FirstOrCreate(&icd)
-	}
+	// Seed ICD-10 & ICD-9-CM codes from TSV dataset
+	seedICD10FromTSV()
 
 	log.Println("Master data seeded successfully")
+}
+
+// seedICD10FromTSV reads dataset/icd.tsv and upserts all valid codes (VALIDCODE=1).
+func seedICD10FromTSV() {
+	// Skip if codes already seeded (check for >100 entries)
+	var count int64
+	DB.Model(&models.ICD10{}).Count(&count)
+	if count > 1000 {
+		log.Printf("ICD codes already seeded (%d entries), skipping TSV import", count)
+		return
+	}
+
+	tsvPath := "dataset/icd.tsv"
+	if _, err := os.Stat(tsvPath); os.IsNotExist(err) {
+		// Try relative to binary location
+		tsvPath = "../dataset/icd.tsv"
+		if _, err := os.Stat(tsvPath); os.IsNotExist(err) {
+			log.Println("WARNING: dataset/icd.tsv not found, skipping ICD seed from TSV")
+			return
+		}
+	}
+
+	file, err := os.Open(tsvPath)
+	if err != nil {
+		log.Printf("WARNING: cannot open %s: %v", tsvPath, err)
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
+
+	// Skip header
+	if !scanner.Scan() {
+		log.Println("WARNING: icd.tsv is empty")
+		return
+	}
+
+	batch := make([]models.ICD10, 0, 500)
+	imported := 0
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		cols := strings.Split(line, "\t")
+		if len(cols) < 5 {
+			continue
+		}
+
+		code := strings.TrimSpace(cols[0])
+		display := strings.TrimSpace(cols[2])
+		system := strings.TrimSpace(cols[3])
+		validCode := strings.TrimSpace(cols[4])
+
+		// Only import valid codes
+		if validCode != "1" || code == "" || display == "" {
+			continue
+		}
+
+		// Truncate display if needed
+		if len(display) > 512 {
+			display = display[:512]
+		}
+
+		// Determine chapter from code prefix
+		chapter := mapICDChapter(code, system)
+
+		batch = append(batch, models.ICD10{
+			Code:    code,
+			Name:    display,
+			System:  system,
+			Chapter: chapter,
+		})
+
+		if len(batch) >= 500 {
+			DB.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "code"}},
+				DoUpdates: clause.AssignmentColumns([]string{"name", "system", "chapter", "updated_at"}),
+			}).Create(&batch)
+			imported += len(batch)
+			batch = batch[:0]
+		}
+	}
+
+	if len(batch) > 0 {
+		DB.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "code"}},
+			DoUpdates: clause.AssignmentColumns([]string{"name", "system", "chapter", "updated_at"}),
+		}).Create(&batch)
+		imported += len(batch)
+	}
+
+	log.Printf("ICD codes seeded from TSV: %d entries imported", imported)
+}
+
+// mapICDChapter returns ICD-10 chapter from code prefix letter.
+func mapICDChapter(code, system string) string {
+	if strings.Contains(system, "ICD9CM") {
+		return "ICD-9-CM"
+	}
+	if len(code) == 0 {
+		return ""
+	}
+	switch code[0] {
+	case 'A', 'B':
+		return "I"
+	case 'C', 'D':
+		if len(code) >= 3 {
+			numPart := code[1:3]
+			if numPart >= "00" && numPart <= "48" {
+				return "II"
+			}
+			if code[0] == 'D' && numPart >= "50" && numPart <= "89" {
+				return "III"
+			}
+		}
+		if code[0] == 'C' {
+			return "II"
+		}
+		return "III"
+	case 'E':
+		return "IV"
+	case 'F':
+		return "V"
+	case 'G':
+		return "VI"
+	case 'H':
+		if len(code) >= 3 {
+			numPart := code[1:3]
+			if numPart >= "00" && numPart <= "59" {
+				return "VII"
+			}
+		}
+		return "VIII"
+	case 'I':
+		return "IX"
+	case 'J':
+		return "X"
+	case 'K':
+		return "XI"
+	case 'L':
+		return "XII"
+	case 'M':
+		return "XIII"
+	case 'N':
+		return "XIV"
+	case 'O':
+		return "XV"
+	case 'P':
+		return "XVI"
+	case 'Q':
+		return "XVII"
+	case 'R':
+		return "XVIII"
+	case 'S', 'T':
+		return "XIX"
+	case 'V', 'W', 'X', 'Y':
+		return "XX"
+	case 'Z':
+		return "XXI"
+	case 'U':
+		return "XXII"
+	default:
+		return ""
+	}
 }

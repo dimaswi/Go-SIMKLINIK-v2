@@ -35,7 +35,7 @@ export default function PharmacyHandoverIndex() {
   const [syncingPrescriptionId, setSyncingPrescriptionId] = useState<number | null>(null);
   const [satusehatResult, setSatusehatResult] = useState<SatusehatResultState | null>(null);
 
-  const canProcess = hasPermission('prescriptions.process') || hasPermission('prescriptions.update');
+  const canProcess = hasPermission('pharmacy.process') || hasPermission('prescriptions.process') || hasPermission('prescriptions.update');
 
   const loadOrders = useCallback(async () => {
     const response = await pharmacyApi.getPrescriptionOrders('prescription_workflow_status=ready&per_page=200');

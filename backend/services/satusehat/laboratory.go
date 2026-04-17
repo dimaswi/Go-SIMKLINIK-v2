@@ -25,7 +25,8 @@ func BuildLaboratoryItemPreview(item models.LaboratoryOrderItem, config Config) 
 	record := item.MedicalRecord
 	patientReference := strings.TrimSpace(record.Patient.SatusehatPatientID)
 	encounterReference := strings.TrimSpace(record.Visit.SatusehatEncounterID)
-	practitionerReference := strings.TrimSpace(record.Doctor.SatusehatPractitionerID)
+	requesterActor := ResolveMedicalRecordRequesterActor(record)
+	performerActor := ResolveLaboratoryPerformerActor(item)
 	organizationReference := strings.TrimSpace(config.OrganizationID)
 
 	if patientReference == "" {
@@ -83,15 +84,20 @@ func BuildLaboratoryItemPreview(item models.LaboratoryOrderItem, config Config) 
 			},
 		}}
 	}
-	if practitionerReference != "" {
+	if requesterActor.Ready() {
 		serviceRequest.Resource["requester"] = map[string]any{
-			"reference": fmt.Sprintf("Practitioner/%s", practitionerReference),
-			"display":   record.Doctor.FullName,
+			"reference": requesterActor.Reference(),
+			"display":   requesterActor.Display,
 		}
 	} else {
-		warnings = append(warnings, "Doctor belum memiliki SATUSEHAT Practitioner ID; requester akan diabaikan sementara.")
+		warnings = append(warnings, "Pegawai/dokter pengaju belum memiliki SATUSEHAT Practitioner ID; requester akan diabaikan sementara.")
 	}
-	if organizationReference != "" {
+	if performerActor.Ready() {
+		serviceRequest.Resource["performer"] = []map[string]any{{
+			"reference": performerActor.Reference(),
+			"display":   performerActor.Display,
+		}}
+	} else if organizationReference != "" {
 		serviceRequest.Resource["performer"] = []map[string]any{{
 			"reference": fmt.Sprintf("Organization/%s", organizationReference),
 		}}
@@ -105,7 +111,7 @@ func BuildLaboratoryItemPreview(item models.LaboratoryOrderItem, config Config) 
 		serviceRequestReference = fmt.Sprintf("ServiceRequest/%s", existingID)
 	}
 
-	specimen := buildLaboratorySpecimenPreview(item, record, config.OrganizationID, practitionerReference, serviceRequestReference)
+	specimen := buildLaboratorySpecimenPreview(item, record, config.OrganizationID, performerActor, serviceRequestReference)
 	specimenReference := ""
 	if specimen != nil {
 		specimenReference = "Specimen/{satusehat_specimen_id}"
@@ -167,10 +173,10 @@ func BuildLaboratoryItemPreview(item models.LaboratoryOrderItem, config Config) 
 				"reference": fmt.Sprintf("Organization/%s", organizationReference),
 			}}
 			reportPerformerReady = true
-		} else if practitionerReference != "" {
+		} else if performerActor.Ready() {
 			report.Resource["performer"] = []map[string]any{{
-				"reference": fmt.Sprintf("Practitioner/%s", practitionerReference),
-				"display":   record.Doctor.FullName,
+				"reference": performerActor.Reference(),
+				"display":   performerActor.Display,
 			}}
 			reportPerformerReady = true
 		}
@@ -212,7 +218,7 @@ func BuildLaboratoryItemPreview(item models.LaboratoryOrderItem, config Config) 
 	}
 }
 
-func buildLaboratorySpecimenPreview(item models.LaboratoryOrderItem, record models.MedicalRecord, organizationID, practitionerReference, serviceRequestReference string) *NamedResourcePreview {
+func buildLaboratorySpecimenPreview(item models.LaboratoryOrderItem, record models.MedicalRecord, organizationID string, performerActor PractitionerActor, serviceRequestReference string) *NamedResourcePreview {
 	if item.Specimen == nil {
 		return nil
 	}
@@ -260,10 +266,10 @@ func buildLaboratorySpecimenPreview(item models.LaboratoryOrderItem, record mode
 	collection := map[string]any{
 		"collectedDateTime": formatFHIRDateTime(collectedAt),
 	}
-	if practitionerReference != "" {
+	if performerActor.Ready() {
 		collection["collector"] = map[string]any{
-			"reference": fmt.Sprintf("Practitioner/%s", practitionerReference),
-			"display":   record.Doctor.FullName,
+			"reference": performerActor.Reference(),
+			"display":   performerActor.Display,
 		}
 	}
 	if methodCode := strings.TrimSpace(specimen.CollectionMethodCode); methodCode != "" || strings.TrimSpace(specimen.CollectionMethodDisplay) != "" {
@@ -303,6 +309,7 @@ func buildLaboratorySpecimenPreview(item models.LaboratoryOrderItem, record mode
 
 func buildLaboratoryObservationPreviews(item models.LaboratoryOrderItem, record models.MedicalRecord, organizationID, serviceRequestReference, specimenReference string) []NamedResourcePreview {
 	observations := make([]NamedResourcePreview, 0, len(item.ParameterResults)+1)
+	performerActor := ResolveLaboratoryPerformerActor(item)
 
 	createObservation := func(key, existingResourceID, code, display, unit, resultValue, note string, resultDate *time.Time) {
 		trimmedResultValue := strings.TrimSpace(resultValue)
@@ -340,7 +347,12 @@ func buildLaboratoryObservationPreviews(item models.LaboratoryOrderItem, record 
 				"reference": serviceRequestReference,
 			}},
 		}
-		if strings.TrimSpace(organizationID) != "" {
+		if performerActor.Ready() {
+			resource["performer"] = []map[string]any{{
+				"reference": performerActor.Reference(),
+				"display":   performerActor.Display,
+			}}
+		} else if strings.TrimSpace(organizationID) != "" {
 			resource["performer"] = []map[string]any{{
 				"reference": fmt.Sprintf("Organization/%s", strings.TrimSpace(organizationID)),
 			}}

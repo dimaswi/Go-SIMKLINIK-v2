@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { setPageTitle } from '@/lib/page-title';
 import { Loader2, Plus } from 'lucide-react';
+import { MasterDataListShell } from '@/pages/master-data/shared';
 
 export default function PaymentMethodsPage() {
   const navigate = useNavigate();
@@ -42,8 +43,14 @@ export default function PaymentMethodsPage() {
 
   return (
     <div className="flex flex-1 min-h-0 flex-col gap-4 p-4">
-      <DataTable columns={columns} data={data} searchPlaceholder="Cari metode pembayaran..." pageSize={10}
-        toolbarActions={hasPermission('payment_methods.create') ? <Button onClick={() => navigate('/payment-methods/create')}><Plus className="h-4 w-4" />Tambah Metode</Button> : undefined} />
+      <MasterDataListShell
+        title="Daftar Metode Pembayaran"
+        subtitle="Kelola opsi pembayaran untuk proses registrasi, farmasi, dan transaksi klinik lainnya."
+        totalCount={data.length}
+      >
+        <DataTable columns={columns} data={data} searchPlaceholder="Cari metode pembayaran..." pageSize={10} className="h-full"
+          toolbarActions={hasPermission('payment_methods.create') ? <Button onClick={() => navigate('/payment-methods/create')} className="rounded-none shadow-none"><Plus className="h-4 w-4" />Tambah Metode</Button> : undefined} />
+      </MasterDataListShell>
       <ConfirmDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen} onConfirm={confirmDelete} title="Hapus Metode Pembayaran" description="Yakin hapus metode pembayaran ini?" confirmText="Hapus" cancelText="Batal" variant="destructive" />
     </div>
   );

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { polyclinicsApi, queueApi, type Polyclinic, type Visit } from '@/lib/api';
+import { queueApi, type Polyclinic, type Visit } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
 import {
   Clock3,
@@ -93,6 +93,7 @@ export default function QueueDisplay() {
   const [clockLabel, setClockLabel] = useState('');
   const [dateLabel, setDateLabel] = useState('');
   const [polyclinics, setPolyclinics] = useState<Polyclinic[]>([]);
+  const [polyclinicsLoaded, setPolyclinicsLoaded] = useState(false);
   const [selectedPoli, setSelectedPoli] = useState(searchParams.get('poli') || '');
   const [queueData, setQueueData] = useState<QueueBuckets>(EMPTY_QUEUE);
   const [loading, setLoading] = useState(true);
@@ -102,14 +103,16 @@ export default function QueueDisplay() {
 
   useEffect(() => {
     setPageTitle('Display Antrian');
-    polyclinicsApi.getAll().then((response) => {
+    queueApi.getPolyclinics().then((response) => {
       const list: Polyclinic[] = response.data.data || [];
       setPolyclinics(list);
       if (!selectedPoli && list.length > 0) {
         const firstId = String(list[0].id);
         setSelectedPoli(firstId);
       }
+      setPolyclinicsLoaded(true);
     }).catch(() => {
+      setPolyclinicsLoaded(true);
       setLoading(false);
     });
   }, [selectedPoli]);
@@ -216,6 +219,7 @@ export default function QueueDisplay() {
     () => polyclinics.find((item) => String(item.id) === selectedPoli) || null,
     [polyclinics, selectedPoli]
   );
+  const hasQueuePolyclinicAccess = polyclinics.length > 0;
   const displayTitle = isAllPoli ? 'Semua Poliklinik' : currentPolyclinic?.name || 'Pilih Poliklinik';
 
   const currentCall = queueData.in_consultation[0] || queueData.waiting[0] || null;
@@ -257,6 +261,15 @@ export default function QueueDisplay() {
         {loading ? (
           <div className="flex min-h-0 flex-1 items-center justify-center border border-slate-300/70 bg-white/70">
             <Loader2 className="h-10 w-10 animate-spin text-slate-700" />
+          </div>
+        ) : polyclinicsLoaded && !hasQueuePolyclinicAccess ? (
+          <div className="flex min-h-0 flex-1 items-center justify-center border border-slate-300/70 bg-white/70 px-6">
+            <div className="max-w-2xl border border-dashed border-slate-300/80 bg-white/70 px-8 py-8 text-center">
+              <p className="text-lg font-semibold tracking-tight text-slate-900">Belum ada poliklinik yang dapat ditampilkan.</p>
+              <p className="mt-3 text-sm leading-7 text-slate-600">
+                Akun ini belum memiliki keterkaitan poliklinik aktif untuk display antrean. Jika Anda login sebagai dokter, tautkan profil dokter ke poliklinik atau jadwal aktif terlebih dahulu.
+              </p>
+            </div>
           </div>
         ) : (
           <div className="grid min-h-0 flex-1 gap-3 overflow-hidden xl:grid-cols-[minmax(0,1.15fr)_minmax(400px,0.85fr)]">

@@ -173,6 +173,11 @@ export default function DoctorShow() {
 
   const canPreviewSatusehat = hasPermission('doctors.view') || hasPermission('settings.view');
   const canSyncSatusehat = hasPermission('doctors.update') || hasPermission('settings.update');
+  const satusehatManagedFromEmployee = Boolean(data.employee);
+  const satusehatRequired = satusehatManagedFromEmployee ? Boolean(data.employee?.requires_satusehat) : true;
+  const satusehatDisabledReason = satusehatManagedFromEmployee && !satusehatRequired
+    ? 'Master pegawai menandai dokter ini tidak perlu SATUSEHAT, jadi preview dan sync dinonaktifkan dari modul dokter.'
+    : '';
   const satusehatChecklist = buildPractitionerChecklist(data);
   const satusehatReadyCount = satusehatChecklist.filter((item) => item.ready).length;
   const previewWarnings = asArray(practitionerPreview?.warnings).map((item) => asString(item).trim()).filter(Boolean);
@@ -193,13 +198,14 @@ export default function DoctorShow() {
             <Badge className={data.is_active ? 'h-5 rounded-none border-0 bg-emerald-600 px-2 text-[10px] uppercase tracking-wide text-white shadow-none' : 'h-5 rounded-none border-0 bg-rose-600 px-2 text-[10px] uppercase tracking-wide text-white shadow-none'}>
               {data.is_active ? 'Aktif' : 'Nonaktif'}
             </Badge>
-            <Badge className={data.satusehat_practitioner_id ? 'h-5 rounded-none border-0 bg-emerald-600 px-2 text-[10px] uppercase tracking-wide text-white shadow-none' : 'h-5 rounded-none border-0 bg-amber-500 px-2 text-[10px] uppercase tracking-wide text-white shadow-none'}>
-              {data.satusehat_practitioner_id ? 'Practitioner Sync' : `${satusehatReadyCount}/${satusehatChecklist.length} SATUSEHAT`}
+            <Badge className={satusehatRequired ? (data.satusehat_practitioner_id ? 'h-5 rounded-none border-0 bg-emerald-600 px-2 text-[10px] uppercase tracking-wide text-white shadow-none' : 'h-5 rounded-none border-0 bg-amber-500 px-2 text-[10px] uppercase tracking-wide text-white shadow-none') : 'h-5 rounded-none border-0 bg-slate-500 px-2 text-[10px] uppercase tracking-wide text-white shadow-none'}>
+              {satusehatRequired ? (data.satusehat_practitioner_id ? 'Practitioner Sync' : `${satusehatReadyCount}/${satusehatChecklist.length} SATUSEHAT`) : 'SATUSEHAT Opsional'}
             </Badge>
           </>
         }
         meta={
           <>
+            <span>Pegawai {data.employee?.employee_code || data.employee?.full_name || '-'}</span>
             <span>NIK {data.nik_number || '-'}</span>
             <span>NIP {data.nip_number || '-'}</span>
             <span>SIP {data.sip_number || '-'}</span>
@@ -209,8 +215,8 @@ export default function DoctorShow() {
         }
         actions={
           <>
-            {canPreviewSatusehat ? <Button variant="outline" className="rounded-none shadow-none" onClick={() => void handlePreviewSatusehat()} disabled={previewingSatusehat || syncingSatusehat}>{previewingSatusehat ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}Preview SATUSEHAT</Button> : null}
-            {canSyncSatusehat ? <Button variant="outline" className="rounded-none shadow-none" onClick={() => void handleSyncSatusehat()} disabled={syncingSatusehat || previewingSatusehat}>{syncingSatusehat ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{data.satusehat_practitioner_id ? 'Sync Ulang SATUSEHAT' : 'Sync ke SATUSEHAT'}</Button> : null}
+            {canPreviewSatusehat ? <Button variant="outline" className="rounded-none shadow-none" onClick={() => void handlePreviewSatusehat()} disabled={!satusehatRequired || previewingSatusehat || syncingSatusehat}>{previewingSatusehat ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}Preview SATUSEHAT</Button> : null}
+            {canSyncSatusehat ? <Button variant="outline" className="rounded-none shadow-none" onClick={() => void handleSyncSatusehat()} disabled={!satusehatRequired || syncingSatusehat || previewingSatusehat}>{syncingSatusehat ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{data.satusehat_practitioner_id ? 'Sync Ulang SATUSEHAT' : 'Sync ke SATUSEHAT'}</Button> : null}
             {hasPermission('doctors.update') && <Button className="rounded-none shadow-none" onClick={() => navigate(`/doctors/${id}/edit`)}><Edit className="h-4 w-4" />Edit</Button>}
             {hasPermission('doctors.delete') && <Button variant="destructive" className="rounded-none shadow-none" onClick={() => setDeleteDialogOpen(true)} disabled={deleting}>{deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}Hapus</Button>}
           </>
@@ -220,9 +226,22 @@ export default function DoctorShow() {
             <div>
               <MasterDataAsideSection title="SATUSEHAT" helper="Status sinkronisasi Practitioner untuk dokter ini.">
                 <div className="space-y-2 text-sm text-muted-foreground">
+                  <p>Kebutuhan dari master pegawai: <span className="font-medium text-foreground">{satusehatManagedFromEmployee ? (satusehatRequired ? 'Perlu integrasi' : 'Tidak perlu integrasi') : 'Belum diatur dari master pegawai'}</span></p>
                   <p>Practitioner ID: <span className="font-medium break-all text-foreground">{data.satusehat_practitioner_id || '-'}</span></p>
                   <p>Sync terakhir: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.satusehat_synced_at)}</span></p>
                   <p>Status preview: <span className="font-medium text-foreground">{previewReady === null ? 'Belum dimuat' : previewReady ? 'Siap dikirim' : 'Perlu perhatian'}</span></p>
+                  {satusehatDisabledReason ? <p className="text-amber-700">{satusehatDisabledReason}</p> : null}
+                </div>
+              </MasterDataAsideSection>
+            </div>
+            <div>
+              <MasterDataAsideSection title="Tautan Pegawai" helper="Profil dokter bisa mengambil identitas dasar dari master pegawai.">
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <p>Pegawai: <span className="font-medium text-foreground">{data.employee?.full_name || '-'}</span></p>
+                  <p>Kode: <span className="font-medium text-foreground">{data.employee?.employee_code || '-'}</span></p>
+                  <p>Akun: <span className="font-medium text-foreground">{data.employee?.user?.email || data.user?.email || '-'}</span></p>
+                  <p>Flag SATUSEHAT: <span className="font-medium text-foreground">{data.employee ? (data.employee.requires_satusehat ? 'Perlu integrasi' : 'Tidak perlu integrasi') : '-'}</span></p>
+                  <p>Practitioner pegawai: <span className="font-medium break-all text-foreground">{data.employee?.satusehat_practitioner_id || '-'}</span></p>
                 </div>
               </MasterDataAsideSection>
             </div>
@@ -241,6 +260,9 @@ export default function DoctorShow() {
         <div className="divide-y divide-border/70">
           <MasterDataSection title="Identitas Dokter" helper="Data profesi dan kontak yang dipakai untuk penjadwalan dan pelayanan klinik.">
             <div className="grid gap-4 md:grid-cols-2">
+              <MasterDataDetailItem label="Master Pegawai" value={data.employee?.full_name || '-'} />
+              <MasterDataDetailItem label="Kode Pegawai" value={data.employee?.employee_code || '-'} />
+              <MasterDataDetailItem label="Butuh SATUSEHAT" value={satusehatManagedFromEmployee ? (satusehatRequired ? 'Ya' : 'Tidak') : '-'} />
               <MasterDataDetailItem label="Nama Lengkap" value={data.full_name} />
               <MasterDataDetailItem label="NIK" value={data.nik_number || '-'} />
               <MasterDataDetailItem label="NIP" value={data.nip_number || '-'} />
@@ -252,6 +274,11 @@ export default function DoctorShow() {
 
           <MasterDataSection title="Kesiapan SATUSEHAT Practitioner" helper="SATUSEHAT Practitioner sekarang tidak dibuat dari SIMKLINIK. Sistem akan mencari IHS number tenaga kesehatan lewat Master Nakes Index berdasarkan NIK dokter.">
             <div className="space-y-4">
+              {satusehatDisabledReason ? (
+                <div className="border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  {satusehatDisabledReason}
+                </div>
+              ) : null}
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 {satusehatChecklist.map((item) => (
                   <div key={item.label} className="border border-border/70 bg-muted/[0.03] p-4">

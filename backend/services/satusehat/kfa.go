@@ -174,6 +174,7 @@ func doKFARequest(ctx context.Context, config Config, method, resourcePath strin
 	request.Header.Set("Accept", "application/json")
 
 	client := &http.Client{Timeout: 45 * time.Second}
+	throttleSATUSEHATCall()
 	response, err := client.Do(request)
 	if err != nil {
 		RecordActivityLog(ActivityLogEntry{Operation: "kfa-request", ResourceType: "KFAProduct", Mode: config.ActiveMode, Method: method, Endpoint: endpoint, Success: false, ErrorMessage: err.Error()})

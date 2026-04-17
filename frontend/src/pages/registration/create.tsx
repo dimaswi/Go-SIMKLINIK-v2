@@ -30,7 +30,7 @@ import {
   getPatientGenderLabel,
   getPatientInsuranceLabel,
 } from '@/pages/patients/shared';
-import { MasterDataAsideSection, MasterDataAsideStack, MasterDataPageShell } from '@/pages/master-data/shared';
+import { MasterDataAsideSection, MasterDataAsideStack, MasterDataPageShell, formatMasterDataDateTime } from '@/pages/master-data/shared';
 
 const PAYMENT_OPTIONS = [
   { value: 'umum', label: 'Umum (Mandiri)' },
@@ -52,6 +52,17 @@ export default function RegistrationCreate() {
   const initialMode = searchParams.get('mode') === 'new' ? 'new' : 'existing';
   const ticketId = searchParams.get('ticket_id');
   const initialPatientId = searchParams.get('patient_id');
+  const initialPolyclinicId = searchParams.get('polyclinic_id');
+  const initialDoctorId = searchParams.get('doctor_id');
+  const initialPaymentType = searchParams.get('payment_type');
+  const initialInsuranceNumber = searchParams.get('insurance_number');
+  const initialComplaint = searchParams.get('complaint');
+  const initialVisitDate = searchParams.get('visit_date');
+  const initialPriority = searchParams.get('priority');
+  const registrationSource = searchParams.get('source');
+  const controlVisitNumber = searchParams.get('control_visit_number');
+  const controlFollowUpAt = searchParams.get('control_follow_up_at');
+  const controlInstruction = searchParams.get('control_instruction');
   const [entryMode, setEntryMode] = useState<EntryMode>(initialMode);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -67,14 +78,14 @@ export default function RegistrationCreate() {
 
   const [visitForm, setVisitForm] = useState({
     patient_id: initialPatientId || '',
-    polyclinic_id: '',
-    doctor_id: '',
-    visit_date: getLocalISODate(),
-    payment_type: 'umum',
-    insurance_number: '',
+    polyclinic_id: initialPolyclinicId || '',
+    doctor_id: initialDoctorId || '',
+    visit_date: initialVisitDate || getLocalISODate(),
+    payment_type: initialPaymentType === 'bpjs' || initialPaymentType === 'asuransi' || initialPaymentType === 'umum' ? initialPaymentType : 'umum',
+    insurance_number: initialInsuranceNumber || '',
     visit_type: initialPatientId ? 'lama' : 'baru',
-    priority: 'normal',
-    complaint: '',
+    priority: initialPriority === 'urgent' ? 'urgent' : 'normal',
+    complaint: initialComplaint || '',
   });
 
   useEffect(() => {
@@ -105,8 +116,10 @@ export default function RegistrationCreate() {
             ...previous,
             patient_id: initialPatientId,
             visit_type: 'lama',
-            payment_type: patient.insurance_type || 'umum',
-            insurance_number: patient.insurance_number || '',
+            payment_type: (initialPaymentType === 'bpjs' || initialPaymentType === 'asuransi' || initialPaymentType === 'umum')
+              ? initialPaymentType
+              : patient.insurance_type || 'umum',
+            insurance_number: initialInsuranceNumber || patient.insurance_number || '',
           }));
         }
       }
@@ -115,7 +128,7 @@ export default function RegistrationCreate() {
     }).finally(() => {
       setLoading(false);
     });
-  }, [initialPatientId, ticketId, toast]);
+  }, [initialInsuranceNumber, initialPatientId, initialPaymentType, ticketId, toast]);
 
   useEffect(() => {
     if (entryMode !== 'existing') {
@@ -141,8 +154,8 @@ export default function RegistrationCreate() {
       setVisitForm((previous) => ({
         ...previous,
         visit_type: 'lama',
-        payment_type: patient.insurance_type || previous.payment_type || 'umum',
-        insurance_number: patient.insurance_number || '',
+        payment_type: previous.payment_type || patient.insurance_type || 'umum',
+        insurance_number: previous.insurance_number || patient.insurance_number || '',
       }));
     }
   }, [entryMode, newPatientForm.insurance_number, newPatientForm.insurance_type, patients, visitForm.patient_id]);
@@ -196,8 +209,20 @@ export default function RegistrationCreate() {
       setDoctors(allDoctors);
     }
 
-    setVisitForm((previous) => ({ ...previous, doctor_id: '' }));
-  }, [allDoctors, visitForm.polyclinic_id]);
+    setVisitForm((previous) => {
+      if (!previous.doctor_id) {
+        return previous;
+      }
+
+      const doctorStillAvailable = (allDoctors.length > 0 ? allDoctors : doctors).some((doctor) => String(doctor.id) === previous.doctor_id && (
+        !doctor.polyclinics ||
+        doctor.polyclinics.length === 0 ||
+        doctor.polyclinics.some((polyclinic: Polyclinic) => String(polyclinic.id) === previous.polyclinic_id)
+      ));
+
+      return doctorStillAvailable ? previous : { ...previous, doctor_id: '' };
+    });
+  }, [allDoctors, doctors, visitForm.polyclinic_id]);
 
   const setVisitField = (field: keyof typeof visitForm, value: string) => {
     setVisitForm((previous) => ({ ...previous, [field]: value }));
@@ -305,6 +330,8 @@ export default function RegistrationCreate() {
 
   const selectedPolyclinic = polyclinics.find((item) => String(item.id) === visitForm.polyclinic_id) || null;
   const selectedDoctor = doctors.find((item) => String(item.id) === visitForm.doctor_id) || null;
+  const isControlRegistration = registrationSource === 'control-schedule';
+  const controlScheduleLabel = controlFollowUpAt ? formatMasterDataDateTime(controlFollowUpAt) : '-';
 
   if (loading) {
     return (
@@ -318,13 +345,20 @@ export default function RegistrationCreate() {
     <form id="registration-create-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <MasterDataPageShell
         title="Workspace Pendaftaran"
-        subtitle="Fokus ke form pendaftaran. Pilih mode pasien di kontrol ringkas, lalu langsung isi data kunjungan."
+        subtitle={isControlRegistration
+          ? 'Registrasi kontrol dari monitoring jadwal. Data kunjungan utama sudah diprefill dan tinggal diverifikasi petugas.'
+          : 'Fokus ke form pendaftaran. Pilih mode pasien di kontrol ringkas, lalu langsung isi data kunjungan.'}
         onBack={() => navigate('/registration')}
         badges={
           <>
             {registrationTicket ? (
               <Badge variant="outline" className="h-5 rounded-none px-2 text-[10px] uppercase tracking-[0.18em] shadow-none">
                 Tiket {String(registrationTicket.ticket_number).padStart(3, '0')}
+              </Badge>
+            ) : null}
+            {isControlRegistration ? (
+              <Badge className="h-5 rounded-none border-0 bg-amber-500 px-2 text-[10px] uppercase tracking-[0.18em] text-white shadow-none">
+                Pasien Kontrol
               </Badge>
             ) : null}
             <Badge variant="secondary" className="h-5 rounded-none px-2 text-[10px] uppercase tracking-[0.18em] shadow-none">
@@ -337,6 +371,7 @@ export default function RegistrationCreate() {
         }
         meta={
           <>
+            {isControlRegistration ? <span>Kontrol dari {controlVisitNumber || '-'}</span> : null}
             <span>Poli {selectedPolyclinic?.name || '-'}</span>
             <span>Dokter {selectedDoctor?.full_name || '-'}</span>
             <span>Tanggal {visitForm.visit_date || '-'}</span>
@@ -364,10 +399,45 @@ export default function RegistrationCreate() {
                 </div>
               </MasterDataAsideSection>
             </div>
+            {isControlRegistration ? (
+              <div>
+                <MasterDataAsideSection title="Konteks Kontrol" helper="Pastikan poli, dokter, dan instruksi kontrol sudah sesuai sebelum pendaftaran disimpan.">
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>Kunjungan asal: <span className="font-medium text-foreground">{controlVisitNumber || '-'}</span></p>
+                    <p>Jadwal kontrol: <span className="font-medium text-foreground">{controlScheduleLabel}</span></p>
+                    <p>Instruksi: <span className="font-medium text-foreground">{controlInstruction || 'Tidak ada instruksi tambahan.'}</span></p>
+                  </div>
+                </MasterDataAsideSection>
+              </div>
+            ) : null}
           </MasterDataAsideStack>
         }
       >
         <div className="divide-y divide-border/70">
+
+          {isControlRegistration ? (
+            <section className="px-4 py-4 lg:px-5 lg:py-5">
+              <div className="border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">Registrasi Kontrol</p>
+                    <h2 className="text-sm font-semibold tracking-tight text-amber-950">Pasien datang sesuai jadwal kontrol yang sudah dibuat dari kunjungan sebelumnya.</h2>
+                    <p className="text-xs leading-5 text-amber-800">Form sudah menyiapkan pasien lama, poli, dokter, penjamin, prioritas, dan keluhan awal. Petugas cukup cek ulang lalu simpan pendaftaran.</p>
+                  </div>
+                  <div className="grid gap-2 text-xs text-amber-900 sm:grid-cols-2 xl:min-w-[360px]">
+                    <div className="border border-amber-200/80 bg-white/55 px-3 py-2">
+                      <p className="font-semibold uppercase tracking-[0.14em] text-amber-700">Kunjungan Asal</p>
+                      <p className="mt-1 text-sm font-medium text-amber-950">{controlVisitNumber || '-'}</p>
+                    </div>
+                    <div className="border border-amber-200/80 bg-white/55 px-3 py-2">
+                      <p className="font-semibold uppercase tracking-[0.14em] text-amber-700">Jadwal Kontrol</p>
+                      <p className="mt-1 text-sm font-medium text-amber-950">{controlScheduleLabel}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          ) : null}
 
           {entryMode === 'existing' ? (
             <section className="px-4 py-4 lg:px-5 lg:py-5">
@@ -388,10 +458,16 @@ export default function RegistrationCreate() {
                     square
                   />
                 </div>
-                <Button type="button" variant="outline" className="rounded-none shadow-none" onClick={() => setEntryMode('new')}>
-                  <UserPlus className="mr-2 h-4 w-4" />
-                  Pindah Ke Pasien Baru
-                </Button>
+                {isControlRegistration ? (
+                  <div className="border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+                    Pendaftaran ini ditandai sebagai pasien kontrol, jadi form tetap diarahkan ke pasien lama yang sudah terdaftar.
+                  </div>
+                ) : (
+                  <Button type="button" variant="outline" className="rounded-none shadow-none" onClick={() => setEntryMode('new')}>
+                    <UserPlus className="mr-2 h-4 w-4" />
+                    Pindah Ke Pasien Baru
+                  </Button>
+                )}
               </div>
 
               {selectedPatient ? (

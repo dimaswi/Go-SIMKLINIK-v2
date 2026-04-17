@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Eye, Edit, Trash2, ArrowUpDown } from "lucide-react"
 import { createSelectColumn } from "@/components/ui/data-table"
-import type { User } from "@/lib/api"
+import type { Employee, User } from "@/lib/api"
 
 interface UserColumnsProps {
   onView: (id: number) => void
@@ -13,6 +13,7 @@ interface UserColumnsProps {
   hasViewPermission: boolean
   hasEditPermission: boolean
   hasDeletePermission: boolean
+  getLinkedEmployee?: (userId: number) => Employee | undefined
 }
 
 export function createUserColumns({
@@ -22,6 +23,7 @@ export function createUserColumns({
   hasViewPermission,
   hasEditPermission,
   hasDeletePermission,
+  getLinkedEmployee,
 }: UserColumnsProps): ColumnDef<User>[] {
   return [
     createSelectColumn<User>(),
@@ -94,6 +96,28 @@ export function createUserColumns({
           <Badge variant="outline" className="font-normal">
             {user.role?.name || 'N/A'}
           </Badge>
+        )
+      },
+    },
+    {
+      id: "employee",
+      header: "Pegawai",
+      cell: ({ row }) => {
+        const user = row.original
+        const employee = getLinkedEmployee?.(user.id)
+
+        return employee ? (
+          <div className="flex flex-col gap-1">
+            <span className="text-sm font-medium">{employee.employee_code || employee.full_name}</span>
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="text-xs text-muted-foreground">{employee.profession || 'pegawai'}</span>
+              <Badge variant={employee.requires_satusehat ? "default" : "secondary"} className="rounded-none text-[10px]">
+                {employee.requires_satusehat ? 'SATUSEHAT' : 'Internal'}
+              </Badge>
+            </div>
+          </div>
+        ) : (
+          <span className="text-sm text-muted-foreground">Belum ditautkan</span>
         )
       },
     },

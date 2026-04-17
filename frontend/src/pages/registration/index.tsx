@@ -142,7 +142,7 @@ export default function RegistrationIndex() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-var(--app-header-height))] min-h-0 flex-1 flex-col overflow-hidden gap-3 p-3 lg:p-4">
+    <div className="flex min-h-0 flex-col gap-3 overflow-visible p-3 md:h-[calc(100vh-var(--app-header-height))] md:flex-1 md:overflow-hidden lg:p-4">
       <section className="grid gap-3 sm:grid-cols-3 xl:grid-cols-3">
         <StatCard label="Siap Diproses" value={String(queueStats.called)} />
         <StatCard label="Sedang Diproses" value={String(queueStats.processing)} />

@@ -27,6 +27,7 @@ import {
   UserPlus,
   Users2,
   Monitor,
+  CalendarDays,
   FileText,
   ImagePlus,
   PillBottle,
@@ -59,7 +60,12 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { Badge } from '@/components/ui/badge';
+import { tteApi } from '@/lib/api';
+import { TTE_BADGE_REFRESH_EVENT } from '@/lib/tte-badge-events';
 import { cn } from '@/lib/utils';
+
+type BadgeCountKey = 'doctor_tte_pending';
 
 interface SubMenuItem {
   path: string;
@@ -67,6 +73,7 @@ interface SubMenuItem {
   icon: React.ComponentType<{ className?: string }>;
   permission?: string | string[];
   exact?: boolean;
+  badgeKey?: BadgeCountKey;
 }
 
 interface MenuItem {
@@ -76,10 +83,12 @@ interface MenuItem {
   permission?: string | string[];
   submenu?: SubMenuItem[];
   exact?: boolean;
+  badgeKey?: BadgeCountKey;
 }
 
 const menuItems: MenuItem[] = [
-  { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard.view', exact: true },
+  { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, exact: true },
+  { path: '/reports', label: 'Laporan', icon: FileText, permission: 'reports.view', exact: true },
   {
     path: '/registration',
     label: 'Front Office',
@@ -87,18 +96,29 @@ const menuItems: MenuItem[] = [
     submenu: [
       { path: '/queue', label: 'Antrian', icon: Monitor, permission: 'queue.view' },
       { path: '/registration', label: 'Pendaftaran', icon: UserPlus, permission: 'visits.view' },
+      { path: '/control-schedules', label: 'Jadwal Kontrol', icon: CalendarDays, permission: 'visits.view' },
       { path: '/emr', label: 'Rekam Medis', icon: FileText, permission: 'medical_records.view' },
       { path: '/patients', label: 'Data Pasien', icon: Users2, permission: 'patients.view' },
+    ]
+  },
+  {
+    path: '/doctors',
+    label: 'Dokter',
+    icon: Stethoscope,
+    permission: ['doctors.view', 'document_signatures.approve'],
+    badgeKey: 'doctor_tte_pending',
+    submenu: [
+      { path: '/doctors', label: 'Data Dokter', icon: Stethoscope, permission: 'doctors.view' },
+      { path: '/tte-requests', label: 'Permintaan TTE', icon: FileText, permission: 'document_signatures.approve', badgeKey: 'doctor_tte_pending' },
     ]
   },
   {
     path: '/polyclinics',
     label: 'Master Data',
     icon: Hospital,
-    permission: 'polyclinics.view',
     submenu: [
       { path: '/polyclinics', label: 'Poliklinik', icon: Hospital, permission: 'polyclinics.view' },
-      { path: '/doctors', label: 'Dokter', icon: Stethoscope, permission: 'doctors.view' },
+      { path: '/employees', label: 'Pegawai', icon: Users, permission: 'employees.view' },
       { path: '/medicine-categories', label: 'Kategori Obat', icon: FolderTree, permission: 'medicine_categories.view' },
       { path: '/units', label: 'Satuan', icon: Ruler, permission: 'units.view' },
       { path: '/medicines', label: 'Obat', icon: Pill, permission: 'medicines.view' },
@@ -123,13 +143,13 @@ const menuItems: MenuItem[] = [
     path: '/pharmacy',
     label: 'Farmasi',
     icon: PillBottle,
-    permission: ['prescriptions.view', 'prescriptions.process'],
+    permission: ['pharmacy.view', 'pharmacy.process', 'prescriptions.view', 'prescriptions.process'],
     submenu: [
-      { path: '/pharmacy', label: 'Ringkasan Farmasi', icon: PillBottle, permission: ['prescriptions.view', 'prescriptions.process'], exact: true },
-      { path: '/pharmacy/receive', label: 'Terima Resep', icon: PillBottle, permission: ['prescriptions.view', 'prescriptions.process'] },
-      { path: '/pharmacy/process', label: 'Proses Resep', icon: PackageSearch, permission: ['prescriptions.view', 'prescriptions.process'] },
-      { path: '/pharmacy/handover', label: 'Serahkan Resep', icon: PackageCheck, permission: ['prescriptions.view', 'prescriptions.process'] },
-      { path: '/pharmacy/completed', label: 'Resep Selesai', icon: History, permission: ['prescriptions.view', 'prescriptions.process'] },
+      { path: '/pharmacy', label: 'Ringkasan Farmasi', icon: PillBottle, permission: ['pharmacy.view', 'pharmacy.process'], exact: true },
+      { path: '/pharmacy/receive', label: 'Terima Resep', icon: PillBottle, permission: ['pharmacy.view', 'pharmacy.process'] },
+      { path: '/pharmacy/process', label: 'Proses Resep', icon: PackageSearch, permission: ['pharmacy.view', 'pharmacy.process'] },
+      { path: '/pharmacy/handover', label: 'Serahkan Resep', icon: PackageCheck, permission: ['pharmacy.view', 'pharmacy.process'] },
+      { path: '/pharmacy/completed', label: 'Resep Selesai', icon: History, permission: ['pharmacy.view', 'pharmacy.process'] },
     ]
   },
   {
@@ -186,13 +206,23 @@ function isMenuItemActive(currentPath: string, item: MenuItem) {
     || Boolean(item.submenu?.some((submenu) => isSubmenuActive(currentPath, submenu)));
 }
 
+function formatBadgeCount(value: number) {
+  if (value > 99) {
+    return '99+';
+  }
+
+  return String(value);
+}
+
 export function AppSidebar() {
   const { user, logout } = useAuthStore();
   const { state } = useSidebar();
   const { hasAnyPermission, hasPermission } = usePermission();
   const [appName, setAppName] = useState(getAppName());
   const [appSubtitle, setAppSubtitle] = useState(getAppSubtitle());
+  const [badgeCounts, setBadgeCounts] = useState<Record<BadgeCountKey, number>>({ doctor_tte_pending: 0 });
   const isCollapsed = state === 'collapsed';
+  const canAccessDoctorTTEInbox = hasPermission('document_signatures.approve');
 
   const canAccess = (permission?: string | string[]) => {
     if (!permission) return true;
@@ -207,6 +237,61 @@ export function AppSidebar() {
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
+
+  useEffect(() => {
+    if (!canAccessDoctorTTEInbox) {
+      setBadgeCounts({ doctor_tte_pending: 0 });
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadDoctorPendingTTECount = async () => {
+      try {
+        const response = await tteApi.getInbox();
+        if (cancelled) {
+          return;
+        }
+
+        const pendingCount = (response.data.data || []).filter((request) => request.status === 'pending').length;
+        setBadgeCounts({ doctor_tte_pending: pendingCount });
+      } catch {
+        if (!cancelled) {
+          setBadgeCounts({ doctor_tte_pending: 0 });
+        }
+      }
+    };
+
+    void loadDoctorPendingTTECount();
+
+    const intervalId = window.setInterval(() => {
+      void loadDoctorPendingTTECount();
+    }, 30000);
+
+    const handleFocus = () => {
+      void loadDoctorPendingTTECount();
+    };
+    const handleTTEBadgeRefresh = () => {
+      void loadDoctorPendingTTECount();
+    };
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener(TTE_BADGE_REFRESH_EVENT, handleTTEBadgeRefresh);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener(TTE_BADGE_REFRESH_EVENT, handleTTEBadgeRefresh);
+    };
+  }, [canAccessDoctorTTEInbox, user?.id]);
+
+  const getBadgeCount = (badgeKey?: BadgeCountKey) => {
+    if (!badgeKey) {
+      return 0;
+    }
+
+    return badgeCounts[badgeKey] || 0;
+  };
 
   const handleLogout = () => {
     logout();
@@ -266,13 +351,13 @@ export function AppSidebar() {
             // Collapsed: icon-only mode
             <div className="flex flex-col items-center gap-1">
               {visibleMenuItems.map((item) => (
-                <CollapsedMenuItem key={item.path} item={item} />
+                <CollapsedMenuItem key={item.path} item={item} getBadgeCount={getBadgeCount} />
               ))}
             </div>
           ) : (
             // Expanded: full menu
             visibleMenuItems.map((item) => (
-              <ExpandedMenuItem key={item.path} item={item} />
+              <ExpandedMenuItem key={item.path} item={item} getBadgeCount={getBadgeCount} />
             ))
           )}
         </nav>
@@ -316,18 +401,22 @@ export function AppSidebar() {
                 Account
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link to="/settings">
-                <Settings className="mr-2 size-4" />
-                Settings
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link to="/settings/integrations">
-                <PlugZap className="mr-2 size-4" />
-                Integrasi
-              </Link>
-            </DropdownMenuItem>
+            {canAccess('settings.view') ? (
+              <DropdownMenuItem asChild>
+                <Link to="/settings">
+                  <Settings className="mr-2 size-4" />
+                  Settings
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
+            {canAccess('settings.update') ? (
+              <DropdownMenuItem asChild>
+                <Link to="/settings/integrations">
+                  <PlugZap className="mr-2 size-4" />
+                  Integrasi
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout} className="text-destructive">
               <LogOut className="mr-2 size-4" />
@@ -341,11 +430,12 @@ export function AppSidebar() {
 }
 
 /** Collapsed icon-only menu item */
-function CollapsedMenuItem({ item }: { item: MenuItem }) {
+function CollapsedMenuItem({ item, getBadgeCount }: { item: MenuItem; getBadgeCount: (badgeKey?: BadgeCountKey) => number }) {
   const location = useLocation();
   const Icon = item.icon;
   const hasSubmenu = item.submenu && item.submenu.length > 0;
   const isActive = isMenuItemActive(location.pathname, item);
+  const itemBadgeCount = getBadgeCount(item.badgeKey);
 
   if (hasSubmenu) {
     return (
@@ -355,12 +445,17 @@ function CollapsedMenuItem({ item }: { item: MenuItem }) {
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
                 <button className={cn(
-                  "flex items-center justify-center size-8 rounded-lg border transition-colors",
+                  "relative flex items-center justify-center size-8 rounded-lg border transition-colors",
                   isActive
                     ? "border-sidebar-border/60 bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
                     : "border-transparent text-sidebar-foreground/70 hover:border-sidebar-border/40 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 )}>
                   <Icon className="size-4" />
+                  {itemBadgeCount > 0 ? (
+                    <span className="absolute -right-1 -top-1 inline-flex min-w-[16px] items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-semibold leading-4 text-white">
+                      {formatBadgeCount(itemBadgeCount)}
+                    </span>
+                  ) : null}
                 </button>
               </DropdownMenuTrigger>
             </TooltipTrigger>
@@ -371,11 +466,15 @@ function CollapsedMenuItem({ item }: { item: MenuItem }) {
           {item.submenu!.map((sub) => {
             const SubIcon = sub.icon;
             const isSubActive = isSubmenuActive(location.pathname, sub);
+            const subBadgeCount = getBadgeCount(sub.badgeKey);
             return (
               <DropdownMenuItem key={sub.path} asChild>
-                <Link to={sub.path} className={cn(isSubActive && "bg-accent text-accent-foreground") }>
+                <Link to={sub.path} className={cn("flex items-center justify-between gap-2", isSubActive && "bg-accent text-accent-foreground") }>
+                  <span className="flex items-center min-w-0">
                   <SubIcon className="mr-2 size-4" />
                   {sub.label}
+                  </span>
+                  {subBadgeCount > 0 ? <Badge variant="destructive" className="h-5 rounded-full px-1.5 text-[10px]">{formatBadgeCount(subBadgeCount)}</Badge> : null}
                 </Link>
               </DropdownMenuItem>
             );
@@ -392,13 +491,18 @@ function CollapsedMenuItem({ item }: { item: MenuItem }) {
           <Link
             to={item.path}
             className={cn(
-              "flex items-center justify-center size-8 rounded-lg border transition-colors",
+              "relative flex items-center justify-center size-8 rounded-lg border transition-colors",
               isActive
                 ? "border-sidebar-border/60 bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
                 : "border-transparent text-sidebar-foreground/70 hover:border-sidebar-border/40 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             )}
           >
             <Icon className="size-4" />
+            {itemBadgeCount > 0 ? (
+              <span className="absolute -right-1 -top-1 inline-flex min-w-[16px] items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-semibold leading-4 text-white">
+                {formatBadgeCount(itemBadgeCount)}
+              </span>
+            ) : null}
           </Link>
         </TooltipTrigger>
         <TooltipContent side="right">{item.label}</TooltipContent>
@@ -408,11 +512,12 @@ function CollapsedMenuItem({ item }: { item: MenuItem }) {
 }
 
 /** Expanded full menu item with dot-bullet submenu */
-function ExpandedMenuItem({ item }: { item: MenuItem }) {
+function ExpandedMenuItem({ item, getBadgeCount }: { item: MenuItem; getBadgeCount: (badgeKey?: BadgeCountKey) => number }) {
   const location = useLocation();
   const Icon = item.icon;
   const hasSubmenu = item.submenu && item.submenu.length > 0;
   const isActive = isMenuItemActive(location.pathname, item);
+  const itemBadgeCount = getBadgeCount(item.badgeKey);
   const [expanded, setExpanded] = useState(isActive);
 
   useEffect(() => {
@@ -439,6 +544,11 @@ function ExpandedMenuItem({ item }: { item: MenuItem }) {
         >
           <Icon className="size-[18px] shrink-0" />
           <span className="flex-1 text-left truncate">{item.label}</span>
+          {itemBadgeCount > 0 ? (
+            <Badge variant="destructive" className="h-5 rounded-full px-1.5 text-[10px]">
+              {formatBadgeCount(itemBadgeCount)}
+            </Badge>
+          ) : null}
           <ChevronDown className={cn(
             "size-4 text-sidebar-foreground/40 transition-transform duration-200",
             !expanded && "-rotate-90"
@@ -450,6 +560,7 @@ function ExpandedMenuItem({ item }: { item: MenuItem }) {
           <div className="relative">
             {item.submenu!.map((sub) => {
               const isSubActive = isSubmenuActive(location.pathname, sub);
+              const subBadgeCount = getBadgeCount(sub.badgeKey);
 
               return (
                 <div key={sub.path} className="relative flex items-center h-[34px]">
@@ -472,13 +583,14 @@ function ExpandedMenuItem({ item }: { item: MenuItem }) {
                   <Link
                     to={sub.path}
                     className={cn(
-                      "flex items-center w-full ml-[48px] mr-2 rounded-lg border px-3 py-1.5 text-sm transition-colors",
+                      "flex items-center justify-between gap-2 w-full ml-[48px] mr-2 rounded-lg border px-3 py-1.5 text-sm transition-colors",
                       isSubActive
                         ? "border-sidebar-primary/30 bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
                         : "border-transparent text-sidebar-foreground/60 hover:border-sidebar-border/40 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
                     )}
                   >
                     <span className="truncate">{sub.label}</span>
+                    {subBadgeCount > 0 ? <Badge variant="destructive" className="h-5 rounded-full px-1.5 text-[10px]">{formatBadgeCount(subBadgeCount)}</Badge> : null}
                   </Link>
                 </div>
               );
@@ -501,7 +613,8 @@ function ExpandedMenuItem({ item }: { item: MenuItem }) {
       )}
     >
       <Icon className="size-[18px] shrink-0" />
-      <span className="truncate">{item.label}</span>
+      <span className="truncate flex-1">{item.label}</span>
+      {itemBadgeCount > 0 ? <Badge variant="destructive" className="h-5 rounded-full px-1.5 text-[10px]">{formatBadgeCount(itemBadgeCount)}</Badge> : null}
     </Link>
   );
 }

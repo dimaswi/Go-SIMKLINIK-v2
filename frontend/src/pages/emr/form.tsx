@@ -12,6 +12,7 @@ import {
   type MedicalRecordSectionType,
   type SatusehatVisitAutoSyncResult,
 } from '@/lib/api';
+import { createControlScheduleWhatsAppPayloadFromVisit } from '@/lib/control-schedule-whatsapp';
 import { setPageTitle } from '@/lib/page-title';
 import { SECTION_CONFIGS, getSectionConfig } from './constants';
 import { EntryTimeline } from './components/entry-timeline';
@@ -53,7 +54,7 @@ export default function EMRFormPage() {
     physicalExamImageList,
     loading: loadingReferences,
     error: referenceError,
-  } = useEmrReferences();
+  } = useEmrReferences(visitId);
 
   const [selectedRecordId, setSelectedRecordId] = useState<number | null>(null);
   const [draft, setDraft] = useState<MedicalRecordDraft>(buildDraft());
@@ -68,6 +69,7 @@ export default function EMRFormPage() {
   const [deleting, setDeleting] = useState(false);
   const [finalizeOpen, setFinalizeOpen] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+  const [printingControlLetter, setPrintingControlLetter] = useState(false);
   const [printingResumeMedical, setPrintingResumeMedical] = useState(false);
   const [cancelingFinalization, setCancelingFinalization] = useState(false);
   const [latestAutoSyncResult, setLatestAutoSyncResult] = useState<SatusehatVisitAutoSyncResult | null>(null);
@@ -76,6 +78,14 @@ export default function EMRFormPage() {
   const recordsBySection = useMemo(() => groupRecordsBySection(records), [records]);
   const finalizeVisitBlockers = useMemo(() => getFinalizeVisitBlockingOrders(recordsBySection), [recordsBySection]);
   const latestOutcomeRecord = useMemo(() => getLatestRecordForSection(recordsBySection, 'outcome'), [recordsBySection]);
+  const controlLetterAvailable = useMemo(
+    () => latestOutcomeRecord?.disposition?.trim().toLowerCase() === 'kontrol',
+    [latestOutcomeRecord?.disposition]
+  );
+  const controlWhatsAppPayload = useMemo(
+    () => createControlScheduleWhatsAppPayloadFromVisit(visit, latestOutcomeRecord),
+    [latestOutcomeRecord, visit]
+  );
   const completedSections = useMemo(
     () => getCompletedCoreSections(recordsBySection),
     [recordsBySection]
@@ -163,6 +173,25 @@ export default function EMRFormPage() {
       });
     } finally {
       setPrintingResumeMedical(false);
+    }
+  };
+
+  const printControlLetter = async () => {
+    if (!visit || printingControlLetter) return;
+
+    setPrintingControlLetter(true);
+    try {
+      await openPdfDocumentInNewWindow({
+        toast,
+        loadingLabel: 'surat kontrol',
+        preparingMessage: 'Menyiapkan surat kontrol...',
+        blockedDescription: 'Izinkan popup untuk membuka surat kontrol dari backend.',
+        errorTitle: 'Gagal menyiapkan surat kontrol',
+        errorFallback: 'Surat kontrol tidak dapat dibuat.',
+        request: () => medicalRecordsApi.printControlLetter(visit.id),
+      });
+    } finally {
+      setPrintingControlLetter(false);
     }
   };
 
@@ -296,8 +325,13 @@ export default function EMRFormPage() {
       await reload();
       toast({
         title: 'Kunjungan berhasil di-finalisasi',
-        description: autoSyncSummary.description,
+        description: payload.disposition === 'kontrol'
+          ? `${autoSyncSummary.description} Surat kontrol siap dicetak.`
+          : autoSyncSummary.description,
       });
+      if (payload.disposition === 'kontrol') {
+        void printControlLetter();
+      }
     } catch (requestError: any) {
       const missingSections = requestError.response?.data?.missing_sections;
       const blockingOrders = requestError.response?.data?.blocking_orders;
@@ -531,7 +565,7 @@ export default function EMRFormPage() {
         visit={visit}
         completedSections={completedSections}
         isLocked={Boolean(workspaceLocked)}
-        sticky={false}
+        sticky
         sectionLabel={activeSectionConfig?.label}
         allergyInfo={allergyInfo}
         onBack={() => navigate(`/emr/${visit.id}`)}
@@ -551,6 +585,11 @@ export default function EMRFormPage() {
           </Button>
         ) : visit.status === 'completed' ? (
           <FinalizedVisitActions
+            visitId={visit.id}
+            showControlLetter={controlLetterAvailable}
+            controlWhatsAppPayload={controlWhatsAppPayload}
+            onPrintControlLetter={printControlLetter}
+            printingControlLetter={printingControlLetter}
             onPrintMedicalResume={printMedicalResume}
             printingMedicalResume={printingResumeMedical}
             onCancelFinalization={cancelFinalization}

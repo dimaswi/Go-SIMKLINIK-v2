@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { usersApi } from '@/lib/api';
+import { employeesApi, type Employee, usersApi } from '@/lib/api';
 import { usePermission } from '@/hooks/usePermission';
 import { useToast } from '@/hooks/use-toast';
 import { ConfirmDialog } from '@/components/confirm-dialog';
@@ -20,6 +20,7 @@ export default function UserShow() {
   const { toast } = useToast();
   const { hasPermission } = usePermission();
   const [user, setUser] = useState<any>(null);
+  const [linkedEmployee, setLinkedEmployee] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -31,8 +32,10 @@ export default function UserShow() {
 
   const loadUser = async () => {
     try {
-      const response = await usersApi.getById(Number(id));
-      setUser(response.data.data);
+      const [userResponse, employeesResponse] = await Promise.all([usersApi.getById(Number(id)), employeesApi.getAll()]);
+      const userData = userResponse.data.data;
+      setUser(userData);
+      setLinkedEmployee(employeesResponse.data.data.find((employee) => employee.user_id === userData.id) || null);
     } catch (error) {
       toast({
         variant: "destructive",
@@ -128,6 +131,7 @@ export default function UserShow() {
         meta={
           <>
             <span>Username {user.username}</span>
+            <span>Pegawai {linkedEmployee?.employee_code || linkedEmployee?.full_name || '-'}</span>
             <span>{permissionCount} permission dari role</span>
           </>
         }
@@ -145,6 +149,15 @@ export default function UserShow() {
                   <p>Status: <span className="font-medium text-foreground">{user.is_active ? 'Akun aktif' : 'Akun tidak aktif'}</span></p>
                   <p>Role: <span className="font-medium text-foreground">{user.role?.name || 'Tanpa role'}</span></p>
                   <p>Total permission: <span className="font-medium text-foreground">{permissionCount}</span></p>
+                </div>
+              </MasterDataAsideSection>
+            </div>
+            <div>
+              <MasterDataAsideSection title="Tautan Pegawai" helper="Akun user idealnya ditautkan ke master pegawai bila dipakai dalam operasional klinik.">
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <p>Status: <span className="font-medium text-foreground">{linkedEmployee ? 'Sudah tertaut' : 'Belum tertaut'}</span></p>
+                  <p>Nama pegawai: <span className="font-medium text-foreground">{linkedEmployee?.full_name || '-'}</span></p>
+                  <p>Profesi: <span className="font-medium text-foreground">{linkedEmployee?.profession || '-'}</span></p>
                 </div>
               </MasterDataAsideSection>
             </div>
@@ -168,6 +181,17 @@ export default function UserShow() {
               <MasterDataDetailItem label="Role" value={user.role?.name || '-'} />
               <MasterDataDetailItem label="Deskripsi Role" value={user.role?.description || 'Role belum memiliki deskripsi'} />
               <MasterDataDetailItem label="Status" value={user.is_active ? 'Aktif' : 'Nonaktif'} />
+            </div>
+          </MasterDataSection>
+
+          <MasterDataSection title="Keterkaitan Pegawai" helper="Hubungkan akun ke master pegawai agar identitas staf, profesi, dan akun tetap konsisten.">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <MasterDataDetailItem label="Status Tautan" value={linkedEmployee ? 'Sudah tertaut' : 'Belum tertaut'} />
+              <MasterDataDetailItem label="Nama Pegawai" value={linkedEmployee?.full_name || '-'} />
+              <MasterDataDetailItem label="Kode Pegawai" value={linkedEmployee?.employee_code || '-'} />
+              <MasterDataDetailItem label="Profesi" value={linkedEmployee?.profession || '-'} />
+              <MasterDataDetailItem label="NIP" value={linkedEmployee?.nip_number || '-'} />
+              <MasterDataDetailItem label="Telepon" value={linkedEmployee?.phone || '-'} />
             </div>
           </MasterDataSection>
 

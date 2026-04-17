@@ -41,7 +41,7 @@ func BuildMedicationRequestPreview(prescription models.Prescription, detail *KFA
 	record := prescription.MedicalRecord
 	patientReference := strings.TrimSpace(record.Patient.SatusehatPatientID)
 	encounterReference := strings.TrimSpace(record.Visit.SatusehatEncounterID)
-	practitionerReference := strings.TrimSpace(record.Doctor.SatusehatPractitionerID)
+	requesterActor := ResolveMedicalRecordRequesterActor(record)
 	medicineName := resolveMedicationDisplayName(prescription.Medicine, detail)
 	medicationPreview := buildMedicationMasterPreview(prescription.Medicine, detail, config)
 	relatedResources := make([]NamedResourcePreview, 0, 1)
@@ -116,13 +116,13 @@ func BuildMedicationRequestPreview(prescription models.Prescription, detail *KFA
 			},
 		}}
 	}
-	if practitionerReference != "" {
+	if requesterActor.Ready() {
 		resource["requester"] = map[string]any{
-			"reference": fmt.Sprintf("Practitioner/%s", practitionerReference),
-			"display":   record.Doctor.FullName,
+			"reference": requesterActor.Reference(),
+			"display":   requesterActor.Display,
 		}
 	} else {
-		warnings = append(warnings, "Doctor belum memiliki SATUSEHAT Practitioner ID; requester akan diabaikan sementara.")
+		warnings = append(warnings, "Pegawai/dokter pengaju belum memiliki SATUSEHAT Practitioner ID; requester akan diabaikan sementara.")
 	}
 
 	dosageText := buildMedicationDosageText(prescription.Dosage, prescription.Frequency, prescription.Duration, prescription.Route, prescription.Instructions)
@@ -145,6 +145,7 @@ func BuildMedicationDispensePreview(dispensing models.Dispensing, detail *KFAPro
 	record := dispensing.MedicalRecord
 	patientReference := strings.TrimSpace(record.Patient.SatusehatPatientID)
 	encounterReference := strings.TrimSpace(record.Visit.SatusehatEncounterID)
+	performerActor := ResolveDispensingPerformerActor(dispensing)
 	medicine := resolveDispensingMedicine(dispensing)
 	medicineName := resolveMedicationDisplayName(medicine, detail)
 	linkedMedicationRequestID := strings.TrimSpace(dispensing.Prescription.SatusehatMedicationRequestID)
@@ -226,6 +227,14 @@ func BuildMedicationDispensePreview(dispensing models.Dispensing, detail *KFAPro
 	if linkedMedicationRequestID != "" {
 		resource["authorizingPrescription"] = []map[string]any{{
 			"reference": fmt.Sprintf("MedicationRequest/%s", linkedMedicationRequestID),
+		}}
+	}
+	if performerActor.Ready() {
+		resource["performer"] = []map[string]any{{
+			"actor": map[string]any{
+				"reference": performerActor.Reference(),
+				"display":   performerActor.Display,
+			},
 		}}
 	}
 	dosageText := buildMedicationDosageText(

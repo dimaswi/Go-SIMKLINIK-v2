@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -115,6 +116,14 @@ export default function PurchasingCreate() {
         title="Buat Purchase Order"
         subtitle="Susun pesanan obat ke supplier, lengkapi item, lalu simpan sebagai draft atau PO yang sudah dikirim."
         onBack={() => navigate('/purchasing')}
+        badges={<Badge variant="secondary" className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none">PO Baru</Badge>}
+        meta={
+          <>
+            <span>{validItemCount} item siap diproses</span>
+            <span>Status {getPurchaseStatusLabel(formData.status)}</span>
+            <span>{selectedSupplier?.name || 'Supplier belum dipilih'}</span>
+          </>
+        }
         actions={<Button type="submit" form="purchase-order-create-form" disabled={loading} className="rounded-none shadow-none">{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan PO</Button>}
         aside={
           <MasterDataAsideStack>
@@ -191,7 +200,7 @@ export default function PurchasingCreate() {
             <section className="space-y-3 rounded-lg border border-border/80 p-5">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-semibold">Daftar Obat</p>
-                <Button type="button" variant="outline" size="sm" onClick={addItem}>
+                <Button type="button" variant="outline" size="sm" onClick={addItem} className="rounded-none shadow-none">
                   <Plus className="mr-1 h-3.5 w-3.5" />Tambah Baris
                 </Button>
               </div>
@@ -245,7 +254,7 @@ export default function PurchasingCreate() {
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            className="h-8 w-8 rounded-none text-destructive hover:text-destructive"
                             onClick={() => removeItem(idx)}
                             disabled={items.length === 1}
                           >

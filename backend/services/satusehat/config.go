@@ -1,7 +1,9 @@
 package satusehat
 
 import (
+	"errors"
 	"strings"
+	"unicode"
 
 	"starter/backend/database"
 	"starter/backend/models"
@@ -12,7 +14,10 @@ const (
 	ModeProduction = "production"
 )
 
+var ErrIntegrationDisabled = errors.New("integrasi SATUSEHAT sedang dinonaktifkan")
+
 type Config struct {
+	Enabled        bool   `json:"enabled"`
 	ActiveMode     string `json:"active_mode"`
 	AuthURL        string `json:"auth_url"`
 	FHIRURL        string `json:"fhir_url"`
@@ -39,10 +44,11 @@ func LoadConfig() (Config, error) {
 	}
 
 	config := Config{
+		Enabled:        parseSATUSEHATSettingFlag(settingsMap["satusehat_enabled"], true),
 		ActiveMode:     mode,
 		OrganizationID: settingsMap["satusehat_organization_id"],
-		ClientID:       settingsMap["satusehat_client_id"],
-		ClientSecret:   strings.TrimSpace(settingsMap["satusehat_client_secret"]),
+		ClientID:       normalizeSATUSEHATCredential(settingsMap["satusehat_client_id"]),
+		ClientSecret:   normalizeSATUSEHATCredential(settingsMap["satusehat_client_secret"]),
 	}
 
 	if mode == ModeProduction {
@@ -56,6 +62,62 @@ func LoadConfig() (Config, error) {
 	}
 
 	return config, nil
+}
+
+func parseSATUSEHATSettingFlag(value string, defaultValue bool) bool {
+	normalized := strings.TrimSpace(strings.ToLower(value))
+	if normalized == "" {
+		return defaultValue
+	}
+
+	switch normalized {
+	case "1", "true", "yes", "y", "on":
+		return true
+	case "0", "false", "no", "n", "off":
+		return false
+	default:
+		return defaultValue
+	}
+}
+
+func normalizeSATUSEHATCredential(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+
+	b := strings.Builder{}
+	b.Grow(len(trimmed))
+	for _, r := range trimmed {
+		if unicode.IsControl(r) {
+			continue
+		}
+		if unicode.IsSpace(r) {
+			continue
+		}
+		if r == '\u200b' || r == '\u200c' || r == '\u200d' || r == '\ufeff' {
+			continue
+		}
+		b.WriteRune(r)
+	}
+
+	return b.String()
+}
+
+func (config Config) EnsureEnabled() error {
+	if config.Enabled {
+		return nil
+	}
+
+	return ErrIntegrationDisabled
+}
+
+func (config Config) DisabledReason() string {
+	if config.Enabled {
+		return ""
+	}
+
+	return ErrIntegrationDisabled.Error()
 }
 
 func (config Config) MissingRequiredFields(includeCredentials bool) []string {
@@ -84,7 +146,10 @@ func (config Config) MissingRequiredFields(includeCredentials bool) []string {
 }
 
 func (config Config) PublicStatus() map[string]any {
+	missingFields := config.MissingRequiredFields(true)
 	return map[string]any{
+		"enabled":                  config.Enabled,
+		"disabled_reason":          config.DisabledReason(),
 		"active_mode":              config.ActiveMode,
 		"auth_url":                 config.AuthURL,
 		"fhir_url":                 config.FHIRURL,
@@ -92,7 +157,7 @@ func (config Config) PublicStatus() map[string]any {
 		"organization_id":          config.OrganizationID,
 		"client_id_configured":     strings.TrimSpace(config.ClientID) != "",
 		"client_secret_configured": strings.TrimSpace(config.ClientSecret) != "",
-		"missing_fields":           config.MissingRequiredFields(true),
-		"ready":                    len(config.MissingRequiredFields(true)) == 0,
+		"missing_fields":           missingFields,
+		"ready":                    config.Enabled && len(missingFields) == 0,
 	}
 }

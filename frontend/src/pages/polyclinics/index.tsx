@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { setPageTitle } from '@/lib/page-title';
 import { Loader2, Plus } from 'lucide-react';
+import { MasterDataListShell } from '@/pages/master-data/shared';
 
 export default function PolyclinicsPage() {
   const navigate = useNavigate();
@@ -68,20 +69,27 @@ export default function PolyclinicsPage() {
 
   return (
     <div className="flex flex-1 min-h-0 flex-col gap-4 p-4">
-      <DataTable
-        columns={columns}
-        data={data}
-        searchPlaceholder="Cari poliklinik berdasarkan nama atau kode..."
-        pageSize={10}
-        toolbarActions={
-          hasPermission('polyclinics.create') ? (
-            <Button onClick={() => navigate('/polyclinics/create')}>
-              <Plus className="h-4 w-4" />
-              Tambah Poliklinik
-            </Button>
-          ) : undefined
-        }
-      />
+      <MasterDataListShell
+        title="Daftar Poliklinik"
+        subtitle="Kelola kode dan nama poliklinik sebagai referensi utama layanan rawat jalan."
+        totalCount={data.length}
+      >
+        <DataTable
+          className="h-full"
+          columns={columns}
+          data={data}
+          searchPlaceholder="Cari poliklinik berdasarkan nama atau kode..."
+          pageSize={10}
+          toolbarActions={
+            hasPermission('polyclinics.create') ? (
+              <Button onClick={() => navigate('/polyclinics/create')} className="rounded-none shadow-none">
+                <Plus className="h-4 w-4" />
+                Tambah Poliklinik
+              </Button>
+            ) : undefined
+          }
+        />
+      </MasterDataListShell>
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}

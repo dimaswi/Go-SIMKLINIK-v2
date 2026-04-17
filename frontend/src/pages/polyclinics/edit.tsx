@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { BpjsReferencePicker } from '@/components/bpjs-reference-picker';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { useBpjsAntreanEnabled } from '@/hooks/use-bpjs-antrean-enabled';
 import { polyclinicsApi } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Building2, Palette } from 'lucide-react';
@@ -20,8 +22,9 @@ export default function PolyclinicEdit() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
+  const { bpjsAntreanEnabled } = useBpjsAntreanEnabled();
   const [formData, setFormData] = useState({
-    name: '', code: '', description: '', admin_fee: 0, is_active: true, color: '#3B82F6', icon: '', sort_order: 0,
+    name: '', code: '', description: '', admin_fee: 0, is_active: true, color: '#3B82F6', icon: '', sort_order: 0, bpjs_poli_code: '',
   });
   // code is read-only on edit
 
@@ -34,7 +37,7 @@ export default function PolyclinicEdit() {
     try {
       const res = await polyclinicsApi.getById(Number(id));
       const d = res.data.data;
-      setFormData({ name: d.name, code: d.code, description: d.description, admin_fee: d.admin_fee || 0, is_active: d.is_active, color: d.color || '#3B82F6', icon: d.icon || '', sort_order: d.sort_order || 0 });
+      setFormData({ name: d.name, code: d.code, description: d.description, admin_fee: d.admin_fee || 0, is_active: d.is_active, color: d.color || '#3B82F6', icon: d.icon || '', sort_order: d.sort_order || 0, bpjs_poli_code: d.bpjs_poli_code || '' });
     } catch {
       toast({ variant: "destructive", title: "Error!", description: "Gagal memuat data poliklinik." });
     } finally {
@@ -120,6 +123,13 @@ export default function PolyclinicEdit() {
                 <Label htmlFor="sort_order" className="text-xs font-medium">Urutan</Label>
                 <Input id="sort_order" type="number" min="0" value={formData.sort_order} onChange={e => setFormData({ ...formData, sort_order: Number(e.target.value) })} className="h-10 text-sm" />
               </div>
+              {bpjsAntreanEnabled ? (
+                <div className="space-y-2 md:col-span-2 xl:col-span-2">
+                  <Label htmlFor="bpjs_poli_code" className="text-xs font-medium">Kode Poli BPJS</Label>
+                  <Input id="bpjs_poli_code" value={formData.bpjs_poli_code} onChange={e => setFormData({ ...formData, bpjs_poli_code: e.target.value })} className="h-10 text-sm" />
+                  <BpjsReferencePicker type="poli" value={formData.bpjs_poli_code} onValueChange={(value) => setFormData({ ...formData, bpjs_poli_code: value })} disabled={loading} />
+                </div>
+              ) : null}
             </div>
             <div className="flex items-center justify-between rounded-md border p-4">
               <div className="space-y-0.5">

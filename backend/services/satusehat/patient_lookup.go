@@ -49,6 +49,7 @@ func LookupPatientByID(ctx context.Context, config Config, patientID string) (Pa
 	request.Header.Set("Accept", "application/json")
 
 	client := &http.Client{Timeout: 45 * time.Second}
+	throttleSATUSEHATCall()
 	response, err := client.Do(request)
 	if err != nil {
 		RecordActivityLog(ActivityLogEntry{Operation: "lookup", ResourceType: "Patient", Mode: config.ActiveMode, Method: http.MethodGet, Endpoint: endpoint, Success: false, ErrorMessage: err.Error(), ResourceID: normalizedID})
@@ -140,6 +141,7 @@ func LookupPatientByNIKWithName(ctx context.Context, config Config, nik string, 
 	request.Header.Set("Accept", "application/json")
 
 	client := &http.Client{Timeout: 45 * time.Second}
+	throttleSATUSEHATCall()
 	response, err := client.Do(request)
 	if err != nil {
 		RecordActivityLog(ActivityLogEntry{Operation: "lookup", ResourceType: "Patient", Mode: config.ActiveMode, Method: http.MethodGet, Endpoint: endpoint, Success: false, ErrorMessage: err.Error()})
@@ -219,6 +221,7 @@ func LookupPatientByIHSNumber(ctx context.Context, config Config, ihsNumber stri
 	request.Header.Set("Accept", "application/json")
 
 	client := &http.Client{Timeout: 45 * time.Second}
+	throttleSATUSEHATCall()
 	response, err := client.Do(request)
 	if err != nil {
 		RecordActivityLog(ActivityLogEntry{Operation: "lookup", ResourceType: "Patient", Mode: config.ActiveMode, Method: http.MethodGet, Endpoint: endpoint, Success: false, ErrorMessage: err.Error()})

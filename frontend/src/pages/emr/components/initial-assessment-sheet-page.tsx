@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type SetStateAction } from 'react';
 import { FilePlus2, Loader2, Lock, Save } from 'lucide-react';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import {
   type FinalizeVisitPayload,
@@ -15,8 +16,9 @@ import {
   type SatusehatVisitAutoSyncResult,
   type Visit,
 } from '@/lib/api';
+import { createControlScheduleWhatsAppPayloadFromVisit } from '@/lib/control-schedule-whatsapp';
 import { cn } from '@/lib/utils';
-import { getInitialAssessmentEntryFilter, getSectionConfig } from '../constants';
+import { SURAT_TYPE_OPTIONS, getInitialAssessmentEntryFilter, getSectionConfig } from '../constants';
 import type { MedicalRecordDraft } from '../types';
 import type { MedicalSheetConfig } from '../types';
 import { buildDraft, buildSheetEntryGroups, getFinalizeVisitBlockingOrders, getSectionRowStatus, getSheetEntryGroupStatus, type MedicalSheetEntryGroup } from '../utils';
@@ -44,6 +46,9 @@ type InitialAssessmentSheetPageProps = {
   updateVisit: (updater: (currentVisit: Visit | null) => Visit | null) => void;
   onBack: () => void;
   onFinalizeVisit: (payload: FinalizeVisitPayload) => Promise<void>;
+  onPrintControlLetter: () => Promise<void>;
+  showControlLetter: boolean;
+  printingControlLetter: boolean;
   onPrintMedicalResume: () => Promise<void>;
   printingMedicalResume: boolean;
   onCancelFinalization: () => Promise<void>;
@@ -76,6 +81,9 @@ export function InitialAssessmentSheetPage({
   updateVisit,
   onBack,
   onFinalizeVisit,
+  onPrintControlLetter,
+  showControlLetter,
+  printingControlLetter,
   onPrintMedicalResume,
   printingMedicalResume,
   onCancelFinalization,
@@ -85,6 +93,7 @@ export function InitialAssessmentSheetPage({
 }: InitialAssessmentSheetPageProps) {
   const { toast } = useToast();
   const initialAssessmentFilter = getInitialAssessmentEntryFilter(activeSheetConfig.key);
+  const isSuratSheet = activeSheetConfig.key === 'surat';
   const entryLabel = activeSheetConfig.label;
   const entryLabelLower = entryLabel.toLowerCase();
   const [selectedEntryKey, setSelectedEntryKey] = useState<string | null>(null);
@@ -99,6 +108,7 @@ export function InitialAssessmentSheetPage({
   const [deleting, setDeleting] = useState(false);
   const [finalizeOpen, setFinalizeOpen] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+  const [selectedSuratTypePrefix, setSelectedSuratTypePrefix] = useState<string>(SURAT_TYPE_OPTIONS[0]?.value || 'surat-sakit');
 
   const entryGroups = useMemo(
     () => buildSheetEntryGroups(recordsBySection, activeSheetConfig.sections, initialAssessmentFilter || undefined),
@@ -106,6 +116,10 @@ export function InitialAssessmentSheetPage({
   );
   const outcomeRecord = recordsBySection.outcome?.[0] || null;
   const finalizeVisitBlockers = useMemo(() => getFinalizeVisitBlockingOrders(recordsBySection), [recordsBySection]);
+  const controlWhatsAppPayload = useMemo(
+    () => createControlScheduleWhatsAppPayloadFromVisit(visit, outcomeRecord),
+    [outcomeRecord, visit]
+  );
 
   const selectedEntry = useMemo(
     () => entryGroups.find((entry) => entry.key === selectedEntryKey) || entryGroups[0] || null,
@@ -145,7 +159,30 @@ export function InitialAssessmentSheetPage({
     setDrafts(nextDrafts);
   }, [activeSheetConfig.sections, selectedEntry?.key, selectedEntrySignature, visit?.id]);
 
+  useEffect(() => {
+    if (!isSuratSheet) {
+      return;
+    }
+    setSelectedSuratTypePrefix(SURAT_TYPE_OPTIONS[0]?.value || 'surat-sakit');
+  }, [isSuratSheet, activeSheetConfig.key]);
+
   const getSectionRecord = (section: MedicalRecordSectionType) => selectedEntry?.records[section] || null;
+
+  const getSectionDisplayLabel = (section: MedicalRecordSectionType) => {
+    if (!isSuratSheet) {
+      return getSectionConfig(section).label;
+    }
+
+    if (section === 'assessment') {
+      return 'Pertimbangan Surat';
+    }
+
+    if (section === 'outcome') {
+      return 'Keterangan Surat';
+    }
+
+    return getSectionConfig(section).label;
+  };
 
   const getSectionDraft = (section: MedicalRecordSectionType) => {
     const record = getSectionRecord(section) || undefined;
@@ -188,7 +225,7 @@ export function InitialAssessmentSheetPage({
     try {
       const response = await medicalRecordsApi.createInitialAssessmentEntry(visit.id, {
         sheetKey: initialAssessmentFilter?.sheetKey,
-        entryGroupPrefix: initialAssessmentFilter?.entryGroupPrefix,
+        entryGroupPrefix: isSuratSheet ? selectedSuratTypePrefix : initialAssessmentFilter?.entryGroupPrefix,
       });
       const createdRecords: MedicalRecord[] = response.data.data || [];
       replaceRecords((currentRecords) => [
@@ -401,12 +438,18 @@ export function InitialAssessmentSheetPage({
 
     setPrintingEntryKey(entry.key);
     try {
-      const response = await medicalRecordsApi.printInitialAssessmentEntry(visit.id, {
-        entryGroupKey: entry.key.startsWith('legacy-') ? undefined : entry.key,
-        recordIds: entry.recordIds,
-        sheetKey: initialAssessmentFilter?.sheetKey,
-        autoPrint: true,
-      });
+      const response = isSuratSheet
+        ? await medicalRecordsApi.printSuratEntry(visit.id, {
+          entryGroupKey: entry.key.startsWith('legacy-') ? undefined : entry.key,
+          recordIds: entry.recordIds,
+          autoPrint: true,
+        })
+        : await medicalRecordsApi.printInitialAssessmentEntry(visit.id, {
+          entryGroupKey: entry.key.startsWith('legacy-') ? undefined : entry.key,
+          recordIds: entry.recordIds,
+          sheetKey: initialAssessmentFilter?.sheetKey,
+          autoPrint: true,
+        });
 
       const contentType = response.headers['content-type'] || 'text/html';
       const blob = response.data instanceof Blob
@@ -434,7 +477,7 @@ export function InitialAssessmentSheetPage({
         visit={visit}
         completedSections={completedSections}
         isLocked={Boolean(workspaceLocked)}
-        sticky={false}
+        sticky
         sectionLabel={activeSheetConfig.label}
         allergyInfo={allergyInfo}
         onBack={onBack}
@@ -453,6 +496,11 @@ export function InitialAssessmentSheetPage({
           </Button>
         ) : visit.status === 'completed' ? (
           <FinalizedVisitActions
+            visitId={visit.id}
+            showControlLetter={showControlLetter}
+            controlWhatsAppPayload={controlWhatsAppPayload}
+            onPrintControlLetter={onPrintControlLetter}
+            printingControlLetter={printingControlLetter}
             onPrintMedicalResume={onPrintMedicalResume}
             printingMedicalResume={printingMedicalResume}
             onCancelFinalization={onCancelFinalization}
@@ -473,7 +521,7 @@ export function InitialAssessmentSheetPage({
                 {activeSheetConfig.sections.map((section) => {
                   const sectionRecord = getSectionRecord(section);
                   const sectionStatus = getSectionRowStatus(section, sectionRecord ? [sectionRecord] : [], Boolean(workspaceLocked));
-                  const sectionConfig = getSectionConfig(section);
+                  const sectionLabel = getSectionDisplayLabel(section);
 
                   return (
                     <button
@@ -489,7 +537,7 @@ export function InitialAssessmentSheetPage({
                       )}
                     >
                       <div>
-                        <p className="text-[12px] font-medium">{sectionConfig.label}</p>
+                        <p className="text-[12px] font-medium">{sectionLabel}</p>
                         <p className="text-[10px] text-muted-foreground">{sectionRecord ? 'Bagian entri aktif' : 'Belum dibuat di entri ini'}</p>
                       </div>
                       <SectionStatusBadge label={sectionStatus.label} tone={sectionStatus.tone} />
@@ -501,6 +549,22 @@ export function InitialAssessmentSheetPage({
               <p className="mt-3 text-[10px] leading-4 text-muted-foreground">
                 Timeline di bawah mewakili satu entri {entryLabelLower} utuh, bukan entri per section.
               </p>
+
+              {!workspaceLocked && isSuratSheet && (
+                <div className="mt-3 space-y-1.5">
+                  <p className="text-[11px] font-medium">Jenis surat untuk entri baru</p>
+                  <Select value={selectedSuratTypePrefix} onValueChange={setSelectedSuratTypePrefix}>
+                    <SelectTrigger className="h-9 rounded-none">
+                      <SelectValue placeholder="Pilih jenis surat" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SURAT_TYPE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               {!workspaceLocked && (
                 <div className="mt-3 grid grid-cols-2 gap-1.5">
@@ -539,7 +603,7 @@ export function InitialAssessmentSheetPage({
               {selectedEntry ? activeSheetConfig.sections.map((section) => {
                 const record = getSectionRecord(section);
                 const sectionStatus = getSectionRowStatus(section, record ? [record] : [], Boolean(workspaceLocked));
-                const sectionConfig = getSectionConfig(section);
+                const sectionLabel = getSectionDisplayLabel(section);
 
                 return (
                   <section
@@ -551,7 +615,7 @@ export function InitialAssessmentSheetPage({
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
                           <div className="flex items-center gap-2">
-                            <h3 className="text-[13px] font-semibold tracking-tight">{sectionConfig.label}</h3>
+                            <h3 className="text-[13px] font-semibold tracking-tight">{sectionLabel}</h3>
                             <SectionStatusBadge label={sectionStatus.label} tone={sectionStatus.tone} />
                           </div>
                           <p className="mt-0.5 text-[11px] text-muted-foreground">
@@ -565,7 +629,13 @@ export function InitialAssessmentSheetPage({
                       {record ? (
                         <SectionEditorBody
                           section={section}
-                          variant={activeSheetConfig.key === 'pengkajian-awal-gigi' ? 'dental' : 'default'}
+                          variant={
+                            activeSheetConfig.key === 'pengkajian-awal-gigi'
+                              ? 'dental'
+                              : activeSheetConfig.key === 'surat'
+                                ? 'surat'
+                                : 'default'
+                          }
                           draft={getSectionDraft(section)}
                           setDraft={(updater) => setSectionDraft(section, updater)}
                           record={record}

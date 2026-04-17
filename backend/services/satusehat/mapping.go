@@ -112,6 +112,7 @@ func BuildPatientPreview(patient models.Patient, config Config) ResourcePreview 
 
 func BuildPractitionerPreview(doctor models.Doctor, config Config) ResourcePreview {
 	warnings := make([]string, 0, 4)
+	practitionerActor := ResolveDoctorPractitionerActor(doctor)
 	normalizedNIK := NormalizeIndonesianNIK(doctor.NIKNumber)
 	searchQuery := ""
 	if normalizedNIK != "" {
@@ -143,15 +144,76 @@ func BuildPractitionerPreview(doctor models.Doctor, config Config) ResourcePrevi
 		"organizationID":   strings.TrimSpace(config.OrganizationID),
 	}
 
-	if strings.TrimSpace(doctor.SatusehatPractitionerID) != "" {
-		resource["storedPractitionerID"] = strings.TrimSpace(doctor.SatusehatPractitionerID)
+	if practitionerActor.Ready() {
+		resource["storedPractitionerID"] = strings.TrimSpace(practitionerActor.ResourceID)
+		resource["storedPractitionerSource"] = practitionerActor.Source
+	}
+	if doctor.EmployeeID != nil && *doctor.EmployeeID != 0 {
+		resource["employeeID"] = *doctor.EmployeeID
+		resource["employeeCode"] = strings.TrimSpace(doctor.Employee.EmployeeCode)
 	}
 
 	ready := strings.TrimSpace(doctor.FullName) != "" && LooksLikeIndonesianNIK(normalizedNIK)
 	return ResourcePreview{Resource: resource, Warnings: warnings, Ready: ready}
 }
 
+func BuildEmployeePractitionerPreview(employee models.Employee, config Config) ResourcePreview {
+	warnings := make([]string, 0, 4)
+	normalizedNIK := NormalizeIndonesianNIK(employee.NIKNumber)
+	searchQuery := ""
+	if normalizedNIK != "" {
+		searchQuery = fmt.Sprintf("%s|%s", practitionerNIKIdentifierSystem, normalizedNIK)
+	}
+
+	if strings.TrimSpace(employee.FullName) == "" {
+		warnings = append(warnings, "Nama pegawai kosong; data master pegawai perlu dilengkapi lebih dulu.")
+	}
+	if normalizedNIK == "" {
+		warnings = append(warnings, "NIK pegawai belum diisi; SATUSEHAT Practitioner dicari melalui Master Nakes Index menggunakan NIK.")
+	} else if !LooksLikeIndonesianNIK(normalizedNIK) {
+		warnings = append(warnings, "NIK pegawai belum valid; gunakan 16 digit angka agar pencarian Practitioner SATUSEHAT berhasil.")
+	}
+	if strings.TrimSpace(employee.Profession) == "" {
+		warnings = append(warnings, "Profesi pegawai kosong; lengkapi profesi agar konteks actor SATUSEHAT lebih jelas.")
+	}
+
+	resource := map[string]any{
+		"resourceType":     "PractitionerLookup",
+		"lookupStrategy":   "nik",
+		"active":           employee.IsActive,
+		"fullName":         employee.FullName,
+		"identifierSystem": practitionerNIKIdentifierSystem,
+		"identifierValue":  normalizedNIK,
+		"searchQuery":      searchQuery,
+		"profession":       employee.Profession,
+		"phone":            employee.Phone,
+		"organizationID":   strings.TrimSpace(config.OrganizationID),
+	}
+
+	if strings.TrimSpace(employee.EmployeeCode) != "" {
+		resource["employeeCode"] = strings.TrimSpace(employee.EmployeeCode)
+	}
+	if strings.TrimSpace(employee.SatusehatPractitionerID) != "" {
+		resource["storedPractitionerID"] = strings.TrimSpace(employee.SatusehatPractitionerID)
+		resource["storedPractitionerSource"] = "employee"
+	}
+
+	ready := strings.TrimSpace(employee.FullName) != "" && LooksLikeIndonesianNIK(normalizedNIK)
+	return ResourcePreview{Resource: resource, Warnings: warnings, Ready: ready}
+}
+
 func BuildEncounterPreview(visit models.Visit, config Config) ResourcePreview {
+	return buildEncounterPreviewInternal(visit, config, false)
+}
+
+// BuildEncounterInitialPreview builds an Encounter payload for the initial POST.
+// It uses "in-progress" status so SATUSEHAT does not require diagnosis[] references,
+// which only become available after Condition resources are synced.
+func BuildEncounterInitialPreview(visit models.Visit, config Config) ResourcePreview {
+	return buildEncounterPreviewInternal(visit, config, true)
+}
+
+func buildEncounterPreviewInternal(visit models.Visit, config Config, initialPost bool) ResourcePreview {
 	warnings := make([]string, 0, 6)
 	identifierSystem := buildEncounterIdentifierSystem(config.OrganizationID)
 
@@ -162,11 +224,14 @@ func BuildEncounterPreview(visit models.Visit, config Config) ResourcePreview {
 		warnings = append(warnings, "Patient belum memiliki SATUSEHAT Patient ID; reference subject masih placeholder.")
 	}
 
+	practitionerActor := ResolveDoctorPractitionerActor(visit.Doctor)
 	practitionerReference := "Practitioner/{satusehat_practitioner_id}"
-	if strings.TrimSpace(visit.Doctor.SatusehatPractitionerID) != "" {
-		practitionerReference = fmt.Sprintf("Practitioner/%s", strings.TrimSpace(visit.Doctor.SatusehatPractitionerID))
+	practitionerDisplay := visit.Doctor.FullName
+	if practitionerActor.Ready() {
+		practitionerReference = practitionerActor.Reference()
+		practitionerDisplay = practitionerActor.Display
 	} else {
-		warnings = append(warnings, "Doctor belum memiliki SATUSEHAT Practitioner ID; participant masih placeholder.")
+		warnings = append(warnings, "Pegawai/dokter pemeriksa belum memiliki SATUSEHAT Practitioner ID; participant masih placeholder.")
 	}
 
 	serviceProviderReference := "Organization/{organization_id}"
@@ -184,6 +249,15 @@ func BuildEncounterPreview(visit models.Visit, config Config) ResourcePreview {
 		warnings = append(warnings, "Poli belum memiliki SATUSEHAT Location ID; encounter.location masih placeholder.")
 	}
 
+	// For initial POST without existing Encounter ID, use "in-progress" status
+	// so SATUSEHAT does not enforce the diagnosis requirement (Rule 10457).
+	// The final status will be set via PUT after Conditions are synced.
+	encounterStatus := mapEncounterStatus(visit.Status)
+	isInitialCreate := initialPost && strings.TrimSpace(visit.SatusehatEncounterID) == ""
+	if isInitialCreate && encounterStatus == "finished" {
+		encounterStatus = "in-progress"
+	}
+
 	resource := map[string]any{
 		"resourceType": "Encounter",
 		"identifier": []map[string]any{{
@@ -191,7 +265,7 @@ func BuildEncounterPreview(visit models.Visit, config Config) ResourcePreview {
 			"system": identifierSystem,
 			"value":  visit.VisitNumber,
 		}},
-		"status":        mapEncounterStatus(visit.Status),
+		"status":        encounterStatus,
 		"statusHistory": buildEncounterStatusHistory(visit),
 		"class": map[string]any{
 			"system":  "http://terminology.hl7.org/CodeSystem/v3-ActCode",
@@ -216,7 +290,7 @@ func BuildEncounterPreview(visit models.Visit, config Config) ResourcePreview {
 			}},
 			"individual": map[string]any{
 				"reference": practitionerReference,
-				"display":   visit.Doctor.FullName,
+				"display":   practitionerDisplay,
 			},
 		}},
 		"period": map[string]any{
@@ -260,11 +334,13 @@ func BuildEncounterPreview(visit models.Visit, config Config) ResourcePreview {
 		resource["id"] = strings.TrimSpace(visit.SatusehatEncounterID)
 	}
 
-	// Attach diagnosis references for finished encounters
-	if diagnosisEntries := BuildEncounterDiagnosisEntries(visit.ID); len(diagnosisEntries) > 0 {
-		resource["diagnosis"] = diagnosisEntries
-	} else if mapEncounterStatus(visit.Status) == "finished" {
-		warnings = append(warnings, "Encounter berstatus finished tetapi belum ada diagnosis dengan SATUSEHAT Condition ID; field diagnosis kosong.")
+	// For initial POST, skip diagnosis attachment (Conditions not synced yet)
+	if !isInitialCreate {
+		if diagnosisEntries := BuildEncounterDiagnosisEntries(visit.ID); len(diagnosisEntries) > 0 {
+			resource["diagnosis"] = diagnosisEntries
+		} else if mapEncounterStatus(visit.Status) == "finished" {
+			warnings = append(warnings, "Encounter berstatus finished tetapi belum ada diagnosis dengan SATUSEHAT Condition ID; field diagnosis kosong.")
+		}
 	}
 
 	ready := len(warnings) == 0

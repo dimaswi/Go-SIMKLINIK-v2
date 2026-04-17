@@ -23,10 +23,16 @@ import KasirDetail from './pages/kasir/detail';
 
 // Lazy load pages
 const LoginPage = lazy(() => import('./pages/auth/login'));
+const PublicTteVerifyPage = lazy(() => import('./pages/public/tte-verify'));
 const DashboardPage = lazy(() => import('./pages/dashboard/index'));
+const ReportsPage = lazy(() => import('./pages/reports/index'));
 const AccountPage = lazy(() => import('./pages/account/index'));
 const SettingsPage = lazy(() => import('./pages/settings/index'));
 const IntegrationSettingsPage = lazy(() => import('./pages/settings/integrations'));
+const OperationsGuidePage = lazy(() => import('./pages/settings/operations'));
+const TermsAndConditionsPage = lazy(() => import('./pages/settings/terms-and-conditions'));
+const VersioningPage = lazy(() => import('./pages/settings/versioning'));
+const TTERequestsPage = lazy(() => import('./pages/tte-requests/index'));
 
 // Users
 const UsersIndex = lazy(() => import('./pages/users/index'));
@@ -53,6 +59,10 @@ const PolyclinicsEdit = lazy(() => import('./pages/polyclinics/edit'));
 const PolyclinicsShow = lazy(() => import('./pages/polyclinics/show'));
 
 // Doctors
+const EmployeesIndex = lazy(() => import('./pages/employees/index'));
+const EmployeesCreate = lazy(() => import('./pages/employees/create'));
+const EmployeesEdit = lazy(() => import('./pages/employees/edit'));
+const EmployeesShow = lazy(() => import('./pages/employees/show'));
 const DoctorsIndex = lazy(() => import('./pages/doctors/index'));
 const DoctorsCreate = lazy(() => import('./pages/doctors/create'));
 const DoctorsEdit = lazy(() => import('./pages/doctors/edit'));
@@ -120,10 +130,13 @@ const PatientsIndex = lazy(() => import('./pages/patients/index'));
 const PatientsCreate = lazy(() => import('./pages/patients/create'));
 const PatientsEdit = lazy(() => import('./pages/patients/edit'));
 const PatientsShow = lazy(() => import('./pages/patients/show'));
+const PatientSearchIndex = lazy(() => import('./pages/patient-search/index'));
+const PatientSearchDetail = lazy(() => import('./pages/patient-search/detail'));
 
 // Registration & Queue
 const RegistrationIndex = lazy(() => import('./pages/registration/index'));
 const RegistrationCreate = lazy(() => import('./pages/registration/create'));
+const ControlSchedulesPage = lazy(() => import('./pages/control-schedules/index'));
 const QueueDashboard = lazy(() => import('./pages/queue/index'));
 const QueueDisplay = lazy(() => import('./pages/queue/display'));
 
@@ -177,10 +190,16 @@ function App() {
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/tte/verify" element={<PublicTteVerifyPage />} />
           <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+          <Route path="/reports" element={<ProtectedRoute><PermissionGuard permission="reports.view"><ReportsPage /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/tte-requests" element={<ProtectedRoute><PermissionGuard permission="document_signatures.approve"><TTERequestsPage /></PermissionGuard></ProtectedRoute>} />
           <Route path="/account" element={<ProtectedRoute><AccountPage /></ProtectedRoute>} />
-          <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-          <Route path="/settings/integrations" element={<ProtectedRoute><IntegrationSettingsPage /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute><PermissionGuard permission="settings.view"><SettingsPage /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/settings/integrations" element={<ProtectedRoute><PermissionGuard permission="settings.update"><IntegrationSettingsPage /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/settings/operations" element={<ProtectedRoute><PermissionGuard permission="settings.view"><OperationsGuidePage /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/settings/terms-and-conditions" element={<ProtectedRoute><PermissionGuard permission="settings.view"><TermsAndConditionsPage /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/settings/versioning" element={<ProtectedRoute><PermissionGuard permission="settings.view"><VersioningPage /></PermissionGuard></ProtectedRoute>} />
           
           {/* Users */}
           <Route path="/users" element={<ProtectedRoute><UsersIndex /></ProtectedRoute>} />
@@ -242,6 +261,12 @@ function App() {
           <Route path="/polyclinics/:id" element={<ProtectedRoute><PolyclinicsShow /></ProtectedRoute>} />
           <Route path="/polyclinics/:id/edit" element={<ProtectedRoute><PermissionGuard permission="polyclinics.update"><PolyclinicsEdit /></PermissionGuard></ProtectedRoute>} />
 
+          {/* Employees */}
+          <Route path="/employees" element={<ProtectedRoute><PermissionGuard permission="employees.view"><EmployeesIndex /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/employees/create" element={<ProtectedRoute><PermissionGuard permission="employees.create"><EmployeesCreate /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/employees/:id" element={<ProtectedRoute><PermissionGuard permission="employees.view"><EmployeesShow /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/employees/:id/edit" element={<ProtectedRoute><PermissionGuard permission="employees.update"><EmployeesEdit /></PermissionGuard></ProtectedRoute>} />
+
           {/* Doctors */}
           <Route path="/doctors" element={<ProtectedRoute><DoctorsIndex /></ProtectedRoute>} />
           <Route path="/doctors/create" element={<ProtectedRoute><PermissionGuard permission="doctors.create"><DoctorsCreate /></PermissionGuard></ProtectedRoute>} />
@@ -253,7 +278,6 @@ function App() {
           <Route path="/medicine-categories/create" element={<ProtectedRoute><PermissionGuard permission="medicine_categories.create"><MedicineCategoriesCreate /></PermissionGuard></ProtectedRoute>} />
           <Route path="/medicine-categories/:id" element={<ProtectedRoute><MedicineCategoriesShow /></ProtectedRoute>} />
           <Route path="/medicine-categories/:id/edit" element={<ProtectedRoute><PermissionGuard permission="medicine_categories.update"><MedicineCategoriesEdit /></PermissionGuard></ProtectedRoute>} />
-
           {/* Units */}
           <Route path="/units" element={<ProtectedRoute><UnitsIndex /></ProtectedRoute>} />
           <Route path="/units/create" element={<ProtectedRoute><PermissionGuard permission="units.create"><UnitsCreate /></PermissionGuard></ProtectedRoute>} />
@@ -310,13 +334,16 @@ function App() {
           <Route path="/patients/create" element={<ProtectedRoute><PermissionGuard permission="patients.create"><PatientsCreate /></PermissionGuard></ProtectedRoute>} />
           <Route path="/patients/:id" element={<ProtectedRoute><PatientsShow /></ProtectedRoute>} />
           <Route path="/patients/:id/edit" element={<ProtectedRoute><PermissionGuard permission="patients.update"><PatientsEdit /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/patient-search" element={<ProtectedRoute><PermissionGuard permission="patients.view"><PatientSearchIndex /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/patient-search/:id" element={<ProtectedRoute><PermissionGuard permission="patients.view"><PatientSearchDetail /></PermissionGuard></ProtectedRoute>} />
 
           {/* Registration */}
           <Route path="/registration" element={<ProtectedRoute><RegistrationIndex /></ProtectedRoute>} />
           <Route path="/registration/create" element={<ProtectedRoute><PermissionGuard permission="visits.create"><RegistrationCreate /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/control-schedules" element={<ProtectedRoute><PermissionGuard permission="visits.view"><ControlSchedulesPage /></PermissionGuard></ProtectedRoute>} />
 
           {/* Queue Dashboard */}
-          <Route path="/queue" element={<ProtectedRoute><QueueDashboard /></ProtectedRoute>} />
+          <Route path="/queue" element={<ProtectedRoute><PermissionGuard permission="queue.view"><QueueDashboard /></PermissionGuard></ProtectedRoute>} />
           <Route path="/queue/display" element={<FullscreenProtectedRoute><PermissionGuard permission="queue.view"><QueueDisplay /></PermissionGuard></FullscreenProtectedRoute>} />
 
           {/* EMR */}
@@ -326,11 +353,11 @@ function App() {
           <Route path="/emr/:id/form/:section" element={<ProtectedRoute><PermissionGuard permission="medical_records.view"><EMRForm /></PermissionGuard></ProtectedRoute>} />
 
           {/* Pharmacy */}
-          <Route path="/pharmacy" element={<ProtectedRoute><PermissionGuard permission={["prescriptions.view", "prescriptions.process"]}><PharmacyIndex /></PermissionGuard></ProtectedRoute>} />
-          <Route path="/pharmacy/receive" element={<ProtectedRoute><PermissionGuard permission={["prescriptions.view", "prescriptions.process"]}><PharmacyReceiveIndex /></PermissionGuard></ProtectedRoute>} />
-          <Route path="/pharmacy/process" element={<ProtectedRoute><PermissionGuard permission={["prescriptions.view", "prescriptions.process"]}><PharmacyProcessIndex /></PermissionGuard></ProtectedRoute>} />
-          <Route path="/pharmacy/handover" element={<ProtectedRoute><PermissionGuard permission={["prescriptions.view", "prescriptions.process"]}><PharmacyHandoverIndex /></PermissionGuard></ProtectedRoute>} />
-          <Route path="/pharmacy/completed" element={<ProtectedRoute><PermissionGuard permission={["prescriptions.view", "prescriptions.process"]}><PharmacyCompletedIndex /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/pharmacy" element={<ProtectedRoute><PermissionGuard permission={["pharmacy.view", "pharmacy.process", "prescriptions.view", "prescriptions.process"]}><PharmacyIndex /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/pharmacy/receive" element={<ProtectedRoute><PermissionGuard permission={["pharmacy.view", "pharmacy.process", "prescriptions.view", "prescriptions.process"]}><PharmacyReceiveIndex /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/pharmacy/process" element={<ProtectedRoute><PermissionGuard permission={["pharmacy.view", "pharmacy.process", "prescriptions.view", "prescriptions.process"]}><PharmacyProcessIndex /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/pharmacy/handover" element={<ProtectedRoute><PermissionGuard permission={["pharmacy.view", "pharmacy.process", "prescriptions.view", "prescriptions.process"]}><PharmacyHandoverIndex /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/pharmacy/completed" element={<ProtectedRoute><PermissionGuard permission={["pharmacy.view", "pharmacy.process", "prescriptions.view", "prescriptions.process"]}><PharmacyCompletedIndex /></PermissionGuard></ProtectedRoute>} />
 
           {/* Laboratory */}
           <Route path="/laboratory" element={<ProtectedRoute><PermissionGuard permission={["laboratory.view", "laboratory.process"]}><LaboratoryIndex /></PermissionGuard></ProtectedRoute>} />

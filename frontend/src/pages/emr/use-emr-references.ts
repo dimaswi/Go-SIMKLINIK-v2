@@ -1,16 +1,13 @@
 import { useEffect, useState } from 'react';
 import {
-  icd10Api,
-  medicalServicesApi,
-  medicinesApi,
-  physicalExamImagesApi,
+  medicalRecordsApi,
   type ICD10,
   type MedicalService,
   type Medicine,
   type PhysicalExamImageMaster,
 } from '@/lib/api';
 
-export function useEmrReferences() {
+export function useEmrReferences(visitId: number) {
   const [icd10List, setIcd10List] = useState<ICD10[]>([]);
   const [medicineList, setMedicineList] = useState<Medicine[]>([]);
   const [serviceList, setServiceList] = useState<MedicalService[]>([]);
@@ -20,20 +17,26 @@ export function useEmrReferences() {
 
   useEffect(() => {
     const load = async () => {
+      if (!visitId || Number.isNaN(visitId)) {
+        setIcd10List([]);
+        setMedicineList([]);
+        setServiceList([]);
+        setPhysicalExamImageList([]);
+        setError(null);
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       setError(null);
       try {
-        const [icdResponse, medicineResponse, serviceResponse, physicalExamImageResponse] = await Promise.all([
-          icd10Api.search('per_page=5000'),
-          medicinesApi.getAll('per_page=500&is_active=true'),
-          medicalServicesApi.getAll('per_page=500&is_active=true'),
-          physicalExamImagesApi.getAll('is_active=true'),
-        ]);
+        const response = await medicalRecordsApi.getReferences(visitId);
+        const references = response.data.data;
 
-        setIcd10List(icdResponse.data.data || []);
-        setMedicineList(medicineResponse.data.data || []);
-        setServiceList(serviceResponse.data.data || []);
-        setPhysicalExamImageList(physicalExamImageResponse.data.data || []);
+        setIcd10List([]);
+        setMedicineList(references.medicines || []);
+        setServiceList(references.medical_services || []);
+        setPhysicalExamImageList(references.physical_exam_images || []);
       } catch (err: any) {
         setError(err?.response?.data?.error || 'Gagal memuat referensi EMR');
       } finally {
@@ -42,7 +45,7 @@ export function useEmrReferences() {
     };
 
     void load();
-  }, []);
+  }, [visitId]);
 
   return {
     icd10List,

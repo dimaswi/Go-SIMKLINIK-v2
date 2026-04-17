@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Lock, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useBpjsAntreanEnabled } from '@/hooks/use-bpjs-antrean-enabled';
 import { useToast } from '@/hooks/use-toast';
-import { medicalRecordsApi, type FinalizeVisitPayload, type SatusehatVisitAutoSyncResult } from '@/lib/api';
+import { medicalRecordsApi, visitsApi, type FinalizeVisitPayload, type SatusehatVisitAutoSyncResult } from '@/lib/api';
+import { createControlScheduleWhatsAppPayloadFromVisit } from '@/lib/control-schedule-whatsapp';
 import { setPageTitle } from '@/lib/page-title';
 import { FinalizedVisitActions } from './components/finalized-visit-actions';
 import { FinalizeVisitDialog } from './components/finalize-visit-dialog';
@@ -19,13 +21,16 @@ export default function EMRWorkspace() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const visitId = Number(id);
+  const { bpjsAntreanEnabled } = useBpjsAntreanEnabled();
 
   const { visit, records, loading, error, reload } = useVisitEmr(visitId);
   const { entries: odontogramEntries, loading: loadingOdontogram, error: odontogramError } = useVisitOdontogramEntries(visitId);
   const [finalizeOpen, setFinalizeOpen] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+  const [printingControlLetter, setPrintingControlLetter] = useState(false);
   const [printingResumeMedical, setPrintingResumeMedical] = useState(false);
   const [cancelingFinalization, setCancelingFinalization] = useState(false);
+  const [callingBPJS, setCallingBPJS] = useState(false);
   const [latestAutoSyncResult, setLatestAutoSyncResult] = useState<SatusehatVisitAutoSyncResult | null>(null);
   const [latestAutoSyncMessage, setLatestAutoSyncMessage] = useState('');
 
@@ -49,6 +54,14 @@ export default function EMRWorkspace() {
   const workspaceLocked = visit?.status === 'completed' || visit?.status === 'cancelled';
   const finalizeVisitBlockers = useMemo(() => getFinalizeVisitBlockingOrders(recordsBySection), [recordsBySection]);
   const latestOutcomeRecord = useMemo(() => getLatestRecordForSection(recordsBySection, 'outcome'), [recordsBySection]);
+  const controlLetterAvailable = useMemo(
+    () => latestOutcomeRecord?.disposition?.trim().toLowerCase() === 'kontrol',
+    [latestOutcomeRecord?.disposition]
+  );
+  const controlWhatsAppPayload = useMemo(
+    () => createControlScheduleWhatsAppPayloadFromVisit(visit, latestOutcomeRecord),
+    [latestOutcomeRecord, visit]
+  );
 
   useEffect(() => {
     if (visit) {
@@ -75,8 +88,13 @@ export default function EMRWorkspace() {
       await reload();
       toast({
         title: 'Kunjungan berhasil di-finalisasi',
-        description: autoSyncSummary.description,
+        description: payload.disposition === 'kontrol'
+          ? `${autoSyncSummary.description} Surat kontrol siap dicetak.`
+          : autoSyncSummary.description,
       });
+      if (payload.disposition === 'kontrol') {
+        void printControlLetter();
+      }
     } catch (requestError: any) {
       const missingSections = requestError.response?.data?.missing_sections;
       const blockingOrders = requestError.response?.data?.blocking_orders;
@@ -91,6 +109,25 @@ export default function EMRWorkspace() {
       });
     } finally {
       setFinalizing(false);
+    }
+  };
+
+  const printControlLetter = async () => {
+    if (!visit || printingControlLetter) return;
+
+    setPrintingControlLetter(true);
+    try {
+      await openPdfDocumentInNewWindow({
+        toast,
+        loadingLabel: 'surat kontrol',
+        preparingMessage: 'Menyiapkan surat kontrol...',
+        blockedDescription: 'Izinkan popup untuk membuka surat kontrol dari backend.',
+        errorTitle: 'Gagal menyiapkan surat kontrol',
+        errorFallback: 'Surat kontrol tidak dapat dibuat.',
+        request: () => medicalRecordsApi.printControlLetter(visit.id),
+      });
+    } finally {
+      setPrintingControlLetter(false);
     }
   };
 
@@ -132,6 +169,27 @@ export default function EMRWorkspace() {
     }
   };
 
+  const callBPJSQueue = async () => {
+    if (!visit || callingBPJS) return;
+    setCallingBPJS(true);
+    try {
+      await visitsApi.callBPJS(visit.id);
+      toast({
+        variant: 'success',
+        title: 'Berhasil memanggil antrean BPJS',
+        description: 'Status Hadir (1) berhasil dikirim ke BPJS.',
+      });
+    } catch (requestError: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Gagal memanggil BPJS',
+        description: requestError.response?.data?.error || 'Terjadi kesalahan saat memanggil API BPJS.',
+      });
+    } finally {
+      setCallingBPJS(false);
+    }
+  };
+
   if (loading || loadingOdontogram) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -166,11 +224,23 @@ export default function EMRWorkspace() {
         prefetchedMonitorResult={latestAutoSyncResult}
         prefetchedMonitorMessage={latestAutoSyncMessage}
         actions={!workspaceLocked ? (
-          <Button className="gap-1.5" onClick={() => setFinalizeOpen(true)} title='Final Kunjungan'>
-            <Lock className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-2">
+            {bpjsAntreanEnabled ? (
+              <Button variant="outline" className="gap-1.5 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-800" onClick={callBPJSQueue} disabled={callingBPJS} title="Panggil Antrean BPJS">
+                {callingBPJS ? <Loader2 className="h-4 w-4 animate-spin" /> : <span className="font-semibold">Panggil BPJS</span>}
+              </Button>
+            ) : null}
+            <Button className="gap-1.5" onClick={() => setFinalizeOpen(true)} title='Final Kunjungan'>
+              <Lock className="h-4 w-4" />
+            </Button>
+          </div>
         ) : visit.status === 'completed' ? (
           <FinalizedVisitActions
+            visitId={visit.id}
+            showControlLetter={controlLetterAvailable}
+            controlWhatsAppPayload={controlWhatsAppPayload}
+            onPrintControlLetter={printControlLetter}
+            printingControlLetter={printingControlLetter}
             onPrintMedicalResume={printMedicalResume}
             printingMedicalResume={printingResumeMedical}
             onCancelFinalization={cancelFinalization}

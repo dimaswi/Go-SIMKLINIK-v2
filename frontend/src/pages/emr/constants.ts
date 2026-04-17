@@ -3,6 +3,7 @@ import {
   BookText,
   CheckCircle2,
   ClipboardList,
+  FileCheck2,
   FileSignature,
   FileText,
   FlaskConical,
@@ -20,6 +21,7 @@ import type { MedicalRecordDraft, MedicalSheetConfig, MedicalSheetKey, SectionCo
 const INITIAL_ASSESSMENT_ENTRY_FILTERS: Partial<Record<MedicalSheetKey, { sheetKey: MedicalRecordSheetKey; entryGroupPrefix: string; includeLegacy: boolean }>> = {
   'pengkajian-awal-medis': { sheetKey: 'pengkajian-awal-medis', entryGroupPrefix: 'pengkajian-awal', includeLegacy: true },
   'pengkajian-awal-gigi': { sheetKey: 'pengkajian-awal-gigi', entryGroupPrefix: 'pengkajian-gigi', includeLegacy: false },
+  surat: { sheetKey: 'surat', entryGroupPrefix: 'surat', includeLegacy: false },
 };
 
 export function isInitialAssessmentSheetKey(key: MedicalSheetKey) {
@@ -195,6 +197,17 @@ export const SHEET_CONFIGS: MedicalSheetConfig[] = [
     defaultSection: 'prescription',
   },
   {
+    key: 'surat',
+    label: 'Surat',
+    description: 'Penerbitan surat klinis pasien: surat sakit, surat sehat, MCU, dan buta warna.',
+    helper: 'Pilih jenis surat sesuai kebutuhan kunjungan, cek data klinis pendukung, lalu lanjut ke alur pembuatan surat.',
+    icon: FileCheck2,
+    kind: 'section-editor',
+    availability: 'ready',
+    sections: ['assessment', 'outcome'],
+    defaultSection: 'assessment',
+  },
+  {
     key: 'informed-consent',
     label: 'Informed Consent',
     description: 'Persetujuan tindakan invasif atau operasi kecil berikut risiko, manfaat, dan keputusan pasien.',
@@ -232,6 +245,43 @@ export const VISIBLE_SHEET_CONFIGS = SHEET_CONFIGS.filter(
   (sheet) => sheet.availability === 'ready' && sheet.key !== 'resume-medis'
 );
 export const CORE_COMPLETION_TOTAL = 3;
+
+export const SURAT_TYPE_OPTIONS = [
+  {
+    value: 'surat-sakit',
+    label: 'Surat Sakit',
+    shortLabel: 'Sakit',
+    description: 'Dipakai untuk keterangan istirahat karena kondisi medis sementara.',
+    supportHint: 'Idealnya didukung anamnesis, temuan pemeriksaan, dan rencana kontrol.',
+    accentClassName: 'border-amber-300 bg-amber-50 text-amber-800',
+  },
+  {
+    value: 'surat-sehat',
+    label: 'Surat Sehat',
+    shortLabel: 'Sehat',
+    description: 'Dipakai untuk menyatakan pasien dalam kondisi layak/fit sesuai kebutuhan administratif.',
+    supportHint: 'Idealnya didukung pemeriksaan fisik ringkas dan outcome kunjungan.',
+    accentClassName: 'border-emerald-300 bg-emerald-50 text-emerald-800',
+  },
+  {
+    value: 'surat-mcu',
+    label: 'Surat MCU',
+    shortLabel: 'MCU',
+    description: 'Dipakai untuk ringkasan hasil medical check-up sesuai paket pemeriksaan.',
+    supportHint: 'Idealnya didukung pemeriksaan fisik, penunjang, serta kesimpulan assessment.',
+    accentClassName: 'border-sky-300 bg-sky-50 text-sky-800',
+  },
+  {
+    value: 'surat-buta-warna',
+    label: 'Surat Buta Warna',
+    shortLabel: 'Buta Warna',
+    description: 'Dipakai untuk hasil skrining buta warna parsial/total sesuai hasil tes.',
+    supportHint: 'Idealnya didukung catatan metode tes dan hasil interpretasi klinis.',
+    accentClassName: 'border-violet-300 bg-violet-50 text-violet-800',
+  },
+] as const;
+
+export type SuratTypeOptionValue = (typeof SURAT_TYPE_OPTIONS)[number]['value'];
 
 export const EMPTY_DRAFT: MedicalRecordDraft = {
   chief_complaint: '',

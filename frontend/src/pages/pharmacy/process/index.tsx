@@ -43,7 +43,7 @@ export default function PharmacyProcessIndex() {
   const [returningOrderRecordId, setReturningOrderRecordId] = useState<number | null>(null);
   const [markingReadyRecordId, setMarkingReadyRecordId] = useState<number | null>(null);
 
-  const canManage = hasPermission('prescriptions.process') || hasPermission('prescriptions.update');
+  const canManage = hasPermission('pharmacy.process') || hasPermission('prescriptions.process') || hasPermission('prescriptions.update');
 
   const loadOrders = useCallback(async () => {
     const response = await pharmacyApi.getPrescriptionOrders('prescription_workflow_status=preparing&per_page=200');

@@ -6,6 +6,7 @@ import (
 	"starter/backend/database"
 	"starter/backend/handlers"
 	"starter/backend/middleware"
+	"starter/backend/services"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -43,6 +44,10 @@ func main() {
 		log.Fatal("Failed to migrate database:", err)
 	}
 
+	if err := services.InitSystemBackupManager(cfg); err != nil {
+		log.Println("System backup manager initialization warning:", err)
+	}
+
 	// Setup Gin router
 	r := gin.Default()
 
@@ -51,7 +56,7 @@ func main() {
 
 	// CORS middleware
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5173", "http://localhost:3000"},
+		AllowOrigins:     cfg.CORSAllowedOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -63,64 +68,39 @@ func main() {
 	{
 		api.POST("/auth/login", handlers.Login)
 		api.GET("/settings", handlers.GetSettings) // Public access to settings
+		api.POST("/tte/verify", handlers.VerifyTTESignature)
+
+		registerBPJSWebhookRoutes(api, "/bpjs/webhook")
 
 		// Protected routes
 		protected := api.Group("")
 		protected.Use(middleware.AuthMiddleware())
 		{
 			protected.GET("/auth/profile", handlers.GetProfile)
+			protected.GET("/tte/signers", middleware.RequirePermission("document_signatures.request"), handlers.GetTTESigners)
+			protected.GET("/tte/visits/:visitId/documents", middleware.RequireAnyPermission("document_signatures.view", "document_signatures.request", "document_signatures.approve"), handlers.GetVisitTTEDocuments)
+			protected.POST("/tte/requests", middleware.RequirePermission("document_signatures.request"), handlers.UpsertTTEDocumentRequest)
+			protected.GET("/tte/requests/inbox", middleware.RequirePermission("document_signatures.approve"), handlers.GetIncomingTTEDocumentRequests)
+			protected.POST("/tte/requests/:id/approve", middleware.RequirePermission("document_signatures.approve"), handlers.ApproveTTEDocumentRequest)
+			protected.POST("/tte/requests/:id/reject", middleware.RequirePermission("document_signatures.approve"), handlers.RejectTTEDocumentRequest)
 
 			// Settings routes
-			protected.PUT("/settings", handlers.UpdateSettings)
-			protected.POST("/settings/upload", handlers.UploadLogo)
-			protected.POST("/settings/print-header-preview", handlers.PreviewPrintHeaderPDF)
-			protected.GET("/satusehat/status", middleware.RequirePermission("settings.view"), handlers.GetSATUSEHATStatus)
-			protected.GET("/satusehat/logs", middleware.RequirePermission("settings.view"), handlers.GetSATUSEHATLogs)
-			protected.POST("/satusehat/logs/:id/retry", middleware.RequirePermission("settings.update"), handlers.RetrySATUSEHATLog)
-			protected.POST("/satusehat/test-connection", middleware.RequirePermission("settings.view"), handlers.TestSATUSEHATConnection)
-			protected.GET("/satusehat/organizations/:id/preview", middleware.RequireAnyPermission("settings.view", "polyclinics.view"), handlers.PreviewSATUSEHATOrganization)
-			protected.GET("/satusehat/locations/:id/preview", middleware.RequireAnyPermission("settings.view", "polyclinics.view"), handlers.PreviewSATUSEHATLocation)
-			protected.GET("/satusehat/patients/:id/preview", middleware.RequireAnyPermission("settings.view", "patients.view"), handlers.PreviewSATUSEHATPatient)
-			protected.GET("/satusehat/patients/:id/resolve-preview", middleware.RequireAnyPermission("settings.view", "patients.view"), handlers.PreviewSATUSEHATPatientResolve)
-			protected.GET("/satusehat/practitioners/:id/preview", middleware.RequireAnyPermission("settings.view", "doctors.view"), handlers.PreviewSATUSEHATPractitioner)
-			protected.GET("/satusehat/encounters/:id/preview", middleware.RequireAnyPermission("settings.view", "visits.view"), handlers.PreviewSATUSEHATEncounter)
-			protected.GET("/satusehat/medical-records/:id/vital-signs/preview", middleware.RequireAnyPermission("settings.view", "medical_records.view"), handlers.PreviewSATUSEHATVitalSigns)
-			protected.GET("/satusehat/medical-records/:id/clinical-impression/preview", middleware.RequireAnyPermission("settings.view", "medical_records.view"), handlers.PreviewSATUSEHATClinicalImpression)
-			protected.GET("/satusehat/medical-actions/:id/procedure/preview", middleware.RequireAnyPermission("settings.view", "medical_records.view"), handlers.PreviewSATUSEHATProcedure)
-			protected.GET("/satusehat/medical-records/:id/care-plan/preview", middleware.RequireAnyPermission("settings.view", "medical_records.view"), handlers.PreviewSATUSEHATCarePlan)
-			protected.GET("/satusehat/medical-records/:id/goal/preview", middleware.RequireAnyPermission("settings.view", "medical_records.view"), handlers.PreviewSATUSEHATGoal)
-			protected.GET("/satusehat/medical-records/:id/allergy-intolerance/preview", middleware.RequireAnyPermission("settings.view", "medical_records.view"), handlers.PreviewSATUSEHATAllergyIntolerance)
-			protected.GET("/satusehat/medical-records/:id/composition/preview", middleware.RequireAnyPermission("settings.view", "medical_records.view"), handlers.PreviewSATUSEHATComposition)
-			protected.GET("/satusehat/medical-records/:id/family-member-history/preview", middleware.RequireAnyPermission("settings.view", "medical_records.view"), handlers.PreviewSATUSEHATFamilyMemberHistory)
-			protected.GET("/satusehat/laboratory-order-items/:id/preview", middleware.RequireAnyPermission("settings.view", "laboratory.view", "medical_records.view"), handlers.PreviewSATUSEHATLaboratoryItem)
-			protected.GET("/satusehat/radiology-order-items/:id/preview", middleware.RequireAnyPermission("settings.view", "radiology.view", "medical_records.view"), handlers.PreviewSATUSEHATRadiologyItem)
-			protected.GET("/satusehat/prescriptions/:id/preview", middleware.RequireAnyPermission("settings.view", "prescriptions.view", "medical_records.view"), handlers.PreviewSATUSEHATPrescription)
-			protected.GET("/satusehat/dispensings/:id/preview", middleware.RequireAnyPermission("settings.view", "prescriptions.view", "prescriptions.process"), handlers.PreviewSATUSEHATDispensing)
-			protected.GET("/satusehat/diagnoses/:id/preview", middleware.RequireAnyPermission("settings.view", "medical_records.view"), handlers.PreviewSATUSEHATDiagnosis)
-			protected.POST("/satusehat/organizations/:id/sync", middleware.RequireAnyPermission("settings.update", "polyclinics.update"), handlers.SyncSATUSEHATOrganization)
-			protected.POST("/satusehat/locations/:id/sync", middleware.RequireAnyPermission("settings.update", "polyclinics.update"), handlers.SyncSATUSEHATLocation)
-			protected.POST("/satusehat/patients/:id/sync", middleware.RequireAnyPermission("settings.update", "patients.update"), handlers.SyncSATUSEHATPatient)
-			protected.POST("/satusehat/practitioners/:id/sync", middleware.RequireAnyPermission("settings.update", "doctors.update"), handlers.SyncSATUSEHATPractitioner)
-			protected.POST("/satusehat/encounters/:id/sync", middleware.RequireAnyPermission("settings.update", "visits.update"), handlers.SyncSATUSEHATEncounter)
-			protected.POST("/satusehat/medical-records/:id/vital-signs/sync", middleware.RequireAnyPermission("settings.update", "medical_records.update"), handlers.SyncSATUSEHATVitalSigns)
-			protected.POST("/satusehat/medical-records/:id/clinical-impression/sync", middleware.RequireAnyPermission("settings.update", "medical_records.update"), handlers.SyncSATUSEHATClinicalImpression)
-			protected.POST("/satusehat/medical-actions/:id/procedure/sync", middleware.RequireAnyPermission("settings.update", "medical_records.update"), handlers.SyncSATUSEHATProcedure)
-			protected.POST("/satusehat/medical-records/:id/care-plan/sync", middleware.RequireAnyPermission("settings.update", "medical_records.update"), handlers.SyncSATUSEHATCarePlan)
-			protected.POST("/satusehat/medical-records/:id/goal/sync", middleware.RequireAnyPermission("settings.update", "medical_records.update"), handlers.SyncSATUSEHATGoal)
-			protected.POST("/satusehat/medical-records/:id/allergy-intolerance/sync", middleware.RequireAnyPermission("settings.update", "medical_records.update"), handlers.SyncSATUSEHATAllergyIntolerance)
-			protected.POST("/satusehat/medical-records/:id/composition/sync", middleware.RequireAnyPermission("settings.update", "medical_records.update"), handlers.SyncSATUSEHATComposition)
-			protected.POST("/satusehat/medical-records/:id/family-member-history/sync", middleware.RequireAnyPermission("settings.update", "medical_records.update"), handlers.SyncSATUSEHATFamilyMemberHistory)
-			protected.POST("/satusehat/laboratory-order-items/:id/sync", middleware.RequireAnyPermission("settings.update", "laboratory.process", "medical_records.update"), handlers.SyncSATUSEHATLaboratoryItem)
-			protected.POST("/satusehat/radiology-order-items/:id/sync", middleware.RequireAnyPermission("settings.update", "radiology.process", "medical_records.update"), handlers.SyncSATUSEHATRadiologyItem)
-			protected.POST("/satusehat/medicines/:id/sync", middleware.RequireAnyPermission("settings.update", "medicines.update"), handlers.SyncSATUSEHATMedicine)
-			protected.POST("/satusehat/prescriptions/:id/sync", middleware.RequireAnyPermission("settings.update", "prescriptions.update", "medical_records.update"), handlers.SyncSATUSEHATPrescription)
-			protected.POST("/satusehat/dispensings/:id/sync", middleware.RequireAnyPermission("settings.update", "prescriptions.process", "prescriptions.update"), handlers.SyncSATUSEHATDispensing)
-			protected.POST("/satusehat/diagnoses/:id/sync", middleware.RequireAnyPermission("settings.update", "medical_records.update"), handlers.SyncSATUSEHATDiagnosis)
-			protected.GET("/satusehat/visits/:id/auto-sync", middleware.RequireAnyPermission("settings.view", "medical_records.view", "visits.view"), handlers.GetSATUSEHATAutoByVisit)
-			protected.POST("/satusehat/visits/:id/auto-sync", middleware.RequireAnyPermission("settings.update", "medical_records.update", "visits.update"), handlers.SyncSATUSEHATAutoByVisit)
+			protected.PUT("/settings", middleware.RequirePermission("settings.update"), handlers.UpdateSettings)
+			protected.POST("/settings/upload", middleware.RequirePermission("settings.update"), handlers.UploadLogo)
+			protected.POST("/settings/print-header-preview", middleware.RequirePermission("settings.view"), handlers.PreviewPrintHeaderPDF)
+			protected.GET("/settings/terms-and-conditions/pdf", middleware.RequirePermission("settings.view"), handlers.PrintTermsAndConditionsPDF)
+			protected.GET("/system-backups/overview", middleware.RequirePermission("settings.view"), handlers.GetSystemBackupOverview)
+			protected.GET("/system-backups/files", middleware.RequirePermission("settings.view"), handlers.ListSystemBackupFiles)
+			protected.GET("/system-backups/files/:id/download", middleware.RequirePermission("settings.view"), handlers.DownloadSystemBackupFile)
+			protected.POST("/system-backups/run", middleware.RequirePermission("settings.update"), handlers.RunSystemBackup)
+			protected.PUT("/system-backups/settings", middleware.RequirePermission("settings.update"), handlers.UpdateSystemBackupSettings)
+			registerSATUSEHATRoutes(protected, "/satusehat")
+			registerSATUSEHATRoutes(protected, "/integrations/bridge")
+			registerBPJSIntegrationRoutes(protected, "/integrations/bridge/bpjs")
 
 			// Users routes (with RBAC)
 			protected.GET("/users", middleware.RequirePermission("users.view"), handlers.GetUsers)
+			protected.GET("/users/summary", middleware.RequirePermission("users.view"), handlers.GetUsersSummary)
 			protected.GET("/users/:id", middleware.RequirePermission("users.view"), handlers.GetUser)
 			protected.POST("/users", middleware.RequirePermission("users.create"), handlers.CreateUser)
 			protected.PUT("/users/:id", middleware.RequirePermission("users.update"), handlers.UpdateUser)
@@ -142,6 +122,20 @@ func main() {
 			protected.DELETE("/permissions/:id", middleware.RequirePermission("permissions.delete"), handlers.DeletePermission)
 
 			// ========================
+			// Dashboard
+			// ========================
+			protected.GET("/dashboard/summary", handlers.GetDashboardSummary)
+			protected.GET("/dashboard/report/pdf", middleware.RequirePermission("dashboard.view"), handlers.GetDashboardReportPDF)
+			protected.GET("/dashboard/report/excel", middleware.RequirePermission("dashboard.view"), handlers.GetDashboardReportExcel)
+			protected.GET("/reports/management/pdf", middleware.RequirePermission("reports.view"), handlers.GetDashboardReportPDF)
+			protected.GET("/reports/management/excel", middleware.RequirePermission("reports.view"), handlers.GetDashboardReportExcel)
+			protected.GET("/reports/finance/pdf", middleware.RequirePermission("reports.view"), handlers.GetFinanceReportPDF)
+			protected.GET("/reports/finance/excel", middleware.RequirePermission("reports.view"), handlers.GetFinanceReportExcel)
+			protected.GET("/reports/preview", middleware.RequirePermission("reports.view"), handlers.GetReportCenterPreview)
+			protected.GET("/reports/export/pdf", middleware.RequirePermission("reports.view"), handlers.ExportReportCenterPDF)
+			protected.GET("/reports/export/excel", middleware.RequirePermission("reports.view"), handlers.ExportReportCenterExcel)
+
+			// ========================
 			// Phase 1: Master Data
 			// ========================
 
@@ -152,8 +146,17 @@ func main() {
 			protected.PUT("/polyclinics/:id", middleware.RequirePermission("polyclinics.update"), handlers.UpdatePolyclinic)
 			protected.DELETE("/polyclinics/:id", middleware.RequirePermission("polyclinics.delete"), handlers.DeletePolyclinic)
 
+			// Employees
+			protected.GET("/employees", middleware.RequirePermission("employees.view"), handlers.GetEmployees)
+			protected.GET("/employees/summary", middleware.RequirePermission("employees.view"), handlers.GetEmployeesSummary)
+			protected.GET("/employees/:id", middleware.RequirePermission("employees.view"), handlers.GetEmployee)
+			protected.POST("/employees", middleware.RequirePermission("employees.create"), handlers.CreateEmployee)
+			protected.PUT("/employees/:id", middleware.RequirePermission("employees.update"), handlers.UpdateEmployee)
+			protected.DELETE("/employees/:id", middleware.RequirePermission("employees.delete"), handlers.DeleteEmployee)
+
 			// Doctors
 			protected.GET("/doctors", middleware.RequirePermission("doctors.view"), handlers.GetDoctors)
+			protected.GET("/doctors/summary", middleware.RequirePermission("doctors.view"), handlers.GetDoctorsSummary)
 			protected.GET("/doctors/:id", middleware.RequirePermission("doctors.view"), handlers.GetDoctor)
 			protected.POST("/doctors", middleware.RequirePermission("doctors.create"), handlers.CreateDoctor)
 			protected.PUT("/doctors/:id", middleware.RequirePermission("doctors.update"), handlers.UpdateDoctor)
@@ -275,6 +278,7 @@ func main() {
 
 			// Visits / Pendaftaran
 			protected.GET("/visits", middleware.RequirePermission("visits.view"), handlers.GetVisits)
+			protected.GET("/visits/control-schedules", middleware.RequirePermission("visits.view"), handlers.GetControlSchedules)
 			protected.GET("/visits/today", middleware.RequirePermission("visits.view"), handlers.GetTodayVisits)
 			protected.GET("/visits/:id", middleware.RequirePermission("visits.view"), handlers.GetVisit)
 			protected.POST("/visits", middleware.RequirePermission("visits.create"), handlers.CreateVisit)
@@ -282,8 +286,10 @@ func main() {
 			protected.DELETE("/visits/:id", middleware.RequirePermission("visits.delete"), handlers.DeleteVisit)
 			protected.POST("/visits/:id/cancel-workspace", middleware.RequireAnyPermission("medical_records.update", "visits.delete"), handlers.CancelVisitWorkspace)
 			protected.PATCH("/visits/:id/status", middleware.RequirePermission("queue.manage"), handlers.UpdateVisitStatus)
+			protected.POST("/visits/:id/bpjs/panggil", middleware.RequirePermission("queue.manage"), handlers.CallBPJSQueue)
 
 			// Queue
+			protected.GET("/queue/polyclinics", middleware.RequireAnyPermission("queue.view", "queue.manage", "visits.view", "visits.create"), handlers.GetQueuePolyclinicOptions)
 			protected.GET("/queue/:polyclinicId", middleware.RequirePermission("queue.view"), handlers.GetQueueByPolyclinic)
 			protected.POST("/queue/:polyclinicId/call-next", middleware.RequirePermission("queue.manage"), handlers.CallNextQueue)
 
@@ -293,11 +299,15 @@ func main() {
 
 			// Medical Records
 			protected.GET("/medical-records", middleware.RequirePermission("medical_records.view"), handlers.GetMedicalRecords)
-			protected.GET("/pharmacy/prescription-orders", middleware.RequireAnyPermission("prescriptions.view", "prescriptions.process"), handlers.GetPharmacyPrescriptionOrders)
+			protected.GET("/pharmacy/prescription-orders", middleware.RequireAnyPermission("pharmacy.view", "pharmacy.process", "prescriptions.view", "prescriptions.process"), handlers.GetPharmacyPrescriptionOrders)
 			protected.GET("/laboratory/orders", middleware.RequireAnyPermission("laboratory.view", "laboratory.process"), handlers.GetLaboratoryOrders)
 			protected.GET("/radiology/orders", middleware.RequireAnyPermission("radiology.view", "radiology.process"), handlers.GetRadiologyOrders)
+			protected.GET("/medical-records/references/icd10", middleware.RequirePermission("medical_records.view"), handlers.SearchEMRICD10)
+			protected.GET("/medical-records/visit/:visitId/references", middleware.RequirePermission("medical_records.view"), handlers.GetEMRReferences)
 			protected.GET("/medical-records/visit/:visitId", middleware.RequirePermission("medical_records.view"), handlers.GetMedicalRecordByVisit)
 			protected.GET("/medical-records/visit/:visitId/print/initial-assessment", middleware.RequirePermission("medical_records.view"), handlers.PrintInitialAssessmentEntry)
+			protected.GET("/medical-records/visit/:visitId/print/surat", middleware.RequirePermission("medical_records.view"), handlers.PrintSuratEntry)
+			protected.GET("/medical-records/visit/:visitId/print/surat-kontrol", middleware.RequirePermission("medical_records.view"), handlers.PrintControlLetter)
 			protected.GET("/medical-records/visit/:visitId/print/resume-medis", middleware.RequirePermission("medical_records.view"), handlers.PrintMedicalResumeVisit)
 			protected.POST("/medical-records/visit/:visitId/finalize", middleware.RequirePermission("medical_records.finalize"), handlers.FinalizeMedicalRecordVisit)
 			protected.POST("/medical-records/visit/:visitId/unfinalize", middleware.RequirePermission("medical_records.finalize"), handlers.CancelFinalizeMedicalRecordVisit)
@@ -328,14 +338,14 @@ func main() {
 			protected.DELETE("/medical-records/:id/prescription-compounds/:compoundId", middleware.RequirePermission("prescriptions.update"), handlers.DeletePrescriptionCompound)
 			protected.POST("/medical-records/:id/prescriptions/submit", middleware.RequirePermission("prescriptions.update"), handlers.SubmitPrescriptionOrder)
 			protected.POST("/medical-records/:id/prescriptions/cancel", middleware.RequirePermission("prescriptions.update"), handlers.CancelPrescriptionOrder)
-			protected.POST("/medical-records/:id/prescriptions/prepare", middleware.RequireAnyPermission("prescriptions.process", "prescriptions.update"), handlers.PreparePrescriptionOrder)
-			protected.POST("/medical-records/:id/prescriptions/return", middleware.RequireAnyPermission("prescriptions.process", "prescriptions.update"), handlers.ReturnPrescriptionOrder)
-			protected.POST("/medical-records/:id/prescriptions/ready", middleware.RequireAnyPermission("prescriptions.process", "prescriptions.update"), handlers.ReadyPrescriptionOrder)
-			protected.POST("/medical-records/:id/prescriptions/dispense", middleware.RequireAnyPermission("prescriptions.process", "prescriptions.update"), handlers.DispensePrescriptionOrder)
-			protected.POST("/medical-records/:id/pharmacy/prescriptions", middleware.RequireAnyPermission("prescriptions.process", "prescriptions.update"), handlers.AddPharmacyPrescription)
-			protected.DELETE("/medical-records/:id/pharmacy/prescriptions/:prescriptionId", middleware.RequireAnyPermission("prescriptions.process", "prescriptions.update"), handlers.DeletePharmacyPrescription)
-			protected.GET("/medical-records/:id/print/pharmacy-ticket", middleware.RequirePermission("medical_records.view"), handlers.PrintPharmacyTicket)
-			protected.GET("/medical-records/:id/print/prescription", middleware.RequirePermission("medical_records.view"), handlers.PrintPrescriptionOrder)
+			protected.POST("/medical-records/:id/prescriptions/prepare", middleware.RequireAnyPermission("pharmacy.process", "prescriptions.process", "prescriptions.update"), handlers.PreparePrescriptionOrder)
+			protected.POST("/medical-records/:id/prescriptions/return", middleware.RequireAnyPermission("pharmacy.process", "prescriptions.process", "prescriptions.update"), handlers.ReturnPrescriptionOrder)
+			protected.POST("/medical-records/:id/prescriptions/ready", middleware.RequireAnyPermission("pharmacy.process", "prescriptions.process", "prescriptions.update"), handlers.ReadyPrescriptionOrder)
+			protected.POST("/medical-records/:id/prescriptions/dispense", middleware.RequireAnyPermission("pharmacy.process", "prescriptions.process", "prescriptions.update"), handlers.DispensePrescriptionOrder)
+			protected.POST("/medical-records/:id/pharmacy/prescriptions", middleware.RequireAnyPermission("pharmacy.process", "prescriptions.process", "prescriptions.update"), handlers.AddPharmacyPrescription)
+			protected.DELETE("/medical-records/:id/pharmacy/prescriptions/:prescriptionId", middleware.RequireAnyPermission("pharmacy.process", "prescriptions.process", "prescriptions.update"), handlers.DeletePharmacyPrescription)
+			protected.GET("/medical-records/:id/print/pharmacy-ticket", middleware.RequireAnyPermission("medical_records.view", "pharmacy.view", "pharmacy.process", "prescriptions.view", "prescriptions.process"), handlers.PrintPharmacyTicket)
+			protected.GET("/medical-records/:id/print/prescription", middleware.RequireAnyPermission("medical_records.view", "pharmacy.view", "pharmacy.process", "prescriptions.view", "prescriptions.process"), handlers.PrintPrescriptionOrder)
 
 			// Medical Record - Laboratory Orders
 			protected.POST("/medical-records/:id/laboratory/items", middleware.RequireAnyPermission("medical_records.update", "laboratory.process"), handlers.AddLaboratoryOrderItem)
@@ -346,8 +356,8 @@ func main() {
 			protected.POST("/medical-records/:id/laboratory/return", middleware.RequireAnyPermission("laboratory.process", "laboratory.view"), handlers.ReturnLaboratoryOrder)
 			protected.PUT("/medical-records/:id/laboratory/results", middleware.RequireAnyPermission("laboratory.process", "laboratory.view"), handlers.UpdateLaboratoryOrderResults)
 			protected.POST("/medical-records/:id/laboratory/complete", middleware.RequireAnyPermission("laboratory.process", "laboratory.view"), handlers.CompleteLaboratoryOrder)
-			protected.GET("/medical-records/:id/print/laboratory-ticket", middleware.RequirePermission("medical_records.view"), handlers.PrintLaboratoryTicket)
-			protected.GET("/medical-records/:id/print/laboratory-result", middleware.RequirePermission("medical_records.view"), handlers.PrintLaboratoryResult)
+			protected.GET("/medical-records/:id/print/laboratory-ticket", middleware.RequireAnyPermission("medical_records.view", "laboratory.view", "laboratory.process"), handlers.PrintLaboratoryTicket)
+			protected.GET("/medical-records/:id/print/laboratory-result", middleware.RequireAnyPermission("medical_records.view", "laboratory.view", "laboratory.process"), handlers.PrintLaboratoryResult)
 
 			// Medical Record - Radiology Orders
 			protected.POST("/medical-records/:id/radiology/items", middleware.RequireAnyPermission("medical_records.update", "radiology.process"), handlers.AddRadiologyOrderItem)
@@ -358,8 +368,8 @@ func main() {
 			protected.POST("/medical-records/:id/radiology/return", middleware.RequireAnyPermission("radiology.process", "radiology.view"), handlers.ReturnRadiologyOrder)
 			protected.PUT("/medical-records/:id/radiology/results", middleware.RequireAnyPermission("radiology.process", "radiology.view"), handlers.UpdateRadiologyOrderResults)
 			protected.POST("/medical-records/:id/radiology/complete", middleware.RequireAnyPermission("radiology.process", "radiology.view"), handlers.CompleteRadiologyOrder)
-			protected.GET("/medical-records/:id/print/radiology-ticket", middleware.RequirePermission("medical_records.view"), handlers.PrintRadiologyTicket)
-			protected.GET("/medical-records/:id/print/radiology-result", middleware.RequirePermission("medical_records.view"), handlers.PrintRadiologyResult)
+			protected.GET("/medical-records/:id/print/radiology-ticket", middleware.RequireAnyPermission("medical_records.view", "radiology.view", "radiology.process"), handlers.PrintRadiologyTicket)
+			protected.GET("/medical-records/:id/print/radiology-result", middleware.RequireAnyPermission("medical_records.view", "radiology.view", "radiology.process"), handlers.PrintRadiologyResult)
 
 			// Medical Record - Actions
 			protected.GET("/medical-records/:id/print/procedure", middleware.RequirePermission("medical_records.view"), handlers.PrintProcedureRecord)
@@ -394,4 +404,79 @@ func main() {
 	if err := r.Run(":" + cfg.ServerPort); err != nil {
 		log.Fatal("Failed to start server:", err)
 	}
+}
+
+func registerSATUSEHATRoutes(group *gin.RouterGroup, basePath string) {
+	group.GET(basePath+"/status", middleware.RequirePermission("settings.view"), handlers.GetSATUSEHATStatus)
+	group.GET(basePath+"/logs", middleware.RequirePermission("settings.view"), handlers.GetSATUSEHATLogs)
+	group.POST(basePath+"/logs/:id/retry", middleware.RequirePermission("settings.update"), middleware.RequireSATUSEHATEnabled(), handlers.RetrySATUSEHATLog)
+	group.POST(basePath+"/test-connection", middleware.RequirePermission("settings.view"), middleware.RequireSATUSEHATEnabled(), handlers.TestSATUSEHATConnection)
+	group.GET(basePath+"/organizations/:id/preview", middleware.RequireAnyPermission("settings.view", "polyclinics.view"), handlers.PreviewSATUSEHATOrganization)
+	group.GET(basePath+"/locations/:id/preview", middleware.RequireAnyPermission("settings.view", "polyclinics.view"), handlers.PreviewSATUSEHATLocation)
+	group.GET(basePath+"/patients/:id/preview", middleware.RequireAnyPermission("settings.view", "patients.view"), handlers.PreviewSATUSEHATPatient)
+	group.GET(basePath+"/patients/:id/resolve-preview", middleware.RequireAnyPermission("settings.view", "patients.view"), middleware.RequireSATUSEHATEnabled(), handlers.PreviewSATUSEHATPatientResolve)
+	group.GET(basePath+"/employees/:id/practitioner/preview", middleware.RequireAnyPermission("settings.view", "employees.view"), handlers.PreviewSATUSEHATEmployeePractitioner)
+	group.GET(basePath+"/practitioners/:id/preview", middleware.RequireAnyPermission("settings.view", "doctors.view"), handlers.PreviewSATUSEHATPractitioner)
+	group.GET(basePath+"/encounters/:id/preview", middleware.RequireAnyPermission("settings.view", "visits.view"), handlers.PreviewSATUSEHATEncounter)
+	group.GET(basePath+"/medical-records/:id/vital-signs/preview", middleware.RequireAnyPermission("settings.view", "medical_records.view"), handlers.PreviewSATUSEHATVitalSigns)
+	group.GET(basePath+"/medical-records/:id/clinical-impression/preview", middleware.RequireAnyPermission("settings.view", "medical_records.view"), handlers.PreviewSATUSEHATClinicalImpression)
+	group.GET(basePath+"/medical-actions/:id/procedure/preview", middleware.RequireAnyPermission("settings.view", "medical_records.view"), handlers.PreviewSATUSEHATProcedure)
+	group.GET(basePath+"/medical-records/:id/care-plan/preview", middleware.RequireAnyPermission("settings.view", "medical_records.view"), handlers.PreviewSATUSEHATCarePlan)
+	group.GET(basePath+"/medical-records/:id/goal/preview", middleware.RequireAnyPermission("settings.view", "medical_records.view"), handlers.PreviewSATUSEHATGoal)
+	group.GET(basePath+"/medical-records/:id/allergy-intolerance/preview", middleware.RequireAnyPermission("settings.view", "medical_records.view"), handlers.PreviewSATUSEHATAllergyIntolerance)
+	group.GET(basePath+"/medical-records/:id/composition/preview", middleware.RequireAnyPermission("settings.view", "medical_records.view"), handlers.PreviewSATUSEHATComposition)
+	group.GET(basePath+"/medical-records/:id/family-member-history/preview", middleware.RequireAnyPermission("settings.view", "medical_records.view"), handlers.PreviewSATUSEHATFamilyMemberHistory)
+	group.GET(basePath+"/laboratory-order-items/:id/preview", middleware.RequireAnyPermission("settings.view", "laboratory.view", "medical_records.view"), handlers.PreviewSATUSEHATLaboratoryItem)
+	group.GET(basePath+"/radiology-order-items/:id/preview", middleware.RequireAnyPermission("settings.view", "radiology.view", "medical_records.view"), handlers.PreviewSATUSEHATRadiologyItem)
+	group.GET(basePath+"/prescriptions/:id/preview", middleware.RequireAnyPermission("settings.view", "pharmacy.view", "pharmacy.process", "prescriptions.view", "medical_records.view"), handlers.PreviewSATUSEHATPrescription)
+	group.GET(basePath+"/dispensings/:id/preview", middleware.RequireAnyPermission("settings.view", "pharmacy.view", "pharmacy.process", "prescriptions.view", "prescriptions.process"), handlers.PreviewSATUSEHATDispensing)
+	group.GET(basePath+"/diagnoses/:id/preview", middleware.RequireAnyPermission("settings.view", "medical_records.view"), handlers.PreviewSATUSEHATDiagnosis)
+	group.POST(basePath+"/organizations/:id/sync", middleware.RequireAnyPermission("settings.update", "polyclinics.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATOrganization)
+	group.POST(basePath+"/locations/:id/sync", middleware.RequireAnyPermission("settings.update", "polyclinics.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATLocation)
+	group.POST(basePath+"/patients/:id/sync", middleware.RequireAnyPermission("settings.update", "patients.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATPatient)
+	group.POST(basePath+"/employees/:id/practitioner/sync", middleware.RequireAnyPermission("settings.update", "employees.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATEmployeePractitioner)
+	group.POST(basePath+"/practitioners/:id/sync", middleware.RequireAnyPermission("settings.update", "doctors.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATPractitioner)
+	group.POST(basePath+"/encounters/:id/sync", middleware.RequireAnyPermission("settings.update", "visits.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATEncounter)
+	group.POST(basePath+"/medical-records/:id/vital-signs/sync", middleware.RequireAnyPermission("settings.update", "medical_records.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATVitalSigns)
+	group.POST(basePath+"/medical-records/:id/clinical-impression/sync", middleware.RequireAnyPermission("settings.update", "medical_records.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATClinicalImpression)
+	group.POST(basePath+"/medical-actions/:id/procedure/sync", middleware.RequireAnyPermission("settings.update", "medical_records.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATProcedure)
+	group.POST(basePath+"/medical-records/:id/care-plan/sync", middleware.RequireAnyPermission("settings.update", "medical_records.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATCarePlan)
+	group.POST(basePath+"/medical-records/:id/goal/sync", middleware.RequireAnyPermission("settings.update", "medical_records.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATGoal)
+	group.POST(basePath+"/medical-records/:id/allergy-intolerance/sync", middleware.RequireAnyPermission("settings.update", "medical_records.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATAllergyIntolerance)
+	group.POST(basePath+"/medical-records/:id/composition/sync", middleware.RequireAnyPermission("settings.update", "medical_records.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATComposition)
+	group.POST(basePath+"/medical-records/:id/family-member-history/sync", middleware.RequireAnyPermission("settings.update", "medical_records.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATFamilyMemberHistory)
+	group.POST(basePath+"/laboratory-order-items/:id/sync", middleware.RequireAnyPermission("settings.update", "laboratory.process", "medical_records.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATLaboratoryItem)
+	group.POST(basePath+"/radiology-order-items/:id/sync", middleware.RequireAnyPermission("settings.update", "radiology.process", "medical_records.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATRadiologyItem)
+	group.POST(basePath+"/medicines/:id/sync", middleware.RequireAnyPermission("settings.update", "medicines.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATMedicine)
+	group.POST(basePath+"/prescriptions/:id/sync", middleware.RequireAnyPermission("settings.update", "pharmacy.process", "prescriptions.update", "medical_records.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATPrescription)
+	group.POST(basePath+"/dispensings/:id/sync", middleware.RequireAnyPermission("settings.update", "pharmacy.process", "prescriptions.process", "prescriptions.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATDispensing)
+	group.POST(basePath+"/diagnoses/:id/sync", middleware.RequireAnyPermission("settings.update", "medical_records.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATDiagnosis)
+	group.GET(basePath+"/visits/:id/auto-sync", middleware.RequireAnyPermission("settings.view", "medical_records.view", "visits.view"), handlers.GetSATUSEHATAutoByVisit)
+	group.POST(basePath+"/visits/:id/auto-sync", middleware.RequireAnyPermission("settings.update", "medical_records.update", "visits.update"), middleware.RequireSATUSEHATEnabled(), handlers.SyncSATUSEHATAutoByVisit)
+}
+
+func registerBPJSWebhookRoutes(api *gin.RouterGroup, basePath string) {
+	bpjsGroup := api.Group(basePath)
+	bpjsGroup.Use(middleware.RequireBPJSAntreanEnabled())
+
+	// /auth is unprotected, validates x-username/x-password to give a token
+	bpjsGroup.GET("/auth", handlers.AuthBPJSWebhook)
+
+	// other webhooks are protected by standard AuthMiddleware using the token
+	protectedWebhook := bpjsGroup.Group("")
+	protectedWebhook.Use(middleware.AuthMiddleware())
+
+	protectedWebhook.POST("/antrean", handlers.BPJSAddAntrean)
+	protectedWebhook.PUT("/antrean/batal", handlers.BPJSCancelAntrean)
+	protectedWebhook.POST("/antrean/batal", handlers.BPJSCancelAntrean) // support both just in case
+}
+
+func registerBPJSIntegrationRoutes(group *gin.RouterGroup, basePath string) {
+	bpjsAccess := middleware.RequireAnyPermission("settings.view", "polyclinics.view", "polyclinics.update", "doctors.view", "doctors.update")
+	group.GET(basePath+"/status", bpjsAccess, handlers.GetBPJSStatus)
+	group.GET(basePath+"/logs", middleware.RequirePermission("settings.view"), handlers.GetBPJSLogs)
+	group.GET(basePath+"/antrean/references/poli", bpjsAccess, handlers.GetBPJSReferencePoli)
+	group.GET(basePath+"/antrean/references/dokter", bpjsAccess, handlers.GetBPJSReferenceDoctor)
+	group.POST(basePath+"/antrean/test-connection", middleware.RequirePermission("settings.view"), handlers.TestBPJSAntreanConnection)
+	group.POST(basePath+"/pcare/test-connection", middleware.RequirePermission("settings.view"), handlers.TestBPJSPCareConnection)
 }

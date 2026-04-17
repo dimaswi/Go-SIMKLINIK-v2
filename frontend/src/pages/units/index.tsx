@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { setPageTitle } from '@/lib/page-title';
 import { Loader2, Plus } from 'lucide-react';
+import { MasterDataListShell } from '@/pages/master-data/shared';
 
 export default function UnitsPage() {
   const navigate = useNavigate();
@@ -47,9 +48,15 @@ export default function UnitsPage() {
 
   return (
     <div className="flex flex-1 min-h-0 flex-col gap-4 p-4">
-      <DataTable columns={columns} data={data} searchPlaceholder="Cari satuan..." pageSize={10}
-        toolbarActions={hasPermission('units.create') ? <Button onClick={() => navigate('/units/create')}><Plus className="h-4 w-4" />Tambah Satuan</Button> : undefined}
-      />
+      <MasterDataListShell
+        title="Daftar Satuan"
+        subtitle="Kelola master satuan agar transaksi pembelian, stok, dan penggunaan obat konsisten."
+        totalCount={data.length}
+      >
+        <DataTable columns={columns} data={data} searchPlaceholder="Cari satuan..." pageSize={10} className="h-full"
+          toolbarActions={hasPermission('units.create') ? <Button onClick={() => navigate('/units/create')} className="rounded-none shadow-none"><Plus className="h-4 w-4" />Tambah Satuan</Button> : undefined}
+        />
+      </MasterDataListShell>
       <ConfirmDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen} onConfirm={confirmDelete} title="Hapus Satuan" description="Apakah Anda yakin ingin menghapus satuan ini?" confirmText="Hapus" cancelText="Batal" variant="destructive" />
     </div>
   );

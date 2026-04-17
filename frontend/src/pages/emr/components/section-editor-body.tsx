@@ -23,7 +23,7 @@ import { RadiologyOrderEditor } from './radiology-order-editor';
 
 type SectionEditorBodyProps = {
   section: MedicalRecordSectionType;
-  variant?: 'default' | 'dental';
+  variant?: 'default' | 'dental' | 'surat';
   draft: MedicalRecordDraft;
   setDraft: React.Dispatch<React.SetStateAction<MedicalRecordDraft>>;
   record: MedicalRecord | null;
@@ -93,6 +93,129 @@ type SectionEditorBodyProps = {
   readOnly: boolean;
 };
 
+const SURAT_STATUS_OPTIONS = [
+  { value: 'surat_diterbitkan', label: 'Surat Diterbitkan' },
+  { value: 'surat_ditunda', label: 'Surat Ditunda' },
+  { value: 'surat_tidak_diterbitkan', label: 'Surat Tidak Diterbitkan' },
+];
+
+type SuratTypeValue = 'surat-sakit' | 'surat-sehat' | 'surat-mcu' | 'surat-buta-warna' | 'surat-keterangan';
+
+type SuratFieldProfile = {
+  assessmentTitle: string;
+  assessmentHelper: string;
+  assessmentLabel: string;
+  assessmentPlaceholder: string;
+  purposeLabel: string;
+  purposePlaceholder: string;
+  noteLabel: string;
+  notePlaceholder: string;
+  outcomeTitle: string;
+  outcomeHelper: string;
+  summaryLabel: string;
+  summaryPlaceholder: string;
+  validityLabel: string;
+  validityPlaceholder: string;
+};
+
+const SURAT_FIELD_PROFILES: Record<SuratTypeValue, SuratFieldProfile> = {
+  'surat-sakit': {
+    assessmentTitle: 'Pertimbangan Surat Sakit',
+    assessmentHelper: 'Isi alasan klinis umum pemberian istirahat tanpa menuliskan diagnosis penyakit secara eksplisit.',
+    assessmentLabel: 'Dasar Keterangan',
+    assessmentPlaceholder: 'Contoh: pasien memerlukan periode istirahat untuk pemulihan kondisi klinis setelah evaluasi dokter.',
+    purposeLabel: 'Kebutuhan Administratif',
+    purposePlaceholder: 'Contoh: keterangan istirahat untuk kebutuhan kerja, sekolah, atau institusi.',
+    noteLabel: 'Catatan Tambahan Surat Sakit',
+    notePlaceholder: 'Tuliskan catatan administratif yang perlu dicantumkan pada surat sakit.',
+    outcomeTitle: 'Keterangan Surat Sakit',
+    outcomeHelper: 'Cantumkan status surat, durasi berlaku, dan kalimat keterangan yang dibutuhkan pihak peminta surat.',
+    summaryLabel: 'Kalimat Keterangan Surat Sakit',
+    summaryPlaceholder: 'Contoh: diberikan rekomendasi istirahat selama ... hari terhitung sejak ... sampai ....',
+    validityLabel: 'Durasi / Instruksi Istirahat',
+    validityPlaceholder: 'Contoh: Istirahat 3 hari, kontrol kembali bila keluhan berlanjut.',
+  },
+  'surat-sehat': {
+    assessmentTitle: 'Pertimbangan Surat Sehat',
+    assessmentHelper: 'Isi ringkasan hasil evaluasi umum yang menyatakan kelayakan kondisi saat pemeriksaan.',
+    assessmentLabel: 'Dasar Pernyataan Sehat',
+    assessmentPlaceholder: 'Contoh: berdasarkan evaluasi klinis umum saat kunjungan, kondisi pasien dinilai layak untuk aktivitas rutin.',
+    purposeLabel: 'Peruntukan Surat Sehat',
+    purposePlaceholder: 'Contoh: kebutuhan administrasi kerja, pendidikan, atau dokumen institusi.',
+    noteLabel: 'Catatan Tambahan Surat Sehat',
+    notePlaceholder: 'Tuliskan batasan atau ketentuan administratif yang relevan pada surat sehat.',
+    outcomeTitle: 'Keterangan Surat Sehat',
+    outcomeHelper: 'Cantumkan status surat dan redaksi keterangan sehat sesuai kebutuhan dokumen administratif.',
+    summaryLabel: 'Kalimat Keterangan Surat Sehat',
+    summaryPlaceholder: 'Contoh: pada saat pemeriksaan ini dinyatakan dalam kondisi sehat untuk keperluan ....',
+    validityLabel: 'Masa Berlaku Keterangan',
+    validityPlaceholder: 'Contoh: Berlaku 7 hari sejak tanggal pemeriksaan.',
+  },
+  'surat-mcu': {
+    assessmentTitle: 'Pertimbangan Surat MCU',
+    assessmentHelper: 'Isi ringkasan kesimpulan pemeriksaan MCU tanpa menampilkan diagnosis sensitif.',
+    assessmentLabel: 'Ringkasan Hasil MCU',
+    assessmentPlaceholder: 'Contoh: hasil pemeriksaan MCU menunjukkan temuan umum sesuai parameter paket pemeriksaan.',
+    purposeLabel: 'Ruang Lingkup MCU',
+    purposePlaceholder: 'Contoh: paket MCU pra-kerja, tahunan, atau persyaratan institusi tertentu.',
+    noteLabel: 'Catatan Tambahan MCU',
+    notePlaceholder: 'Tuliskan catatan administratif terkait hasil MCU yang boleh dicantumkan di surat.',
+    outcomeTitle: 'Keterangan Surat MCU',
+    outcomeHelper: 'Cantumkan status penerbitan surat MCU, kesimpulan administratif, dan masa berlaku hasil.',
+    summaryLabel: 'Kalimat Kesimpulan MCU',
+    summaryPlaceholder: 'Contoh: hasil MCU dapat digunakan untuk keperluan ... sesuai evaluasi saat kunjungan.',
+    validityLabel: 'Masa Berlaku Hasil MCU',
+    validityPlaceholder: 'Contoh: Hasil berlaku 6 bulan sesuai ketentuan instansi.',
+  },
+  'surat-buta-warna': {
+    assessmentTitle: 'Pertimbangan Surat Buta Warna',
+    assessmentHelper: 'Isi metode dan ringkasan hasil skrining buta warna secara administratif.',
+    assessmentLabel: 'Ringkasan Pemeriksaan Buta Warna',
+    assessmentPlaceholder: 'Contoh: skrining buta warna dilakukan sesuai prosedur klinik dengan hasil sesuai evaluasi pemeriksa.',
+    purposeLabel: 'Kebutuhan Surat Buta Warna',
+    purposePlaceholder: 'Contoh: persyaratan sekolah, pekerjaan, atau institusi tertentu.',
+    noteLabel: 'Catatan Tambahan Skrining',
+    notePlaceholder: 'Tuliskan catatan administratif yang boleh dicantumkan pada surat buta warna.',
+    outcomeTitle: 'Keterangan Surat Buta Warna',
+    outcomeHelper: 'Cantumkan status surat, kalimat hasil skrining, dan masa berlaku dokumen bila diperlukan.',
+    summaryLabel: 'Kalimat Hasil Skrining',
+    summaryPlaceholder: 'Contoh: hasil skrining buta warna pada pemeriksaan ini ....',
+    validityLabel: 'Masa Berlaku Surat',
+    validityPlaceholder: 'Contoh: Berlaku untuk keperluan administrasi selama ... bulan.',
+  },
+  'surat-keterangan': {
+    assessmentTitle: 'Pertimbangan Surat',
+    assessmentHelper: 'Isi pertimbangan umum dokter untuk kebutuhan surat medis.',
+    assessmentLabel: 'Dasar Pertimbangan Dokter',
+    assessmentPlaceholder: 'Tuliskan pertimbangan umum dokter yang relevan untuk kebutuhan surat.',
+    purposeLabel: 'Peruntukan / Keperluan Surat',
+    purposePlaceholder: 'Contoh: keperluan administrasi kerja, sekolah, MCU, atau dokumen institusi.',
+    noteLabel: 'Catatan Surat',
+    notePlaceholder: 'Catatan tambahan non-diagnostik untuk penerbitan surat.',
+    outcomeTitle: 'Keterangan Surat',
+    outcomeHelper: 'Isi keterangan administratif surat. Detail penyakit tidak ditampilkan pada output cetak.',
+    summaryLabel: 'Keterangan Surat',
+    summaryPlaceholder: 'Tuliskan isi keterangan surat secara umum.',
+    validityLabel: 'Masa Berlaku / Instruksi',
+    validityPlaceholder: 'Contoh: berlaku 3 hari, berlaku sampai tanggal tertentu, atau instruksi administratif lain.',
+  },
+};
+
+function inferSuratTypeFromEntryGroupKey(entryGroupKey?: string) {
+  const normalized = (entryGroupKey || '').trim().toLowerCase();
+  if (!normalized) return 'surat-keterangan' as SuratTypeValue;
+  if (normalized === 'surat-sakit' || normalized.startsWith('surat-sakit-')) return 'surat-sakit' as SuratTypeValue;
+  if (normalized === 'surat-sehat' || normalized.startsWith('surat-sehat-')) return 'surat-sehat' as SuratTypeValue;
+  if (normalized === 'surat-mcu' || normalized.startsWith('surat-mcu-')) return 'surat-mcu' as SuratTypeValue;
+  if (normalized === 'surat-buta-warna' || normalized.startsWith('surat-buta-warna-')) return 'surat-buta-warna' as SuratTypeValue;
+  return 'surat-keterangan' as SuratTypeValue;
+}
+
+function getSuratFieldProfile(record: MedicalRecord | null) {
+  const suratType = inferSuratTypeFromEntryGroupKey(record?.entry_group_key);
+  return SURAT_FIELD_PROFILES[suratType];
+}
+
 type VitalIndicator = {
   tone: 'normal' | 'warning' | 'danger';
   label: string;
@@ -143,6 +266,38 @@ function getVitalIndicator(
     default:
       return null;
   }
+}
+
+function parseISODate(value?: string) {
+  const normalized = (value || '').trim();
+  if (!normalized) return null;
+  const parsed = new Date(`${normalized}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatIndonesianDate(value?: string) {
+  const date = parseISODate(value);
+  if (!date) return '-';
+
+  return date.toLocaleDateString('id-ID', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+function buildSuratValidityDescription(startDate: string, endDate: string) {
+  const start = parseISODate(startDate);
+  const end = parseISODate(endDate);
+
+  if (!start || !end) return '';
+  if (end < start) {
+    return 'Rentang tanggal tidak valid. Tanggal sampai harus sama atau setelah tanggal mulai.';
+  }
+
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+  const diffInDays = Math.floor((end.getTime() - start.getTime()) / millisecondsPerDay) + 1;
+  return `Masa berlaku ${diffInDays} hari, mulai ${formatIndonesianDate(startDate)} sampai ${formatIndonesianDate(endDate)}.`;
 }
 
 function renderDentalAnamnesis(
@@ -497,6 +652,159 @@ function renderDentalAssessment(
   );
 }
 
+function renderSuratAssessment(
+  draft: MedicalRecordDraft,
+  setDraft: React.Dispatch<React.SetStateAction<MedicalRecordDraft>>,
+  record: MedicalRecord | null,
+  readOnly: boolean
+) {
+  const profile = getSuratFieldProfile(record);
+
+  return (
+    <div className="space-y-0">
+      <TableSection
+        title={profile.assessmentTitle}
+        helper={profile.assessmentHelper}
+      >
+        <TableRow>
+          <TableCell label={profile.assessmentLabel} colSpan={4}>
+            <TextEditor
+              label={profile.assessmentLabel}
+              hideLabel
+              value={draft.assessment}
+              onChange={(value) => setDraft((prev) => ({ ...prev, assessment: value }))}
+              disabled={readOnly}
+              rows={4}
+              placeholder={profile.assessmentPlaceholder}
+            />
+          </TableCell>
+        </TableRow>
+        <TableRow>
+          <TableCell label={profile.purposeLabel} colSpan={2}>
+            <TextEditor
+              label={profile.purposeLabel}
+              hideLabel
+              value={draft.plan}
+              onChange={(value) => setDraft((prev) => ({ ...prev, plan: value }))}
+              disabled={readOnly}
+              rows={3}
+              placeholder={profile.purposePlaceholder}
+            />
+          </TableCell>
+          <TableCell label={profile.noteLabel} colSpan={2}>
+            <TextEditor
+              label={profile.noteLabel}
+              hideLabel
+              value={draft.notes}
+              onChange={(value) => setDraft((prev) => ({ ...prev, notes: value }))}
+              disabled={readOnly}
+              rows={3}
+              placeholder={profile.notePlaceholder}
+            />
+          </TableCell>
+        </TableRow>
+      </TableSection>
+    </div>
+  );
+}
+
+function renderSuratOutcome(
+  draft: MedicalRecordDraft,
+  setDraft: React.Dispatch<React.SetStateAction<MedicalRecordDraft>>,
+  record: MedicalRecord | null,
+  readOnly: boolean
+) {
+  const profile = getSuratFieldProfile(record);
+
+  const validityStartDate = (draft.referral_destination || '').slice(0, 10);
+  const validityEndDate = (draft.referral_reason || '').slice(0, 10);
+
+  const validityDescription = buildSuratValidityDescription(validityStartDate, validityEndDate);
+
+  const updateValidityPeriod = (nextStartDate: string, nextEndDate: string) => {
+    const nextDescription = buildSuratValidityDescription(nextStartDate, nextEndDate);
+    setDraft((prev) => ({
+      ...prev,
+      referral_destination: nextStartDate,
+      referral_reason: nextEndDate,
+      follow_up_instruction: nextDescription,
+      follow_up_at: nextStartDate ? `${nextStartDate}T00:00` : '',
+    }));
+  };
+
+  return (
+    <div className="space-y-0">
+      <TableSection
+        title={profile.outcomeTitle}
+        helper={profile.outcomeHelper}
+      >
+        <TableRow>
+          <TableCell label="Status Surat">
+            <SearchableSelect
+              options={SURAT_STATUS_OPTIONS}
+              value={draft.disposition}
+              onValueChange={(value) => setDraft((prev) => ({ ...prev, disposition: value }))}
+              placeholder="Pilih status surat"
+              disabled={readOnly}
+              square
+              className={PAPER_SELECT_TRIGGER_CLASSNAME}
+            />
+          </TableCell>
+          <TableCell label={profile.summaryLabel} colSpan={3}>
+            <TextEditor
+              label={profile.summaryLabel}
+              hideLabel
+              value={draft.discharge_condition}
+              onChange={(value) => setDraft((prev) => ({ ...prev, discharge_condition: value }))}
+              disabled={readOnly}
+              rows={3}
+              placeholder={profile.summaryPlaceholder}
+            />
+          </TableCell>
+        </TableRow>
+        <TableRow>
+          <TableCell label="Tanggal Mulai Berlaku" colSpan={2}>
+            <Input
+              type="date"
+              value={validityStartDate}
+              onChange={(event) => updateValidityPeriod(event.target.value, validityEndDate)}
+              disabled={readOnly}
+              className={PAPER_INPUT_CLASSNAME}
+            />
+          </TableCell>
+          <TableCell label="Tanggal Sampai Berlaku" colSpan={2}>
+            <Input
+              type="date"
+              value={validityEndDate}
+              onChange={(event) => updateValidityPeriod(validityStartDate, event.target.value)}
+              disabled={readOnly}
+              className={PAPER_INPUT_CLASSNAME}
+            />
+          </TableCell>
+        </TableRow>
+        <TableRow>
+          <TableCell label={profile.validityLabel} colSpan={4}>
+            <TextEditor label={profile.validityLabel} hideLabel value={validityDescription || draft.follow_up_instruction} onChange={() => undefined} disabled rows={3} placeholder={profile.validityPlaceholder} />
+          </TableCell>
+        </TableRow>
+        <TableRow>
+          <TableCell label="Catatan Administratif" colSpan={4}>
+            <TextEditor
+              label="Catatan Administratif"
+              hideLabel
+              value={draft.notes}
+              onChange={(value) => setDraft((prev) => ({ ...prev, notes: value }))}
+              disabled={readOnly}
+              rows={3}
+              placeholder="Catatan tambahan untuk keperluan penerbitan surat."
+            />
+          </TableCell>
+        </TableRow>
+      </TableSection>
+    </div>
+  );
+}
+
 export function SectionEditorBody({
   section,
   variant = 'default',
@@ -672,6 +980,10 @@ export function SectionEditorBody({
         return renderDentalAssessment(draft, setDraft, record, icd10List, onAddDiagnosis, onDeleteDiagnosis, readOnly);
       }
 
+      if (variant === 'surat') {
+        return renderSuratAssessment(draft, setDraft, record, readOnly);
+      }
+
       return (
         <div className="space-y-0">
           <DiagnosisEditor diagnoses={record?.diagnoses || []} icd10List={icd10List} onAdd={onAddDiagnosis} onDelete={onDeleteDiagnosis} readOnly={readOnly} />
@@ -775,6 +1087,10 @@ export function SectionEditorBody({
         </div>
       );
     case 'outcome':
+      if (variant === 'surat') {
+        return renderSuratOutcome(draft, setDraft, record, readOnly);
+      }
+
       return (
         <div className="space-y-0">
           <TableSection title="Outcome Kunjungan">

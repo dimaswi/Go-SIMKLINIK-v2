@@ -65,9 +65,47 @@ func GetPatients(c *gin.Context) {
 	var patients []models.Patient
 	query := database.DB.Order("created_at DESC")
 
-	if q := c.Query("q"); q != "" {
+	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		like := "%" + q + "%"
 		query = query.Where("full_name ILIKE ? OR nik ILIKE ? OR medical_record_number ILIKE ? OR phone ILIKE ?", like, like, like, like)
+	}
+	if fullName := strings.TrimSpace(c.Query("full_name")); fullName != "" {
+		query = query.Where("full_name ILIKE ?", "%"+fullName+"%")
+	}
+	if mrn := strings.TrimSpace(c.Query("medical_record_number")); mrn != "" {
+		query = query.Where("medical_record_number ILIKE ?", "%"+mrn+"%")
+	}
+	if parentName := strings.TrimSpace(c.Query("parent_name")); parentName != "" {
+		query = query.Where("emergency_contact_name ILIKE ?", "%"+parentName+"%")
+	}
+	if birthDate := strings.TrimSpace(c.Query("birth_date")); birthDate != "" {
+		if parsedBirthDate, err := time.ParseInLocation("2006-01-02", birthDate, time.Local); err == nil {
+			query = query.Where("DATE(birth_date) = ?", parsedBirthDate.Format("2006-01-02"))
+		}
+	}
+	if address := strings.TrimSpace(c.Query("address")); address != "" {
+		query = query.Where("address ILIKE ?", "%"+address+"%")
+	}
+	if rt := strings.TrimSpace(c.Query("rt")); rt != "" {
+		query = query.Where("rt ILIKE ?", "%"+rt+"%")
+	}
+	if rw := strings.TrimSpace(c.Query("rw")); rw != "" {
+		query = query.Where("rw ILIKE ?", "%"+rw+"%")
+	}
+	if kelurahan := strings.TrimSpace(c.Query("kelurahan")); kelurahan != "" {
+		query = query.Where("kelurahan ILIKE ?", "%"+kelurahan+"%")
+	}
+	if kecamatan := strings.TrimSpace(c.Query("kecamatan")); kecamatan != "" {
+		query = query.Where("kecamatan ILIKE ?", "%"+kecamatan+"%")
+	}
+	if city := strings.TrimSpace(c.Query("city")); city != "" {
+		query = query.Where("city ILIKE ?", "%"+city+"%")
+	}
+	if province := strings.TrimSpace(c.Query("province")); province != "" {
+		query = query.Where("province ILIKE ?", "%"+province+"%")
+	}
+	if postalCode := strings.TrimSpace(c.Query("postal_code")); postalCode != "" {
+		query = query.Where("postal_code ILIKE ?", "%"+postalCode+"%")
 	}
 	if active := c.Query("is_active"); active != "" {
 		query = query.Where("is_active = ?", active == "true")
@@ -80,6 +118,9 @@ func GetPatients(c *gin.Context) {
 	perPage, _ := strconv.Atoi(c.DefaultQuery("per_page", "20"))
 	if page < 1 {
 		page = 1
+	}
+	if perPage < 1 {
+		perPage = 20
 	}
 	offset := (page - 1) * perPage
 

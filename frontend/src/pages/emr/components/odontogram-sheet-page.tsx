@@ -13,6 +13,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { odontogramApi, type FinalizeVisitPayload, type MedicalRecord, type OdontogramEntry, type SatusehatVisitAutoSyncResult, type Visit } from '@/lib/api';
+import { createControlScheduleWhatsAppPayloadFromVisit } from '@/lib/control-schedule-whatsapp';
 import { cn } from '@/lib/utils';
 import {
 	buildOdontogramDraft,
@@ -49,6 +50,9 @@ type OdontogramSheetPageProps = {
 	updateVisit: (updater: (currentVisit: Visit | null) => Visit | null) => void;
 	onBack: () => void;
 	onFinalizeVisit: (payload: FinalizeVisitPayload) => Promise<void>;
+	onPrintControlLetter: () => Promise<void>;
+	showControlLetter: boolean;
+	printingControlLetter: boolean;
 	onPrintMedicalResume: () => Promise<void>;
 	printingMedicalResume: boolean;
 	onCancelFinalization: () => Promise<void>;
@@ -72,6 +76,9 @@ export function OdontogramSheetPage({
 	updateVisit,
 	onBack,
 	onFinalizeVisit,
+	onPrintControlLetter,
+	showControlLetter,
+	printingControlLetter,
 	onPrintMedicalResume,
 	printingMedicalResume,
 	onCancelFinalization,
@@ -136,6 +143,10 @@ export function OdontogramSheetPage({
 	);
 	const currentPayload = useMemo(() => JSON.stringify(serializeOdontogramDraft(draft)), [draft]);
 	const hasUnsavedChanges = baselinePayload !== currentPayload;
+	const controlWhatsAppPayload = useMemo(
+		() => createControlScheduleWhatsAppPayloadFromVisit(visit, outcomeRecord),
+		[outcomeRecord, visit]
+	);
 	const selectedTooth = draft.teeth.find((tooth) => tooth.tooth_number === selectedToothNumber) || draft.teeth[0] || null;
 	const selectedEntryStatus = getOdontogramEntryStatus(selectedEntry, Boolean(workspaceLocked));
 	const entryFindingCount = countOdontogramEntryFindings(draft);
@@ -341,7 +352,7 @@ export function OdontogramSheetPage({
 				visit={visit}
 				completedSections={completedSections}
 				isLocked={Boolean(workspaceLocked)}
-				sticky={false}
+				sticky
 				sectionLabel="Odontogram"
 				allergyInfo={allergyInfo}
 				onBack={onBack}
@@ -360,6 +371,11 @@ export function OdontogramSheetPage({
 					</Button>
 				) : visit.status === 'completed' ? (
 					<FinalizedVisitActions
+						visitId={visit.id}
+						showControlLetter={showControlLetter}
+						controlWhatsAppPayload={controlWhatsAppPayload}
+						onPrintControlLetter={onPrintControlLetter}
+						printingControlLetter={printingControlLetter}
 						onPrintMedicalResume={onPrintMedicalResume}
 						printingMedicalResume={printingMedicalResume}
 						onCancelFinalization={onCancelFinalization}

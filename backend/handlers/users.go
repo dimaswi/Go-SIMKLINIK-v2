@@ -5,13 +5,40 @@ import (
 	"starter/backend/database"
 	"starter/backend/models"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
+type userSummaryResponse struct {
+	TotalCount           int64 `json:"total_count"`
+	ActiveCount          int64 `json:"active_count"`
+	InactiveCount        int64 `json:"inactive_count"`
+	LinkedEmployeeCount  int64 `json:"linked_employee_count"`
+	LinkedSATUSEHATCount int64 `json:"linked_satusehat_count"`
+	UnlinkedUserCount    int64 `json:"unlinked_user_count"`
+}
+
 func GetUsers(c *gin.Context) {
 	var users []models.User
-	if err := database.DB.Preload("Role").Find(&users).Error; err != nil {
+	query := database.DB.Preload("Role")
+
+	switch strings.ToLower(strings.TrimSpace(c.Query("employee_filter"))) {
+	case "linked":
+		query = query.Joins("JOIN employees ON employees.user_id = users.id")
+	case "linked-required":
+		query = query.Joins("JOIN employees ON employees.user_id = users.id").Where("employees.requires_satusehat = ?", true)
+	case "linked-not-required":
+		query = query.Joins("JOIN employees ON employees.user_id = users.id").Where("employees.requires_satusehat = ?", false)
+	case "unlinked":
+		query = query.Joins("LEFT JOIN employees ON employees.user_id = users.id").Where("employees.id IS NULL")
+	}
+
+	if isActive, ok := parseOptionalQueryBool(c.Query("is_active")); ok {
+		query = query.Where("users.is_active = ?", isActive)
+	}
+
+	if err := query.Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -29,6 +56,40 @@ func GetUser(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": user})
+}
+
+func GetUsersSummary(c *gin.Context) {
+	summary := userSummaryResponse{}
+
+	if err := database.DB.Model(&models.User{}).Count(&summary.TotalCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := database.DB.Model(&models.User{}).Where("is_active = ?", true).Count(&summary.ActiveCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	summary.InactiveCount = summary.TotalCount - summary.ActiveCount
+
+	if err := database.DB.Model(&models.User{}).
+		Joins("JOIN employees ON employees.user_id = users.id").
+		Count(&summary.LinkedEmployeeCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := database.DB.Model(&models.Employee{}).
+		Where("user_id IS NOT NULL AND requires_satusehat = ?", true).
+		Count(&summary.LinkedSATUSEHATCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	summary.UnlinkedUserCount = summary.TotalCount - summary.LinkedEmployeeCount
+
+	c.JSON(http.StatusOK, gin.H{"data": summary})
 }
 
 type CreateUserRequest struct {

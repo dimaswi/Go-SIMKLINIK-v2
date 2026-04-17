@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -110,6 +111,14 @@ export default function PurchasingEdit() {
         title="Edit Purchase Order"
         subtitle="Perbarui supplier, item, dan catatan selama PO masih berstatus draft."
         onBack={() => navigate(`/purchasing/${id}`)}
+        badges={<Badge variant="secondary" className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none">Draft PO</Badge>}
+        meta={
+          <>
+            <span>PO #{id}</span>
+            <span>{validItemCount} item aktif</span>
+            <span>{selectedSupplier?.name || 'Supplier belum dipilih'}</span>
+          </>
+        }
         actions={<Button type="submit" form="purchase-order-edit-form" disabled={loading} className="rounded-none shadow-none">{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Update PO</Button>}
         aside={
           <MasterDataAsideStack>
@@ -174,7 +183,7 @@ export default function PurchasingEdit() {
             <section className="space-y-3 rounded-lg border border-border/80 p-5">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-semibold">Daftar Obat</p>
-                <Button type="button" variant="outline" size="sm" onClick={addItem}><Plus className="mr-1 h-3.5 w-3.5" />Tambah</Button>
+                <Button type="button" variant="outline" size="sm" onClick={addItem} className="rounded-none shadow-none"><Plus className="mr-1 h-3.5 w-3.5" />Tambah</Button>
               </div>
               <div className="overflow-x-auto rounded-md border">
                 <table className="w-full text-sm">
@@ -201,7 +210,7 @@ export default function PurchasingEdit() {
                         </td>
                         <td className="px-3 py-2 text-right font-medium">{(item.quantity * item.unit_price).toLocaleString('id-ID')}</td>
                         <td className="px-3 py-2">
-                          <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => removeItem(idx)} disabled={items.length === 1}>
+                          <Button type="button" variant="ghost" size="icon" className="h-8 w-8 rounded-none text-destructive hover:text-destructive" onClick={() => removeItem(idx)} disabled={items.length === 1}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </td>

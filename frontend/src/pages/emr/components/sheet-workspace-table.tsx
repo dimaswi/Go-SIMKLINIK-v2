@@ -9,7 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { VISIBLE_SHEET_CONFIGS, getInitialAssessmentEntryFilter, isInitialAssessmentSheetKey } from '../constants';
+import { SURAT_TYPE_OPTIONS, VISIBLE_SHEET_CONFIGS, getInitialAssessmentEntryFilter, isInitialAssessmentSheetKey } from '../constants';
 import { getOdontogramEntryStatus, getOdontogramEntrySummary } from '../odontogram';
 import { buildSheetEntryGroups, collectVisitInformedConsents, getRecordsForSheetSections, getSheetStatus, getSheetSummary } from '../utils';
 import { SectionStatusBadge } from './section-status-badge';
@@ -42,6 +42,7 @@ export function SheetWorkspaceTable({
         <TableBody>
           {VISIBLE_SHEET_CONFIGS.map((sheet) => {
             const isOdontogramSheet = sheet.key === 'odontogram';
+            const isSuratSheet = sheet.key === 'surat';
             const initialAssessmentFilter = isInitialAssessmentSheetKey(sheet.key)
               ? (getInitialAssessmentEntryFilter(sheet.key) || undefined)
               : undefined;
@@ -75,7 +76,9 @@ export function SheetWorkspaceTable({
                   <SectionStatusBadge label={status.label} tone={status.tone} />
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
-                  {sheet.sections.length > 0
+                  {isSuratSheet
+                    ? `${entryCount} entri surat | ${SURAT_TYPE_OPTIONS.length} jenis tersedia`
+                    : sheet.sections.length > 0
                     ? isInitialAssessmentSheetKey(sheet.key)
                       ? `${entryCount} paket ${sheet.key === 'pengkajian-awal-gigi' ? 'pengkajian gigi' : 'pengkajian'}`
                       : `${entryCount} entri terkait`
@@ -84,7 +87,13 @@ export function SheetWorkspaceTable({
                     : 'Belum memakai data klinis'}
                 </TableCell>
                 <TableCell>
-                  <p className="max-w-md line-clamp-2 text-sm text-muted-foreground">{isOdontogramSheet ? getOdontogramEntrySummary(odontogramEntries[0]) : getSheetSummary(sheet, recordsBySection as Record<MedicalRecordSectionType, any[]>)}</p>
+                  <p className="max-w-md line-clamp-2 text-sm text-muted-foreground">
+                    {isSuratSheet
+                      ? 'Pilih: Surat Sakit, Surat Sehat, Surat MCU, atau Surat Buta Warna.'
+                      : isOdontogramSheet
+                        ? getOdontogramEntrySummary(odontogramEntries[0])
+                        : getSheetSummary(sheet, recordsBySection as Record<MedicalRecordSectionType, any[]>)}
+                  </p>
                 </TableCell>
                 <TableCell>
                   <Button asChild variant="outline" size="sm">

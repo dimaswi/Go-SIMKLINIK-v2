@@ -23,4 +23,5 @@ type Polyclinic struct {
 	SatusehatLocationID           string         `gorm:"size:100" json:"satusehat_location_id"`
 	SatusehatOrganizationSyncedAt *time.Time     `json:"satusehat_organization_synced_at,omitempty"`
 	SatusehatLocationSyncedAt     *time.Time     `json:"satusehat_location_synced_at,omitempty"`
+	BpjsPoliCode                  string         `gorm:"size:50" json:"bpjs_poli_code"`
 }

@@ -17,6 +17,7 @@ import (
 type medicalResumePrintViewData struct {
 	GeneratedAt                time.Time
 	PrintedBy                  string
+	ValidationBaseURL          string
 	Visit                      models.Visit
 	DocumentFields             []initialAssessmentPrintField
 	PatientFields              []initialAssessmentPrintField
@@ -99,7 +100,7 @@ func buildMedicalResumePrintViewData(c *gin.Context, visit models.Visit, records
 		sectionRecords[normalizeMedicalRecordSection(record.SectionType)] = record
 	}
 
-	printedBy := strings.TrimSpace(c.GetString("email"))
+	printedBy := resolvePrintedByLabel(c)
 	anamnesisRecord := sectionRecords["anamnesis"]
 	physicalExamRecord := sectionRecords["physical_exam"]
 	assessmentRecord := sectionRecords["assessment"]
@@ -109,6 +110,7 @@ func buildMedicalResumePrintViewData(c *gin.Context, visit models.Visit, records
 	return medicalResumePrintViewData{
 		GeneratedAt:                generatedAt,
 		PrintedBy:                  printedBy,
+		ValidationBaseURL:          resolveTTEVerificationBaseURLForRequest(c),
 		Visit:                      visit,
 		DocumentFields:             buildMedicalResumeDocumentFields(visit, generatedAt, printedBy, activeRecords, activeOdontogramEntries, outcomeRecord),
 		PatientFields:              buildInitialAssessmentPatientFields(visit.Patient),
@@ -136,6 +138,7 @@ func buildMedicalResumePrintViewData(c *gin.Context, visit models.Visit, records
 func renderMedicalResumePDF(hospitalInfo initialAssessmentHospitalInfo, data medicalResumePrintViewData) ([]byte, string, error) {
 	pdf := newInitialAssessmentStyledPDF("Resume Medis", data.PrintedBy, data.GeneratedAt)
 	beginInitialAssessmentStyledSection(pdf, hospitalInfo, "RESUME MEDIS", fallbackText(data.Visit.VisitNumber))
+	tteSignature := loadTTESignedSignatureByDocumentKeyWithBaseURL(fmt.Sprintf("resume_medis:visit:%d", data.Visit.ID), data.ValidationBaseURL)
 
 	addInitialAssessmentFieldSection(pdf, "INFORMASI DOKUMEN", filterMedicalResumeFields(data.DocumentFields), "Informasi dokumen tidak tersedia.")
 	addInitialAssessmentFieldSection(pdf, "DATA PASIEN", filterMedicalResumeFields(data.PatientFields), "Data pasien tidak tersedia.")
@@ -158,7 +161,7 @@ func renderMedicalResumePDF(hospitalInfo initialAssessmentHospitalInfo, data med
 	}
 	addSupportingOrderResultTable(pdf, "ODONTOGRAM", buildMedicalResumeOdontogramColumns(), data.OdontogramRows, "Tidak ada odontogram tercatat.")
 
-	addOrderPrintSignatureSection(pdf, hospitalInfo, data.GeneratedAt, "Pasien / Keluarga", data.Visit.Patient.FullName, "Dokter Pemeriksa", data.Visit.Doctor.FullName)
+	addOrderPrintSignatureSectionWithTTE(pdf, hospitalInfo, data.GeneratedAt, "Pasien / Keluarga", data.Visit.Patient.FullName, "Dokter Pemeriksa", data.Visit.Doctor.FullName, tteSignature)
 
 	pdfBytes, err := outputInitialAssessmentStyledPDF(pdf)
 	if err != nil {

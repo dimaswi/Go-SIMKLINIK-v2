@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { isAxiosError } from "axios";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowUpRight,
+  BadgeCheck,
   Building2,
+  FileText,
+  HardDrive,
   Eye,
   FileImage,
   Globe,
@@ -20,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { usePermission } from "@/hooks/usePermission";
 import { useToast } from "@/hooks/use-toast";
 import { settingsApi } from "@/lib/api";
 import { setPageTitle } from "@/lib/page-title";
@@ -37,9 +42,26 @@ const getBaseUrl = () => {
 
 const BASE_URL = getBaseUrl();
 
+function resolveUploadErrorMessage(error: unknown, fallback: string) {
+  if (isAxiosError(error)) {
+    if (error.code === "ECONNABORTED") {
+      return "Upload timeout. Server tidak merespons dalam 95 detik.";
+    }
+
+    const apiError = error.response?.data?.error;
+    if (typeof apiError === "string" && apiError.trim()) {
+      return apiError;
+    }
+  }
+
+  return fallback;
+}
+
 export default function SettingsPage() {
   const navigate = useNavigate();
+  const { hasPermission } = usePermission();
   const { toast } = useToast();
+  const canAccessIntegrations = hasPermission("settings.update");
   const [appName, setAppName] = useState("SIMKLINIK");
   const [appSubtitle, setAppSubtitle] = useState("Sistem Informasi Manajemen Klinik");
   const [appLogo, setAppLogo] = useState("");
@@ -135,10 +157,15 @@ export default function SettingsPage() {
       localStorage.setItem("appLogo", url);
       window.dispatchEvent(new Event("storage"));
       toast({ variant: "success", title: "Logo diperbarui", description: "Logo aplikasi berhasil diunggah." });
-    } catch {
-      toast({ variant: "destructive", title: "Upload gagal", description: "Logo aplikasi belum berhasil diunggah." });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Upload gagal",
+        description: resolveUploadErrorMessage(error, "Logo aplikasi belum berhasil diunggah."),
+      });
     } finally {
       setUploadingLogo(false);
+      event.target.value = "";
     }
   };
 
@@ -154,10 +181,15 @@ export default function SettingsPage() {
       localStorage.setItem("appFavicon", url);
       updateFavicon(url);
       toast({ variant: "success", title: "Favicon diperbarui", description: "Favicon aplikasi berhasil diunggah." });
-    } catch {
-      toast({ variant: "destructive", title: "Upload gagal", description: "Favicon belum berhasil diunggah." });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Upload gagal",
+        description: resolveUploadErrorMessage(error, "Favicon belum berhasil diunggah."),
+      });
     } finally {
       setUploadingFavicon(false);
+      event.target.value = "";
     }
   };
 
@@ -170,10 +202,15 @@ export default function SettingsPage() {
       const response = await settingsApi.uploadLogo(file, "print_logo");
       setPrintLogo(response.data.url);
       toast({ variant: "success", title: "Logo cetak diperbarui", description: "Logo untuk KOP PDF berhasil diunggah." });
-    } catch {
-      toast({ variant: "destructive", title: "Upload gagal", description: "Logo cetak belum berhasil diunggah." });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Upload gagal",
+        description: resolveUploadErrorMessage(error, "Logo cetak belum berhasil diunggah."),
+      });
     } finally {
       setUploadingPrintLogo(false);
+      event.target.value = "";
     }
   };
 
@@ -284,12 +321,34 @@ export default function SettingsPage() {
         meta={<><span>{appSummary.title}</span><span>{previewHeaderTitle}</span></>}
         onBack={() => navigate(-1)}
         actions={
-          <Button asChild variant="outline" className="rounded-none shadow-none">
-            <Link to="/settings/integrations">
-              Buka Integrasi
-              <ArrowUpRight className="ml-2 h-4 w-4" />
-            </Link>
-          </Button>
+          <>
+            <Button asChild variant="outline" className="rounded-none shadow-none">
+              <Link to="/settings/versioning">
+                Versioning
+                <BadgeCheck className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+            <Button asChild variant="outline" className="rounded-none shadow-none">
+              <Link to="/settings/terms-and-conditions">
+                Terms & Conditions
+                <FileText className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+            <Button asChild variant="outline" className="rounded-none shadow-none">
+              <Link to="/settings/operations">
+                Monitoring Backup
+                <HardDrive className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+            {canAccessIntegrations ? (
+              <Button asChild variant="outline" className="rounded-none shadow-none">
+                <Link to="/settings/integrations">
+                  Buka Integrasi
+                  <ArrowUpRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+            ) : null}
+          </>
         }
         aside={
           <MasterDataAsideStack>
@@ -314,12 +373,35 @@ export default function SettingsPage() {
               </MasterDataAsideSection>
             </div>
             <div>
-              <MasterDataAsideSection title="Akses Cepat" helper="Lanjutkan ke halaman integrasi saat perlu menghubungkan SIMKLINIK dengan sistem eksternal.">
+              <MasterDataAsideSection title="Versioning" helper="Lihat cakupan versi aktif SIMKLINIK berdasarkan modul yang sudah tersedia saat ini.">
                 <Button asChild variant="outline" className="w-full rounded-none shadow-none">
-                  <Link to="/settings/integrations">Kelola Integrasi</Link>
+                  <Link to="/settings/versioning">Buka Versioning</Link>
                 </Button>
               </MasterDataAsideSection>
             </div>
+            <div>
+              <MasterDataAsideSection title="Terms & Conditions" helper="Dokumen ketentuan penggunaan SIMKLINIK untuk akses, data pasien, keamanan, dan integrasi operasional.">
+                <Button asChild variant="outline" className="w-full rounded-none shadow-none">
+                  <Link to="/settings/terms-and-conditions">Buka Terms & Conditions</Link>
+                </Button>
+              </MasterDataAsideSection>
+            </div>
+            <div>
+              <MasterDataAsideSection title="Monitoring Backup" helper="Pantau storage VPS, atur auto-backup, jalankan backup manual, dan unduh file backup yang dihasilkan sistem.">
+                <Button asChild variant="outline" className="w-full rounded-none shadow-none">
+                  <Link to="/settings/operations">Buka Monitoring Backup</Link>
+                </Button>
+              </MasterDataAsideSection>
+            </div>
+            {canAccessIntegrations ? (
+              <div>
+                <MasterDataAsideSection title="Akses Cepat" helper="Lanjutkan ke halaman integrasi saat perlu menghubungkan SIMKLINIK dengan sistem eksternal.">
+                  <Button asChild variant="outline" className="w-full rounded-none shadow-none">
+                    <Link to="/settings/integrations">Kelola Integrasi</Link>
+                  </Button>
+                </MasterDataAsideSection>
+              </div>
+            ) : null}
           </MasterDataAsideStack>
         }
       >
@@ -409,26 +491,74 @@ export default function SettingsPage() {
 
             <section className="space-y-4 rounded-lg border border-border/80 p-5">
               <div className="space-y-1">
-                <h2 className="text-sm font-semibold tracking-tight">Integrations</h2>
-                <p className="text-[11px] leading-5 text-muted-foreground">Ruang konfigurasi integrasi sistem eksternal. SATUSEHAT sudah tersedia, dan provider berikutnya bisa ditambahkan tanpa mengubah struktur halaman.</p>
+                <h2 className="text-sm font-semibold tracking-tight">Versioning</h2>
+                <p className="text-[11px] leading-5 text-muted-foreground">Halaman versioning v1 merangkum versi aktif berdasarkan fitur SIMKLINIK yang memang sudah berjalan sekarang, sehingga support dan operasional punya referensi scope yang lebih jelas.</p>
               </div>
 
               <div className="flex flex-col gap-4 rounded-lg border border-dashed p-4 md:flex-row md:items-center md:justify-between">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 text-sm font-medium">
-                    <PlugZap className="h-4 w-4 text-muted-foreground" />
-                    SATUSEHAT dan katalog integrasi
+                    <BadgeCheck className="h-4 w-4 text-muted-foreground" />
+                    Ringkasan versi aktif dan cakupan fitur
                   </div>
-                  <p className="text-sm text-muted-foreground">Endpoint autentikasi, base URL FHIR, organization ID, client ID, dan client secret dikelola terpisah di halaman integrasi.</p>
+                  <p className="text-sm text-muted-foreground">Cocok untuk mengecek modul yang sudah masuk versi berjalan tanpa mencampur roadmap atau fitur yang belum mandatory.</p>
                 </div>
                 <Button asChild variant="outline" className="rounded-none shadow-none">
-                  <Link to="/settings/integrations">
-                    Buka Halaman Integrasi
+                  <Link to="/settings/versioning">
+                    Buka Halaman Versioning
                     <ArrowUpRight className="ml-2 h-4 w-4" />
                   </Link>
                 </Button>
               </div>
             </section>
+
+            <section className="space-y-4 rounded-lg border border-border/80 p-5">
+              <div className="space-y-1">
+                <h2 className="text-sm font-semibold tracking-tight">Terms & Conditions</h2>
+                <p className="text-[11px] leading-5 text-muted-foreground">Halaman ini merangkum ketentuan penggunaan SIMKLINIK untuk user internal, termasuk disiplin akses akun, pengelolaan data pasien, alur operasional, backup, dan integrasi eksternal.</p>
+              </div>
+
+              <div className="flex flex-col gap-4 rounded-lg border border-dashed p-4 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    Ketentuan penggunaan aplikasi operasional klinik
+                  </div>
+                  <p className="text-sm text-muted-foreground">Cocok dipakai sebagai referensi internal saat onboarding user, review SOP digital, atau validasi tanggung jawab penggunaan sistem.</p>
+                </div>
+                <Button asChild variant="outline" className="rounded-none shadow-none">
+                  <Link to="/settings/terms-and-conditions">
+                    Buka Terms & Conditions
+                    <ArrowUpRight className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
+              </div>
+            </section>
+
+            {canAccessIntegrations ? (
+              <section className="space-y-4 rounded-lg border border-border/80 p-5">
+                <div className="space-y-1">
+                  <h2 className="text-sm font-semibold tracking-tight">Integrations</h2>
+                  <p className="text-[11px] leading-5 text-muted-foreground">Ruang konfigurasi integrasi sistem eksternal. SATUSEHAT sudah tersedia, dan provider berikutnya bisa ditambahkan tanpa mengubah struktur halaman.</p>
+                </div>
+
+                <div className="flex flex-col gap-4 rounded-lg border border-dashed p-4 md:flex-row md:items-center md:justify-between">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <PlugZap className="h-4 w-4 text-muted-foreground" />
+                      SATUSEHAT dan katalog integrasi
+                    </div>
+                    <p className="text-sm text-muted-foreground">Endpoint autentikasi, base URL FHIR, organization ID, client ID, dan client secret dikelola terpisah di halaman integrasi.</p>
+                  </div>
+                  <Button asChild variant="outline" className="rounded-none shadow-none">
+                    <Link to="/settings/integrations">
+                      Buka Halaman Integrasi
+                      <ArrowUpRight className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
+                </div>
+              </section>
+            ) : null}
 
             <section className="space-y-4 rounded-lg border border-border/80 p-5">
               <div className="space-y-1">

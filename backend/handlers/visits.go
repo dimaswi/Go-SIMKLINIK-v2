@@ -8,6 +8,7 @@ import (
 
 	"starter/backend/database"
 	"starter/backend/models"
+	"starter/backend/services/bpjs"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -232,6 +233,41 @@ func CreateVisit(c *gin.Context) {
 	}
 
 	database.DB.Preload("Patient").Preload("Polyclinic").Preload("Doctor").First(&visit, visit.ID)
+
+	// Sync Tambah Antrean Offline ke BPJS if applicable
+	if visit.PaymentType == "bpjs" && visit.InsuranceNumber != "" && visit.Polyclinic.BpjsPoliCode != "" {
+		go func(v models.Visit, p models.Patient) {
+			client, err := bpjs.NewClient()
+			if err != nil {
+				bpjs.RecordActivityLog(bpjs.ActivityLogEntry{
+					Domain:       bpjs.DomainAntrean,
+					Direction:    bpjs.DirectionOutbound,
+					Operation:    "add-antrean",
+					Method:       http.MethodPost,
+					Endpoint:     "/antrean",
+					StatusCode:   http.StatusServiceUnavailable,
+					Success:      false,
+					ErrorMessage: err.Error(),
+					RequestPayload: map[string]any{
+						"visit_id": v.ID,
+					},
+				})
+				return
+			}
+
+			payload := map[string]interface{}{
+				"kdppk":          client.Config.ConsID, // Kdppk usually same as cons ID or configured separately? Usually handled on BPJS side or passed. We'll pass it.
+				"kodepoli":       v.Polyclinic.BpjsPoliCode,
+				"kodedokter":     v.Doctor.BpjsDoctorCode,
+				"nomorkartu":     v.InsuranceNumber,
+				"nik":            p.NIK,
+				"nohp":           p.Phone,
+				"keluhan":        v.Complaint,
+				"tanggalperiksa": v.VisitDate.Format("2006-01-02"),
+			}
+			_ = client.AddAntrean(payload)
+		}(visit, patient)
+	}
 
 	c.JSON(http.StatusCreated, gin.H{
 		"data":    visit,
@@ -512,7 +548,76 @@ func UpdateVisitStatus(c *gin.Context) {
 	}
 
 	database.DB.Preload("Patient").Preload("Polyclinic").Preload("Doctor").First(&visit, visit.ID)
+
+	// Sync Batal Antrean BPJS if applicable
+	if req.QueueStatus == "cancelled" && visit.InsuranceNumber != "" && visit.Polyclinic.BpjsPoliCode != "" {
+		go func(v models.Visit) {
+			client, err := bpjs.NewClient()
+			if err != nil {
+				bpjs.RecordActivityLog(bpjs.ActivityLogEntry{
+					Domain:       bpjs.DomainAntrean,
+					Direction:    bpjs.DirectionOutbound,
+					Operation:    "cancel-antrean",
+					Method:       http.MethodPost,
+					Endpoint:     "/antrean/batal",
+					StatusCode:   http.StatusServiceUnavailable,
+					Success:      false,
+					ErrorMessage: err.Error(),
+					RequestPayload: map[string]any{
+						"visit_id": v.ID,
+					},
+				})
+				return
+			}
+
+			_ = client.CancelQueue(v.VisitDate.Format("2006-01-02"), v.Polyclinic.BpjsPoliCode, v.InsuranceNumber, "Dibatalkan dari sistem klinik")
+		}(visit)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"data": visit, "message": "Status berhasil diperbarui"})
+}
+
+func CallBPJSQueue(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	var visit models.Visit
+	if err := database.DB.Preload("Patient").Preload("Polyclinic").Preload("Doctor").First(&visit, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Visit not found"})
+		return
+	}
+
+	if visit.Polyclinic.BpjsPoliCode == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Poli tidak memiliki kode BPJS"})
+		return
+	}
+
+	if visit.Patient.MedicalRecordNumber == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Pasien tidak memiliki rekam medis"})
+		return
+	}
+
+	if visit.InsuranceNumber == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Pasien tidak memiliki nomor asuransi BPJS / Kartu JKN"})
+		return
+	}
+
+	client, err := bpjs.NewClient()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal inisialisasi BPJS Client: " + err.Error()})
+		return
+	}
+
+	tanggalPeriksa := visit.VisitDate.Format("2006-01-02")
+	if err := client.CallNextQueue(tanggalPeriksa, visit.Polyclinic.BpjsPoliCode, visit.InsuranceNumber); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Gagal panggil BPJS: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Berhasil memanggil antrean BPJS"})
 }
 
 func GetQueueByPolyclinic(c *gin.Context) {

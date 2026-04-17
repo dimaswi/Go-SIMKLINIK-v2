@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { FilePlus2, Loader2, Lock, Save, Send } from 'lucide-react';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { Button } from '@/components/ui/button';
+import { createControlScheduleWhatsAppPayloadFromVisit } from '@/lib/control-schedule-whatsapp';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -76,7 +77,7 @@ export default function EMRSheetPage() {
     physicalExamImageList,
     loading: loadingReferences,
     error: referenceError,
-  } = useEmrReferences();
+  } = useEmrReferences(visitId);
 
   const [selectedRecordId, setSelectedRecordId] = useState<number | null>(null);
   const [draft, setDraft] = useState<MedicalRecordDraft>(buildDraft());
@@ -102,6 +103,7 @@ export default function EMRSheetPage() {
   const [deleting, setDeleting] = useState(false);
   const [finalizeOpen, setFinalizeOpen] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+  const [printingControlLetter, setPrintingControlLetter] = useState(false);
   const [printingResumeMedical, setPrintingResumeMedical] = useState(false);
   const [cancelingFinalization, setCancelingFinalization] = useState(false);
   const [latestAutoSyncResult, setLatestAutoSyncResult] = useState<SatusehatVisitAutoSyncResult | null>(null);
@@ -112,6 +114,14 @@ export default function EMRSheetPage() {
   const completedSections = useMemo(() => getCompletedCoreSections(recordsBySection), [recordsBySection]);
   const finalizeVisitBlockers = useMemo(() => getFinalizeVisitBlockingOrders(recordsBySection), [recordsBySection]);
   const latestOutcomeRecord = useMemo(() => getLatestRecordForSection(recordsBySection, 'outcome'), [recordsBySection]);
+  const controlLetterAvailable = useMemo(
+    () => latestOutcomeRecord?.disposition?.trim().toLowerCase() === 'kontrol',
+    [latestOutcomeRecord?.disposition]
+  );
+  const controlWhatsAppPayload = useMemo(
+    () => createControlScheduleWhatsAppPayloadFromVisit(visit, latestOutcomeRecord),
+    [latestOutcomeRecord, visit]
+  );
   const allergyInfo = useMemo(() => {
     const values = [visit?.patient?.allergies, ...records.map((record) => record.allergy_notes)]
       .map((value) => (value || '').trim())
@@ -348,8 +358,13 @@ export default function EMRSheetPage() {
       await reload();
       toast({
         title: 'Kunjungan berhasil di-finalisasi',
-        description: autoSyncSummary.description,
+        description: payload.disposition === 'kontrol'
+          ? `${autoSyncSummary.description} Surat kontrol siap dicetak.`
+          : autoSyncSummary.description,
       });
+      if (payload.disposition === 'kontrol') {
+        void printControlLetter();
+      }
     } catch (requestError: any) {
       const missingSections = requestError.response?.data?.missing_sections;
       const blockingOrders = requestError.response?.data?.blocking_orders;
@@ -695,6 +710,23 @@ export default function EMRSheetPage() {
     }
   };
 
+  const printControlLetter = async () => {
+    if (!visit || printingControlLetter) return;
+
+    setPrintingControlLetter(true);
+    try {
+      await printMedicalRecordDocument({
+        loadingLabel: 'surat kontrol',
+        preparingMessage: 'Menyiapkan surat kontrol...',
+        errorTitle: 'Gagal menyiapkan surat kontrol',
+        errorFallback: 'Surat kontrol tidak dapat dibuat.',
+        request: () => medicalRecordsApi.printControlLetter(visit.id),
+      });
+    } finally {
+      setPrintingControlLetter(false);
+    }
+  };
+
   const cancelFinalization = async () => {
     if (!visit || cancelingFinalization) return;
 
@@ -940,6 +972,9 @@ export default function EMRSheetPage() {
       updateVisit={updateVisit}
       onBack={() => navigate(`/emr/${visit.id}`)}
       onFinalizeVisit={(payload) => finalizeVisit(payload, { saveSelectedRecord: false })}
+      onPrintControlLetter={printControlLetter}
+      showControlLetter={controlLetterAvailable}
+      printingControlLetter={printingControlLetter}
       onPrintMedicalResume={printMedicalResume}
       printingMedicalResume={printingResumeMedical}
       onCancelFinalization={cancelFinalization}
@@ -971,6 +1006,9 @@ export default function EMRSheetPage() {
         updateVisit={updateVisit}
         onBack={() => navigate(`/emr/${visit.id}`)}
         onFinalizeVisit={(payload) => finalizeVisit(payload, { saveSelectedRecord: false })}
+        onPrintControlLetter={printControlLetter}
+        showControlLetter={controlLetterAvailable}
+        printingControlLetter={printingControlLetter}
         onPrintMedicalResume={printMedicalResume}
         printingMedicalResume={printingResumeMedical}
         onCancelFinalization={cancelFinalization}
@@ -993,6 +1031,9 @@ export default function EMRSheetPage() {
         outcomeRecord={latestOutcomeRecord}
         onBack={() => navigate(`/emr/${visit.id}`)}
         onFinalizeVisit={(payload) => finalizeVisit(payload)}
+        onPrintControlLetter={printControlLetter}
+        showControlLetter={controlLetterAvailable}
+        printingControlLetter={printingControlLetter}
         onUpdateConsent={updateInformedConsent}
         onPrintMedicalResume={printMedicalResume}
         printingMedicalResume={printingResumeMedical}
@@ -1011,7 +1052,7 @@ export default function EMRSheetPage() {
           visit={visit}
           completedSections={completedSections}
           isLocked={Boolean(workspaceLocked)}
-          sticky={false}
+          sticky
           sectionLabel={activeSheetConfig.label}
           allergyInfo={allergyInfo}
           onBack={() => navigate(`/emr/${visit.id}`)}
@@ -1025,6 +1066,11 @@ export default function EMRSheetPage() {
             </Button>
           ) : visit.status === 'completed' ? (
             <FinalizedVisitActions
+              visitId={visit.id}
+              showControlLetter={controlLetterAvailable}
+              controlWhatsAppPayload={controlWhatsAppPayload}
+              onPrintControlLetter={printControlLetter}
+              printingControlLetter={printingControlLetter}
               onPrintMedicalResume={printMedicalResume}
               printingMedicalResume={printingResumeMedical}
               onCancelFinalization={cancelFinalization}
@@ -1056,7 +1102,7 @@ export default function EMRSheetPage() {
         visit={visit}
         completedSections={completedSections}
         isLocked={Boolean(workspaceLocked)}
-        sticky={false}
+        sticky
         sectionLabel={activeSheetConfig.label}
         allergyInfo={allergyInfo}
         onBack={() => navigate(`/emr/${visit.id}`)}
@@ -1076,6 +1122,11 @@ export default function EMRSheetPage() {
           </Button>
         ) : visit.status === 'completed' ? (
           <FinalizedVisitActions
+            visitId={visit.id}
+            showControlLetter={controlLetterAvailable}
+            controlWhatsAppPayload={controlWhatsAppPayload}
+            onPrintControlLetter={printControlLetter}
+            printingControlLetter={printingControlLetter}
             onPrintMedicalResume={printMedicalResume}
             printingMedicalResume={printingResumeMedical}
             onCancelFinalization={cancelFinalization}

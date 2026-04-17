@@ -47,6 +47,27 @@ type satusehatVisitAutoSyncResult struct {
 
 var satusehatAutoSyncInFlight sync.Map
 
+var satusehatAutoSyncManagedResourceTypes = []string{
+	"Organization",
+	"Location",
+	"Patient",
+	"Practitioner",
+	"Encounter",
+	"Observation",
+	"Condition",
+	"ClinicalImpression",
+	"LaboratoryOrderItem",
+	"RadiologyOrderItem",
+	"Procedure",
+	"MedicationRequest",
+	"MedicationDispense",
+	"CarePlan",
+	"Goal",
+	"AllergyIntolerance",
+	"Composition",
+	"FamilyMemberHistory",
+}
+
 func parseTruthyFlag(value string) bool {
 	normalized := strings.TrimSpace(strings.ToLower(value))
 	return normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "y"
@@ -80,6 +101,19 @@ func buildQueuedSATUSEHATAutoSyncResult(visitID uint, trigger, mode string) satu
 		UnsentResources: []satusehatAutoSyncResourceResult{},
 		Resources:       []satusehatAutoSyncResourceResult{},
 	}
+}
+
+func buildSATUSEHATAutoSyncSkippedResources(message string) []satusehatAutoSyncResourceResult {
+	resources := make([]satusehatAutoSyncResourceResult, 0, len(satusehatAutoSyncManagedResourceTypes))
+	for _, resourceType := range satusehatAutoSyncManagedResourceTypes {
+		resources = append(resources, satusehatAutoSyncResourceResult{
+			ResourceType: resourceType,
+			Status:       "skipped",
+			Message:      message,
+		})
+	}
+
+	return resources
 }
 
 var satusehatAutoSyncResourceOrder = map[string]int{
@@ -683,7 +717,7 @@ func PreviewSATUSEHATVitalSigns(c *gin.Context) {
 	}
 
 	var record models.MedicalRecord
-	if err := database.DB.Preload("Patient").Preload("Visit").Preload("Doctor").First(&record, recordID).Error; err != nil {
+	if err := database.DB.Preload("Patient").Preload("Visit").Preload("Doctor").Preload("Doctor.Employee").First(&record, recordID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Rekam medis tidak ditemukan"})
 		return
 	}
@@ -706,7 +740,7 @@ func SyncSATUSEHATVitalSigns(c *gin.Context) {
 	}
 
 	var record models.MedicalRecord
-	if err := database.DB.Preload("Patient").Preload("Visit").Preload("Doctor").First(&record, recordID).Error; err != nil {
+	if err := database.DB.Preload("Patient").Preload("Visit").Preload("Doctor").Preload("Doctor.Employee").First(&record, recordID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Rekam medis tidak ditemukan"})
 		return
 	}
@@ -959,6 +993,7 @@ func loadMedicalRecordForClinicalImpression(recordID int) (models.MedicalRecord,
 		Preload("Patient").
 		Preload("Visit").
 		Preload("Doctor").
+		Preload("Doctor.Employee").
 		Preload("Diagnoses").
 		Preload("Diagnoses.ICD10").
 		First(&record, recordID).Error
@@ -1189,10 +1224,15 @@ func loadLaboratoryItemForSATUSEHAT(itemID int) (models.LaboratoryOrderItem, err
 		Preload("ParameterResults", func(db *gorm.DB) *gorm.DB {
 			return db.Order("sort_order ASC").Order("id ASC")
 		}).
+		Preload("ResultByUser").
+		Preload("ResultByUser.Employee").
 		Preload("MedicalRecord").
 		Preload("MedicalRecord.Patient").
 		Preload("MedicalRecord.Visit").
 		Preload("MedicalRecord.Doctor").
+		Preload("MedicalRecord.Doctor.Employee").
+		Preload("MedicalRecord.LaboratoryProcessor").
+		Preload("MedicalRecord.LaboratoryProcessor.Employee").
 		First(&item, itemID).Error
 	return item, err
 }
@@ -1365,10 +1405,15 @@ func loadRadiologyItemForSATUSEHAT(itemID int) (models.RadiologyOrderItem, error
 		Preload("ParameterResults", func(db *gorm.DB) *gorm.DB {
 			return db.Order("sort_order ASC").Order("id ASC")
 		}).
+		Preload("ResultByUser").
+		Preload("ResultByUser.Employee").
 		Preload("MedicalRecord").
 		Preload("MedicalRecord.Patient").
 		Preload("MedicalRecord.Visit").
 		Preload("MedicalRecord.Doctor").
+		Preload("MedicalRecord.Doctor.Employee").
+		Preload("MedicalRecord.RadiologyProcessor").
+		Preload("MedicalRecord.RadiologyProcessor.Employee").
 		First(&item, itemID).Error
 	return item, err
 }
@@ -1873,6 +1918,7 @@ func loadMedicalActionForSATUSEHAT(actionID int) (models.MedicalAction, error) {
 		Preload("MedicalRecord.Patient").
 		Preload("MedicalRecord.Visit").
 		Preload("MedicalRecord.Doctor").
+		Preload("MedicalRecord.Doctor.Employee").
 		First(&action, actionID).Error
 	return action, err
 }
@@ -1883,14 +1929,25 @@ func loadMedicalRecordForSATUSEHAT(recordID int) (models.MedicalRecord, error) {
 		Preload("Patient").
 		Preload("Visit").
 		Preload("Doctor").
+		Preload("Doctor.Employee").
 		Preload("Diagnoses").
 		Preload("Diagnoses.ICD10").
 		Preload("LaboratoryOrderItems").
+		Preload("LaboratoryOrderItems.ResultByUser").
+		Preload("LaboratoryOrderItems.ResultByUser.Employee").
 		Preload("RadiologyOrderItems").
+		Preload("RadiologyOrderItems.ResultByUser").
+		Preload("RadiologyOrderItems.ResultByUser.Employee").
 		Preload("Actions").
 		Preload("Actions.MedicalService").
 		Preload("Prescriptions").
 		Preload("Prescriptions.Medicine").
+		Preload("PrescriptionProcessor").
+		Preload("PrescriptionProcessor.Employee").
+		Preload("LaboratoryProcessor").
+		Preload("LaboratoryProcessor.Employee").
+		Preload("RadiologyProcessor").
+		Preload("RadiologyProcessor.Employee").
 		First(&record, recordID).Error
 	return record, err
 }
@@ -1901,14 +1958,25 @@ func loadMedicalRecordsForSATUSEHATVisit(visitID uint) ([]models.MedicalRecord, 
 		Preload("Patient").
 		Preload("Visit").
 		Preload("Doctor").
+		Preload("Doctor.Employee").
 		Preload("Diagnoses").
 		Preload("Diagnoses.ICD10").
 		Preload("LaboratoryOrderItems").
+		Preload("LaboratoryOrderItems.ResultByUser").
+		Preload("LaboratoryOrderItems.ResultByUser.Employee").
 		Preload("RadiologyOrderItems").
+		Preload("RadiologyOrderItems.ResultByUser").
+		Preload("RadiologyOrderItems.ResultByUser.Employee").
 		Preload("Actions").
 		Preload("Actions.MedicalService").
 		Preload("Prescriptions").
 		Preload("Prescriptions.Medicine").
+		Preload("PrescriptionProcessor").
+		Preload("PrescriptionProcessor.Employee").
+		Preload("LaboratoryProcessor").
+		Preload("LaboratoryProcessor.Employee").
+		Preload("RadiologyProcessor").
+		Preload("RadiologyProcessor.Employee").
 		Where("visit_id = ? AND status <> ?", visitID, "cancelled").
 		Order("updated_at DESC").
 		Order("created_at DESC").
@@ -1944,26 +2012,16 @@ func runSATUSEHATAutoSyncForVisit(ctx context.Context, visitID uint, trigger str
 	config, err := satusehat.LoadConfig()
 	if err != nil {
 		result.Error = "Gagal memuat konfigurasi SATUSEHAT"
-		result.Resources = append(result.Resources,
-			satusehatAutoSyncResourceResult{ResourceType: "Organization", Status: "skipped", Message: "Konfigurasi SATUSEHAT belum siap"},
-			satusehatAutoSyncResourceResult{ResourceType: "Location", Status: "skipped", Message: "Konfigurasi SATUSEHAT belum siap"},
-			satusehatAutoSyncResourceResult{ResourceType: "Patient", Status: "skipped", Message: "Konfigurasi SATUSEHAT belum siap"},
-			satusehatAutoSyncResourceResult{ResourceType: "Practitioner", Status: "skipped", Message: "Konfigurasi SATUSEHAT belum siap"},
-			satusehatAutoSyncResourceResult{ResourceType: "Encounter", Status: "skipped", Message: "Konfigurasi SATUSEHAT belum siap"},
-			satusehatAutoSyncResourceResult{ResourceType: "Observation", Status: "skipped", Message: "Konfigurasi SATUSEHAT belum siap"},
-			satusehatAutoSyncResourceResult{ResourceType: "Condition", Status: "skipped", Message: "Konfigurasi SATUSEHAT belum siap"},
-			satusehatAutoSyncResourceResult{ResourceType: "ClinicalImpression", Status: "skipped", Message: "Konfigurasi SATUSEHAT belum siap"},
-			satusehatAutoSyncResourceResult{ResourceType: "LaboratoryOrderItem", Status: "skipped", Message: "Konfigurasi SATUSEHAT belum siap"},
-			satusehatAutoSyncResourceResult{ResourceType: "RadiologyOrderItem", Status: "skipped", Message: "Konfigurasi SATUSEHAT belum siap"},
-			satusehatAutoSyncResourceResult{ResourceType: "Procedure", Status: "skipped", Message: "Konfigurasi SATUSEHAT belum siap"},
-			satusehatAutoSyncResourceResult{ResourceType: "MedicationRequest", Status: "skipped", Message: "Konfigurasi SATUSEHAT belum siap"},
-			satusehatAutoSyncResourceResult{ResourceType: "MedicationDispense", Status: "skipped", Message: "Konfigurasi SATUSEHAT belum siap"},
-			satusehatAutoSyncResourceResult{ResourceType: "CarePlan", Status: "skipped", Message: "Konfigurasi SATUSEHAT belum siap"},
-			satusehatAutoSyncResourceResult{ResourceType: "Goal", Status: "skipped", Message: "Konfigurasi SATUSEHAT belum siap"},
-			satusehatAutoSyncResourceResult{ResourceType: "AllergyIntolerance", Status: "skipped", Message: "Konfigurasi SATUSEHAT belum siap"},
-			satusehatAutoSyncResourceResult{ResourceType: "Composition", Status: "skipped", Message: "Konfigurasi SATUSEHAT belum siap"},
-			satusehatAutoSyncResourceResult{ResourceType: "FamilyMemberHistory", Status: "skipped", Message: "Konfigurasi SATUSEHAT belum siap"},
-		)
+		result.Resources = append(result.Resources, buildSATUSEHATAutoSyncSkippedResources("Konfigurasi SATUSEHAT belum siap")...)
+		summarizeSATUSEHATAutoSyncResult(&result)
+		return result
+	}
+
+	if err := config.EnsureEnabled(); err != nil {
+		result.Mode = config.ActiveMode
+		result.JobStatus = "disabled"
+		result.Error = err.Error()
+		result.Resources = append(result.Resources, buildSATUSEHATAutoSyncSkippedResources(err.Error())...)
 		summarizeSATUSEHATAutoSyncResult(&result)
 		return result
 	}
@@ -1971,7 +2029,7 @@ func runSATUSEHATAutoSyncForVisit(ctx context.Context, visitID uint, trigger str
 	result.Mode = config.ActiveMode
 
 	var visit models.Visit
-	if err := database.DB.Preload("Patient").Preload("Doctor").Preload("Polyclinic").First(&visit, visitID).Error; err != nil {
+	if err := database.DB.Preload("Patient").Preload("Doctor").Preload("Doctor.Employee").Preload("Polyclinic").First(&visit, visitID).Error; err != nil {
 		result.Error = "Gagal memuat data kunjungan"
 		result.Resources = append(result.Resources,
 			satusehatAutoSyncResourceResult{ResourceType: "Organization", Status: "failed", Message: "Data kunjungan tidak dapat dimuat"},
@@ -2018,8 +2076,17 @@ func runSATUSEHATAutoSyncForVisit(ctx context.Context, visitID uint, trigger str
 	practitionerResult := autoSyncPractitionerForVisit(ctx, config, visit.Doctor)
 	if strings.TrimSpace(practitionerResult.ResourceID) != "" {
 		visit.Doctor.SatusehatPractitionerID = strings.TrimSpace(practitionerResult.ResourceID)
+		if visit.Doctor.EmployeeID != nil && *visit.Doctor.EmployeeID != 0 {
+			visit.Doctor.Employee.SatusehatPractitionerID = strings.TrimSpace(practitionerResult.ResourceID)
+		}
 	}
-	practitionerReady := strings.TrimSpace(visit.Doctor.SatusehatPractitionerID) != "" || isSATUSEHATAutoSyncResourceReady(practitionerResult)
+	practitionerReady := satusehat.ResolveDoctorPractitionerActor(visit.Doctor).Ready() || isSATUSEHATAutoSyncResourceReady(practitionerResult)
+
+	// Persist intermediate progress after foundation resources
+	result.Resources = append(result.Resources, organizationResult, locationResult, patientResult, practitionerResult)
+	summarizeSATUSEHATAutoSyncResult(&result)
+	persistSATUSEHATAutoSyncSnapshot(result)
+	result.Resources = result.Resources[:0]
 
 	encounterPrerequisites := make([]string, 0, 4)
 	if !patientReady {
@@ -2073,6 +2140,7 @@ func runSATUSEHATAutoSyncForVisit(ctx context.Context, visitID uint, trigger str
 		return result
 	}
 
+	// Persist intermediate progress after Encounter phase
 	result.Resources = append(result.Resources,
 		organizationResult,
 		locationResult,
@@ -2080,6 +2148,8 @@ func runSATUSEHATAutoSyncForVisit(ctx context.Context, visitID uint, trigger str
 		practitionerResult,
 		encounterResult,
 	)
+	summarizeSATUSEHATAutoSyncResult(&result)
+	persistSATUSEHATAutoSyncSnapshot(result)
 
 	if encounterReady {
 		result.Resources = append(result.Resources,
@@ -2089,14 +2159,22 @@ func runSATUSEHATAutoSyncForVisit(ctx context.Context, visitID uint, trigger str
 		diagnosisResults := autoSyncDiagnosesFromVisitRecords(ctx, config, records)
 		result.Resources = append(result.Resources, diagnosisResults...)
 
-		// Re-sync Encounter with diagnosis references after Condition resources are submitted
-		if hasSATUSEHATAutoSyncReadyItem(diagnosisResults) && strings.TrimSpace(visit.SatusehatEncounterID) != "" {
+		// Always finalize Encounter via PUT after Conditions phase:
+		// - Updates status from "in-progress" to "finished"
+		// - Attaches diagnosis[] references for synced Condition resources
+		// This resolves the chicken-and-egg: initial POST uses "in-progress" (no diagnosis required),
+		// then this PUT sets "finished" + diagnosis after Conditions are synced.
+		if strings.TrimSpace(visit.SatusehatEncounterID) != "" {
 			// Use a fresh context without skip-existing so the Encounter is actually PUT-updated
 			encounterUpdateResult := autoSyncEncounterForVisit(context.Background(), config, visit)
 			encounterUpdateResult.ResourceType = "Encounter"
-			encounterUpdateResult.Message = strings.Replace(encounterUpdateResult.Message, "auto-sync", "auto-sync (update diagnosis)", 1)
+			encounterUpdateResult.Message = strings.Replace(encounterUpdateResult.Message, "auto-sync", "auto-sync (finalize)", 1)
 			result.Resources = append(result.Resources, encounterUpdateResult)
 		}
+
+		// Persist after diagnosis + encounter finalize
+		summarizeSATUSEHATAutoSyncResult(&result)
+		persistSATUSEHATAutoSyncSnapshot(result)
 
 		if hasSATUSEHATAutoSyncReadyItem(diagnosisResults) {
 			result.Resources = append(result.Resources,
@@ -2151,6 +2229,10 @@ func runSATUSEHATAutoSyncForVisit(ctx context.Context, visitID uint, trigger str
 		result.Resources = append(result.Resources,
 			autoSyncCompositionFromVisitRecords(ctx, config, records),
 		)
+
+		// Persist after remaining clinical resources
+		summarizeSATUSEHATAutoSyncResult(&result)
+		persistSATUSEHATAutoSyncSnapshot(result)
 	} else {
 		result.Resources = append(result.Resources,
 			buildSATUSEHATDependencySkipped("Observation", "Encounter"),
@@ -2437,11 +2519,12 @@ func autoSyncPatientForVisit(ctx context.Context, config satusehat.Config, patie
 }
 
 func autoSyncPractitionerForVisit(ctx context.Context, config satusehat.Config, doctor models.Doctor) satusehatAutoSyncResourceResult {
+	practitionerActor := satusehat.ResolveDoctorPractitionerActor(doctor)
 	output := satusehatAutoSyncResourceResult{
 		ResourceType:     "Practitioner",
 		Status:           "skipped",
 		Message:          "Practitioner belum siap disinkronkan",
-		ExistingResource: strings.TrimSpace(doctor.SatusehatPractitionerID),
+		ExistingResource: strings.TrimSpace(practitionerActor.ResourceID),
 	}
 
 	preview := satusehat.BuildPractitionerPreview(doctor, config)
@@ -2478,6 +2561,11 @@ func autoSyncPractitionerForVisit(ctx context.Context, config satusehat.Config, 
 		output.ResourceID = strings.TrimSpace(lookup.ResourceID)
 		return output
 	}
+	if doctor.EmployeeID != nil && *doctor.EmployeeID != 0 {
+		if err := database.DB.Model(&models.Employee{}).Where("id = ?", *doctor.EmployeeID).Updates(updates).Error; err != nil {
+			output.Warnings = append(output.Warnings, fmt.Sprintf("Practitioner berhasil disimpan ke dokter, tetapi master pegawai gagal diperbarui: %s", err.Error()))
+		}
+	}
 
 	output.Status = "synced"
 	output.Message = "Practitioner berhasil auto-sync"
@@ -2489,7 +2577,14 @@ func autoSyncEncounterForVisit(ctx context.Context, config satusehat.Config, vis
 	output := satusehatAutoSyncResourceResult{ResourceType: "Encounter", Status: "skipped", Message: "Encounter belum siap disinkronkan"}
 	output.ExistingResource = strings.TrimSpace(visit.SatusehatEncounterID)
 
-	preview := satusehat.BuildEncounterPreview(visit, config)
+	// Use initial preview (in-progress status, no diagnosis) for first POST;
+	// use full preview (finished status + diagnosis) for PUT updates.
+	var preview satusehat.ResourcePreview
+	if strings.TrimSpace(visit.SatusehatEncounterID) == "" {
+		preview = satusehat.BuildEncounterInitialPreview(visit, config)
+	} else {
+		preview = satusehat.BuildEncounterPreview(visit, config)
+	}
 	if !preview.Ready {
 		output.Message = "Encounter belum siap dikirim ke SATUSEHAT"
 		output.Warnings = preview.Warnings
@@ -4294,6 +4389,7 @@ func loadPrescriptionForSATUSEHAT(prescriptionID int) (models.Prescription, erro
 		Preload("MedicalRecord.Patient").
 		Preload("MedicalRecord.Visit").
 		Preload("MedicalRecord.Doctor").
+		Preload("MedicalRecord.Doctor.Employee").
 		First(&prescription, prescriptionID).Error
 	return prescription, err
 }
@@ -4306,10 +4402,15 @@ func loadDispensingForSATUSEHAT(dispensingID int) (models.Dispensing, error) {
 		Preload("Prescription").
 		Preload("Prescription.Medicine").
 		Preload("Prescription.Medicine.Unit").
+		Preload("Dispenser").
+		Preload("Dispenser.Employee").
 		Preload("MedicalRecord").
 		Preload("MedicalRecord.Patient").
 		Preload("MedicalRecord.Visit").
 		Preload("MedicalRecord.Doctor").
+		Preload("MedicalRecord.Doctor.Employee").
+		Preload("MedicalRecord.PrescriptionProcessor").
+		Preload("MedicalRecord.PrescriptionProcessor.Employee").
 		First(&dispensing, dispensingID).Error
 	return dispensing, err
 }
@@ -4619,12 +4720,35 @@ func PreviewSATUSEHATPractitioner(c *gin.Context) {
 	}
 
 	var doctor models.Doctor
-	if err := database.DB.Preload("Polyclinics").First(&doctor, doctorID).Error; err != nil {
+	if err := database.DB.Preload("Employee").Preload("Polyclinics").First(&doctor, doctorID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Dokter tidak ditemukan"})
 		return
 	}
 
 	preview := satusehat.BuildPractitionerPreview(doctor, config)
+	c.JSON(http.StatusOK, gin.H{"data": preview, "config": config.PublicStatus()})
+}
+
+func PreviewSATUSEHATEmployeePractitioner(c *gin.Context) {
+	config, err := satusehat.LoadConfig()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat konfigurasi SATUSEHAT"})
+		return
+	}
+
+	employeeID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID pegawai tidak valid"})
+		return
+	}
+
+	var employee models.Employee
+	if err := database.DB.Preload("User").First(&employee, employeeID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Pegawai tidak ditemukan"})
+		return
+	}
+
+	preview := satusehat.BuildEmployeePractitionerPreview(employee, config)
 	c.JSON(http.StatusOK, gin.H{"data": preview, "config": config.PublicStatus()})
 }
 
@@ -4642,7 +4766,7 @@ func PreviewSATUSEHATEncounter(c *gin.Context) {
 	}
 
 	var visit models.Visit
-	if err := database.DB.Preload("Patient").Preload("Doctor").Preload("Polyclinic").First(&visit, visitID).Error; err != nil {
+	if err := database.DB.Preload("Patient").Preload("Doctor").Preload("Doctor.Employee").Preload("Polyclinic").First(&visit, visitID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Kunjungan tidak ditemukan"})
 		return
 	}
@@ -4875,7 +4999,7 @@ func SyncSATUSEHATPractitioner(c *gin.Context) {
 	}
 
 	var doctor models.Doctor
-	if err := database.DB.Preload("Polyclinics").First(&doctor, doctorID).Error; err != nil {
+	if err := database.DB.Preload("Employee").Preload("Polyclinics").First(&doctor, doctorID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Dokter tidak ditemukan"})
 		return
 	}
@@ -4930,6 +5054,9 @@ func SyncSATUSEHATPractitioner(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan hasil sinkronisasi dokter"})
 		return
 	}
+	if doctor.EmployeeID != nil && *doctor.EmployeeID != 0 {
+		_ = database.DB.Model(&models.Employee{}).Where("id = ?", *doctor.EmployeeID).Updates(updates).Error
+	}
 
 	doctor.SatusehatPractitionerID = lookup.ResourceID
 	doctor.SatusehatSyncedAt = &now
@@ -4939,6 +5066,98 @@ func SyncSATUSEHATPractitioner(c *gin.Context) {
 		"data": gin.H{
 			"doctor": doctor,
 			"lookup": lookup,
+		},
+	})
+}
+
+func SyncSATUSEHATEmployeePractitioner(c *gin.Context) {
+	config, err := satusehat.LoadConfig()
+	if err != nil {
+		recordSATUSEHATPreflightFailure(c, satusehat.ActivityLogEntry{
+			Operation:    "lookup",
+			ResourceType: "Practitioner",
+			Method:       http.MethodGet,
+			Endpoint:     satusehatLogEndpoint(c),
+			StatusCode:   http.StatusInternalServerError,
+			Success:      false,
+			ErrorMessage: "Gagal memuat konfigurasi SATUSEHAT",
+		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat konfigurasi SATUSEHAT"})
+		return
+	}
+
+	employeeID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID pegawai tidak valid"})
+		return
+	}
+
+	var employee models.Employee
+	if err := database.DB.Preload("User").First(&employee, employeeID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Pegawai tidak ditemukan"})
+		return
+	}
+
+	preview := satusehat.BuildEmployeePractitionerPreview(employee, config)
+	if !preview.Ready {
+		recordSATUSEHATPreflightFailure(c, satusehat.ActivityLogEntry{
+			Operation:      "lookup",
+			ResourceType:   "Practitioner",
+			Mode:           config.ActiveMode,
+			Method:         http.MethodGet,
+			Endpoint:       satusehatLogEndpoint(c),
+			StatusCode:     http.StatusUnprocessableEntity,
+			Success:        false,
+			ErrorMessage:   "Data pegawai belum siap untuk pencarian Practitioner SATUSEHAT",
+			RequestPayload: preview.Resource,
+			ResponseBody: map[string]any{
+				"error":    "Data pegawai belum siap untuk pencarian Practitioner SATUSEHAT. Isi NIK pegawai 16 digit.",
+				"warnings": preview.Warnings,
+			},
+			ResourceID: employee.SatusehatPractitionerID,
+		})
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"error":  "Data pegawai belum siap untuk pencarian Practitioner SATUSEHAT. Isi NIK pegawai 16 digit.",
+			"data":   preview,
+			"config": config.PublicStatus(),
+		})
+		return
+	}
+
+	lookup, err := satusehat.LookupPractitionerByNIK(c.Request.Context(), config, employee.NIKNumber)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error(), "data": gin.H{"preview": preview}, "config": config.PublicStatus()})
+		return
+	}
+
+	if !lookup.Found || strings.TrimSpace(lookup.ResourceID) == "" {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"error": "Practitioner SATUSEHAT tidak ditemukan dari NIK pegawai. Pastikan NIK pegawai valid dan terdaftar di Master Nakes Index.",
+			"data": gin.H{
+				"preview": preview,
+				"lookup":  lookup,
+			},
+			"config": config.PublicStatus(),
+		})
+		return
+	}
+
+	now := time.Now()
+	updates := map[string]any{"satusehat_synced_at": now, "satusehat_practitioner_id": lookup.ResourceID}
+	if err := database.DB.Model(&employee).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan hasil sinkronisasi pegawai"})
+		return
+	}
+	_ = database.DB.Model(&models.Doctor{}).Where("employee_id = ?", employee.ID).Updates(updates).Error
+
+	employee.SatusehatPractitionerID = lookup.ResourceID
+	employee.SatusehatSyncedAt = &now
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Practitioner IHS number pegawai berhasil ditemukan dan disimpan",
+		"data": gin.H{
+			"employee": employee,
+			"lookup":   lookup,
 		},
 	})
 }
@@ -4966,7 +5185,7 @@ func SyncSATUSEHATEncounter(c *gin.Context) {
 	}
 
 	var visit models.Visit
-	if err := database.DB.Preload("Patient").Preload("Doctor").Preload("Polyclinic").First(&visit, visitID).Error; err != nil {
+	if err := database.DB.Preload("Patient").Preload("Doctor").Preload("Doctor.Employee").Preload("Polyclinic").First(&visit, visitID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Kunjungan tidak ditemukan"})
 		return
 	}

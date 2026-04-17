@@ -28,7 +28,7 @@ func PrintRegistrationQueueTicket(c *gin.Context) {
 	}
 
 	hospitalInfo := getInitialAssessmentHospitalInfo()
-	pdfBytes, fileName, err := renderRegistrationQueueTicketPDF(hospitalInfo, queue, strings.TrimSpace(c.GetString("email")), time.Now())
+	pdfBytes, fileName, err := renderRegistrationQueueTicketPDF(hospitalInfo, queue, resolvePrintedByLabel(c), time.Now())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat PDF tiket antrian pendaftaran"})
 		return

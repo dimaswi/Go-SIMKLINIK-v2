@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -70,7 +71,15 @@ func UpdateSettings(c *gin.Context) {
 func UploadLogo(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded"})
+		errText := strings.ToLower(strings.TrimSpace(err.Error()))
+		switch {
+		case strings.Contains(errText, "request body too large"):
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "Uploaded file is too large"})
+		case strings.Contains(errText, "multipart"):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid multipart upload payload"})
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded"})
+		}
 		return
 	}
 
@@ -108,16 +117,21 @@ func UploadLogo(c *gin.Context) {
 	// Save to settings
 	settingKey := "app_" + uploadType
 	fileURL := "/uploads/" + filename
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
 
 	var setting models.Setting
-	result := database.DB.Where("key = ?", settingKey).First(&setting)
+	result := database.DB.WithContext(ctx).Where("key = ?", settingKey).First(&setting)
 
 	if result.Error != nil {
 		setting = models.Setting{
 			Key:   settingKey,
 			Value: fileURL,
 		}
-		database.DB.Create(&setting)
+		if err := database.DB.WithContext(ctx).Create(&setting).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save uploaded file setting"})
+			return
+		}
 	} else {
 		// Delete old file if exists
 		if setting.Value != "" {
@@ -125,7 +139,10 @@ func UploadLogo(c *gin.Context) {
 			os.Remove(oldPath)
 		}
 		setting.Value = fileURL
-		database.DB.Save(&setting)
+		if err := database.DB.WithContext(ctx).Save(&setting).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update uploaded file setting"})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{

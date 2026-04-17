@@ -34,8 +34,13 @@ var medicalRecordSections = map[string]string{
 const (
 	medicalRecordSheetKeyInitialAssessmentMedical = "pengkajian-awal-medis"
 	medicalRecordSheetKeyInitialAssessmentDental  = "pengkajian-awal-gigi"
+	medicalRecordSheetKeySurat                    = "surat"
 	medicalRecordEntryGroupPrefixMedical          = "pengkajian-awal"
 	medicalRecordEntryGroupPrefixDental           = "pengkajian-gigi"
+	medicalRecordEntryGroupPrefixSuratSakit       = "surat-sakit"
+	medicalRecordEntryGroupPrefixSuratSehat       = "surat-sehat"
+	medicalRecordEntryGroupPrefixSuratMCU         = "surat-mcu"
+	medicalRecordEntryGroupPrefixSuratButaWarna   = "surat-buta-warna"
 )
 
 var medicalRecordInitialAssessmentSectionTypes = map[string]struct{}{
@@ -47,6 +52,85 @@ var medicalRecordInitialAssessmentSectionTypes = map[string]struct{}{
 var medicalRecordInitialAssessmentSheetPrefixes = map[string]string{
 	medicalRecordSheetKeyInitialAssessmentMedical: medicalRecordEntryGroupPrefixMedical,
 	medicalRecordSheetKeyInitialAssessmentDental:  medicalRecordEntryGroupPrefixDental,
+	medicalRecordSheetKeySurat:                    medicalRecordEntryGroupPrefixSuratSakit,
+}
+
+var medicalRecordSuratTypeOrder = []string{
+	medicalRecordEntryGroupPrefixSuratSakit,
+	medicalRecordEntryGroupPrefixSuratSehat,
+	medicalRecordEntryGroupPrefixSuratMCU,
+	medicalRecordEntryGroupPrefixSuratButaWarna,
+}
+
+var medicalRecordSuratTypeLabels = map[string]string{
+	medicalRecordEntryGroupPrefixSuratSakit:     "Surat Sakit",
+	medicalRecordEntryGroupPrefixSuratSehat:     "Surat Sehat",
+	medicalRecordEntryGroupPrefixSuratMCU:       "Surat MCU",
+	medicalRecordEntryGroupPrefixSuratButaWarna: "Surat Buta Warna",
+}
+
+var medicalRecordSuratTypeFileSlugs = map[string]string{
+	medicalRecordEntryGroupPrefixSuratSakit:     "surat-sakit",
+	medicalRecordEntryGroupPrefixSuratSehat:     "surat-sehat",
+	medicalRecordEntryGroupPrefixSuratMCU:       "surat-mcu",
+	medicalRecordEntryGroupPrefixSuratButaWarna: "surat-buta-warna",
+}
+
+func normalizeSuratTypeValue(value string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(value))
+	return strings.ReplaceAll(trimmed, " ", "-")
+}
+
+func inferSuratTypeFromEntryGroupKey(entryGroupKey string) string {
+	normalized := normalizeSuratTypeValue(entryGroupKey)
+	if normalized == "" {
+		return ""
+	}
+
+	for _, prefix := range medicalRecordSuratTypeOrder {
+		if normalized == prefix || strings.HasPrefix(normalized, prefix+"-") {
+			return prefix
+		}
+	}
+
+	return ""
+}
+
+func isValidSuratEntryGroupPrefix(prefix string) bool {
+	normalized := normalizeSuratTypeValue(prefix)
+	for _, item := range medicalRecordSuratTypeOrder {
+		if normalized == item {
+			return true
+		}
+	}
+
+	return false
+}
+
+func getSuratTypeLabel(value string) string {
+	normalized := normalizeSuratTypeValue(value)
+	if !isValidSuratEntryGroupPrefix(normalized) {
+		normalized = inferSuratTypeFromEntryGroupKey(value)
+	}
+
+	if label, exists := medicalRecordSuratTypeLabels[normalized]; exists {
+		return label
+	}
+
+	return "Surat Keterangan"
+}
+
+func getSuratTypeFileSlug(value string) string {
+	normalized := normalizeSuratTypeValue(value)
+	if !isValidSuratEntryGroupPrefix(normalized) {
+		normalized = inferSuratTypeFromEntryGroupKey(value)
+	}
+
+	if slug, exists := medicalRecordSuratTypeFileSlugs[normalized]; exists {
+		return slug
+	}
+
+	return "surat-keterangan"
 }
 
 func normalizeMedicalRecordSection(section string) string {
@@ -74,6 +158,8 @@ func inferInitialAssessmentSheetKeyFromEntryGroupKey(entryGroupKey string) strin
 		return medicalRecordSheetKeyInitialAssessmentMedical
 	case trimmedEntryGroupKey == medicalRecordEntryGroupPrefixDental, strings.HasPrefix(trimmedEntryGroupKey, medicalRecordEntryGroupPrefixDental+"-"):
 		return medicalRecordSheetKeyInitialAssessmentDental
+	case inferSuratTypeFromEntryGroupKey(trimmedEntryGroupKey) != "":
+		return medicalRecordSheetKeySurat
 	default:
 		return ""
 	}
@@ -101,18 +187,28 @@ func resolveInitialAssessmentSheetKey(sheetKey string, entryGroupValue string) s
 }
 
 func resolveInitialAssessmentEntryGroupPrefix(sheetKey string, entryGroupPrefix string) string {
+	normalizedEntryGroupPrefix := normalizeMedicalRecordEntryGroupPrefix(entryGroupPrefix)
 	resolvedSheetKey := resolveInitialAssessmentSheetKey(sheetKey, entryGroupPrefix)
+	if resolvedSheetKey == medicalRecordSheetKeySurat {
+		if inferredSuratType := inferSuratTypeFromEntryGroupKey(normalizedEntryGroupPrefix); inferredSuratType != "" {
+			return inferredSuratType
+		}
+		return medicalRecordEntryGroupPrefixSuratSakit
+	}
+
 	if prefix, exists := medicalRecordInitialAssessmentSheetPrefixes[resolvedSheetKey]; exists {
 		return prefix
 	}
 
-	return normalizeMedicalRecordEntryGroupPrefix(entryGroupPrefix)
+	return normalizedEntryGroupPrefix
 }
 
 func getInitialAssessmentSheetLabel(sheetKey string) string {
 	switch normalizeMedicalRecordSheetKey(sheetKey) {
 	case medicalRecordSheetKeyInitialAssessmentDental:
 		return "Pengkajian Awal Gigi"
+	case medicalRecordSheetKeySurat:
+		return "Surat"
 	default:
 		return "Pengkajian Awal Medis"
 	}
@@ -122,8 +218,19 @@ func getInitialAssessmentSheetFileSlug(sheetKey string) string {
 	switch normalizeMedicalRecordSheetKey(sheetKey) {
 	case medicalRecordSheetKeyInitialAssessmentDental:
 		return medicalRecordSheetKeyInitialAssessmentDental
+	case medicalRecordSheetKeySurat:
+		return medicalRecordSheetKeySurat
 	default:
 		return medicalRecordSheetKeyInitialAssessmentMedical
+	}
+}
+
+func getMedicalRecordSectionTypesForSheet(sheetKey string) []string {
+	switch normalizeMedicalRecordSheetKey(sheetKey) {
+	case medicalRecordSheetKeySurat:
+		return []string{"assessment", "outcome"}
+	default:
+		return []string{"anamnesis", "physical_exam", "assessment"}
 	}
 }
 
@@ -251,9 +358,9 @@ func buildMedicalRecordDraftEntry(visit models.Visit, sectionType string, allerg
 }
 
 func createInitialAssessmentEntryRecords(visit models.Visit, sheetKey string, entryGroupPrefix string) ([]models.MedicalRecord, error) {
-	sections := []string{"anamnesis", "physical_exam", "assessment"}
-	allergyNotes := getPatientAllergyNotes(visit.PatientID)
 	resolvedSheetKey := resolveInitialAssessmentSheetKey(sheetKey, entryGroupPrefix)
+	sections := getMedicalRecordSectionTypesForSheet(resolvedSheetKey)
+	allergyNotes := getPatientAllergyNotes(visit.PatientID)
 	entryGroupKey := generateMedicalRecordEntryGroupKey(resolveInitialAssessmentEntryGroupPrefix(resolvedSheetKey, entryGroupPrefix))
 
 	tx := database.DB.Begin()
@@ -614,7 +721,7 @@ func CreateInitialAssessmentEntry(c *gin.Context) {
 	}
 
 	if visit.Status == "completed" || visit.Status == "cancelled" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Kunjungan sudah ditutup, tidak bisa menambah entri pengkajian awal"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Kunjungan sudah ditutup, tidak bisa menambah entri lembar rekam medis"})
 		return
 	}
 
@@ -624,7 +731,7 @@ func CreateInitialAssessmentEntry(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"data": records, "message": "Entri pengkajian awal berhasil dibuat"})
+	c.JSON(http.StatusCreated, gin.H{"data": records, "message": "Entri lembar rekam medis berhasil dibuat"})
 }
 
 type UpdateMedicalRecordRequest struct {
@@ -1000,6 +1107,10 @@ func upsertOutcomeMedicalRecordForVisit(tx *gorm.DB, visit models.Visit, req Fin
 	followUpAt, err := parseMedicalRecordFollowUpAt(req.FollowUpAt)
 	if err != nil {
 		return err
+	}
+
+	if normalizeMedicalRecordSection(req.Disposition) == "kontrol" && (followUpAt == nil || followUpAt.IsZero()) {
+		return errors.New("Tanggal kontrol wajib diisi untuk disposition kontrol")
 	}
 
 	var outcomeRecord models.MedicalRecord
@@ -1596,6 +1707,18 @@ func CancelFinalizeMedicalRecordVisit(c *gin.Context) {
 		return
 	}
 
+	if err := tx.Model(&models.DocumentSignatureRequest{}).
+		Where("visit_id = ? AND status IN ?", visit.ID, []string{"pending", "signed"}).
+		Updates(map[string]any{
+			"status":           "revoked",
+			"responded_at":     time.Now(),
+			"rejection_reason": "Finalisasi kunjungan dibatalkan sehingga request TTE harus diajukan ulang.",
+		}).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	if err := createVisitFinalizationLog(tx, visit.ID, "unfinalized", actor, visitStatusBefore, "in_progress", queueStatusBefore, "in_consultation", "Finalisasi kunjungan dibatalkan"); err != nil {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -1653,6 +1776,16 @@ func AddDiagnosis(c *gin.Context) {
 	var req DiagnosisRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var icd models.ICD10
+	if err := database.DB.First(&icd, req.ICD10ID).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Kode diagnosis tidak ditemukan"})
+		return
+	}
+	if strings.TrimSpace(icd.System) != "" && !strings.EqualFold(strings.TrimSpace(icd.System), "ICD10_2010_IM") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Diagnosis hanya boleh menggunakan kode ICD-10"})
 		return
 	}
 

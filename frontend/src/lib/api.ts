@@ -17,9 +17,10 @@ export function resolveAssetUrl(path?: string | null) {
 
 export const api = axios.create({
   baseURL: API_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+});
+
+export const publicApi = axios.create({
+  baseURL: API_URL,
 });
 
 // Request interceptor to add token
@@ -76,13 +77,35 @@ export interface User {
 }
 
 export interface LoginRequest {
-  email: string;
+  username: string;
   password: string;
 }
 
 export interface LoginResponse {
   token: string;
   user: User;
+}
+
+export interface TteVerificationResult {
+  is_valid: boolean;
+  status_label: string;
+  status_tone: string;
+  title: string;
+  description: string;
+  hospital_name: string;
+  hospital_logo_url: string;
+  hospital_website: string;
+  document_label: string;
+  document_key: string;
+  signer_name: string;
+  signed_at_label: string;
+  visit_number: string;
+  patient_name: string;
+  document_reference: string;
+  checked_at_label: string;
+  verification_hash: string;
+  guidance: string;
+  reason: string;
 }
 
 export const authApi = {
@@ -93,9 +116,17 @@ export const authApi = {
     api.get<User>('/auth/profile'),
 };
 
+export const publicTteApi = {
+  verify: (token: string) =>
+    publicApi.post<{ data: TteVerificationResult }>('/tte/verify', { token }),
+};
+
 export const usersApi = {
-  getAll: () => 
-    api.get<{ data: User[] }>('/users'),
+  getAll: (params?: string) => 
+    api.get<{ data: User[] }>(params ? `/users?${params}` : '/users'),
+
+  getSummary: () =>
+    api.get<{ data: UserListSummary }>('/users/summary'),
   
   getById: (id: number) => 
     api.get<{ data: User }>(`/users/${id}`),
@@ -156,22 +187,119 @@ export const settingsApi = {
       responseType: 'blob',
     }),
 
+  printTermsAndConditionsPdf: () =>
+    api.get('/settings/terms-and-conditions/pdf', {
+      responseType: 'blob',
+    }),
+
   uploadLogo: (file: File, type: 'logo' | 'favicon' | 'print_logo') => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('type', type);
     return api.post('/settings/upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+      timeout: 95000,
     });
   },
+};
+
+export interface SystemBackupSettings {
+  auto_enabled: boolean;
+  cron_expression: string;
+  retention_days: number;
+  include_uploads: boolean;
+  storage_path: string;
+  uploads_path: string;
+  running: boolean;
+  next_run_at?: string;
+  last_started_at?: string;
+  last_finished_at?: string;
+  last_status: string;
+  last_message: string;
+  last_run_key?: string;
+  last_trigger_source?: string;
+  last_duration_ms: number;
+}
+
+export interface SystemBackupStorageSummary {
+  path: string;
+  exists: boolean;
+  size_bytes: number;
+  file_count: number;
+  last_file_at?: string;
+}
+
+export interface SystemBackupDiskUsage {
+  path: string;
+  mountpoint: string;
+  total_bytes: number;
+  used_bytes: number;
+  free_bytes: number;
+  used_percent: number;
+}
+
+export interface SystemBackupRunSummary {
+  run_key: string;
+  trigger_source: string;
+  status: string;
+  started_at: string;
+  finished_at?: string;
+  duration_ms: number;
+  completed_files: number;
+  failed_files: number;
+  include_uploads: boolean;
+  message: string;
+}
+
+export interface SystemBackupFile {
+  id: number;
+  run_key: string;
+  backup_type: string;
+  trigger_source: string;
+  status: string;
+  file_name: string;
+  relative_path: string;
+  size_bytes: number;
+  error_message: string;
+  triggered_by_user_id?: number | null;
+  triggered_by_user?: User | null;
+  completed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SystemBackupOverview {
+  settings: SystemBackupSettings;
+  disk_usage?: SystemBackupDiskUsage;
+  backup_storage: SystemBackupStorageSummary;
+  uploads_storage: SystemBackupStorageSummary;
+  latest_run?: SystemBackupRunSummary;
+  recent_files: SystemBackupFile[];
+}
+
+export const systemBackupsApi = {
+  getOverview: () =>
+    api.get<{ data: SystemBackupOverview }>('/system-backups/overview'),
+
+  getFiles: (page = 1, perPage = 20) =>
+    api.get<PaginatedResponse<SystemBackupFile>>(`/system-backups/files?page=${page}&per_page=${perPage}`),
+
+  runNow: () =>
+    api.post<{ data: SystemBackupRunSummary; message: string }>('/system-backups/run'),
+
+  updateSettings: (data: Record<string, string>) =>
+    api.put<{ data: SystemBackupSettings; message: string }>('/system-backups/settings', data),
+
+  downloadFile: (id: number) =>
+    api.get(`/system-backups/files/${id}/download`, {
+      responseType: 'blob',
+    }),
 };
 
 export type SatusehatResourceKey =
   | 'organization'
   | 'location'
   | 'patient'
+  | 'employee-practitioner'
   | 'practitioner'
   | 'encounter'
   | 'vital-signs'
@@ -189,6 +317,8 @@ export type SatusehatResourceKey =
   | 'dispensing';
 
 type SatusehatStatusResponse = {
+  enabled: boolean;
+  disabled_reason: string;
   active_mode: 'sandbox' | 'production' | string;
   auth_url: string;
   fhir_url: string;
@@ -227,98 +357,173 @@ export interface SatusehatPrerequisite {
   next_step?: string;
 }
 
+export type BpjsDomainKey = 'antrean' | 'pcare';
+
+export interface BpjsDomainStatus {
+  domain: BpjsDomainKey;
+  label: string;
+  enabled: boolean;
+  disabled_reason: string;
+  base_url: string;
+  cons_id_configured: boolean;
+  secret_key_configured: boolean;
+  user_key_configured: boolean;
+  missing_fields: string[];
+  ready: boolean;
+}
+
+export interface BpjsStatusResponse {
+  provider: string;
+  enabled_domains: number;
+  ready_domains: number;
+  total_domains: number;
+  domains: Record<BpjsDomainKey, BpjsDomainStatus>;
+}
+
+export interface BpjsLog {
+  id: number;
+  created_at: string;
+  updated_at: string;
+  domain: BpjsDomainKey;
+  direction: string;
+  operation: string;
+  method: string;
+  endpoint: string;
+  status_code: number;
+  success: boolean;
+  error_message: string;
+  request_payload: string;
+  response_body: string;
+}
+
+export interface BpjsConnectionTestResult {
+  domain: BpjsDomainKey;
+  label: string;
+  endpoint: string;
+  ready: boolean;
+  reachable: boolean;
+  status_code: number;
+  message: string;
+  checked_at: string;
+  checked_mode: string;
+  host: string;
+  note: string;
+  response_preview?: string;
+}
+
+export interface BpjsReferencePoli {
+  kodepoli: string;
+  namapoli: string;
+  kdsubspesialis?: string;
+  nmsubspesialis?: string;
+}
+
+export interface BpjsReferenceDoctor {
+  kodedokter: string;
+  namadokter: string;
+  jampraktek?: string;
+  kapasitas?: number;
+}
+
+const satusehatApiBasePath = '/integrations/bridge';
+const bpjsApiBasePath = '/integrations/bridge/bpjs';
+
 const satusehatResourcePaths: Record<
   SatusehatResourceKey,
   { preview: (id: number | string) => string; sync: (id: number | string) => string }
 > = {
   organization: {
-    preview: (id) => `/satusehat/organizations/${id}/preview`,
-    sync: (id) => `/satusehat/organizations/${id}/sync`,
+    preview: (id) => `${satusehatApiBasePath}/organizations/${id}/preview`,
+    sync: (id) => `${satusehatApiBasePath}/organizations/${id}/sync`,
   },
   location: {
-    preview: (id) => `/satusehat/locations/${id}/preview`,
-    sync: (id) => `/satusehat/locations/${id}/sync`,
+    preview: (id) => `${satusehatApiBasePath}/locations/${id}/preview`,
+    sync: (id) => `${satusehatApiBasePath}/locations/${id}/sync`,
   },
   patient: {
-    preview: (id) => `/satusehat/patients/${id}/preview`,
-    sync: (id) => `/satusehat/patients/${id}/sync`,
+    preview: (id) => `${satusehatApiBasePath}/patients/${id}/preview`,
+    sync: (id) => `${satusehatApiBasePath}/patients/${id}/sync`,
+  },
+  'employee-practitioner': {
+    preview: (id) => `${satusehatApiBasePath}/employees/${id}/practitioner/preview`,
+    sync: (id) => `${satusehatApiBasePath}/employees/${id}/practitioner/sync`,
   },
   practitioner: {
-    preview: (id) => `/satusehat/practitioners/${id}/preview`,
-    sync: (id) => `/satusehat/practitioners/${id}/sync`,
+    preview: (id) => `${satusehatApiBasePath}/practitioners/${id}/preview`,
+    sync: (id) => `${satusehatApiBasePath}/practitioners/${id}/sync`,
   },
   encounter: {
-    preview: (id) => `/satusehat/encounters/${id}/preview`,
-    sync: (id) => `/satusehat/encounters/${id}/sync`,
+    preview: (id) => `${satusehatApiBasePath}/encounters/${id}/preview`,
+    sync: (id) => `${satusehatApiBasePath}/encounters/${id}/sync`,
   },
   'vital-signs': {
-    preview: (id) => `/satusehat/medical-records/${id}/vital-signs/preview`,
-    sync: (id) => `/satusehat/medical-records/${id}/vital-signs/sync`,
+    preview: (id) => `${satusehatApiBasePath}/medical-records/${id}/vital-signs/preview`,
+    sync: (id) => `${satusehatApiBasePath}/medical-records/${id}/vital-signs/sync`,
   },
   'clinical-impression': {
-    preview: (id) => `/satusehat/medical-records/${id}/clinical-impression/preview`,
-    sync: (id) => `/satusehat/medical-records/${id}/clinical-impression/sync`,
+    preview: (id) => `${satusehatApiBasePath}/medical-records/${id}/clinical-impression/preview`,
+    sync: (id) => `${satusehatApiBasePath}/medical-records/${id}/clinical-impression/sync`,
   },
   procedure: {
-    preview: (id) => `/satusehat/medical-actions/${id}/procedure/preview`,
-    sync: (id) => `/satusehat/medical-actions/${id}/procedure/sync`,
+    preview: (id) => `${satusehatApiBasePath}/medical-actions/${id}/procedure/preview`,
+    sync: (id) => `${satusehatApiBasePath}/medical-actions/${id}/procedure/sync`,
   },
   'care-plan': {
-    preview: (id) => `/satusehat/medical-records/${id}/care-plan/preview`,
-    sync: (id) => `/satusehat/medical-records/${id}/care-plan/sync`,
+    preview: (id) => `${satusehatApiBasePath}/medical-records/${id}/care-plan/preview`,
+    sync: (id) => `${satusehatApiBasePath}/medical-records/${id}/care-plan/sync`,
   },
   goal: {
-    preview: (id) => `/satusehat/medical-records/${id}/goal/preview`,
-    sync: (id) => `/satusehat/medical-records/${id}/goal/sync`,
+    preview: (id) => `${satusehatApiBasePath}/medical-records/${id}/goal/preview`,
+    sync: (id) => `${satusehatApiBasePath}/medical-records/${id}/goal/sync`,
   },
   'allergy-intolerance': {
-    preview: (id) => `/satusehat/medical-records/${id}/allergy-intolerance/preview`,
-    sync: (id) => `/satusehat/medical-records/${id}/allergy-intolerance/sync`,
+    preview: (id) => `${satusehatApiBasePath}/medical-records/${id}/allergy-intolerance/preview`,
+    sync: (id) => `${satusehatApiBasePath}/medical-records/${id}/allergy-intolerance/sync`,
   },
   composition: {
-    preview: (id) => `/satusehat/medical-records/${id}/composition/preview`,
-    sync: (id) => `/satusehat/medical-records/${id}/composition/sync`,
+    preview: (id) => `${satusehatApiBasePath}/medical-records/${id}/composition/preview`,
+    sync: (id) => `${satusehatApiBasePath}/medical-records/${id}/composition/sync`,
   },
   'family-member-history': {
-    preview: (id) => `/satusehat/medical-records/${id}/family-member-history/preview`,
-    sync: (id) => `/satusehat/medical-records/${id}/family-member-history/sync`,
+    preview: (id) => `${satusehatApiBasePath}/medical-records/${id}/family-member-history/preview`,
+    sync: (id) => `${satusehatApiBasePath}/medical-records/${id}/family-member-history/sync`,
   },
   diagnosis: {
-    preview: (id) => `/satusehat/diagnoses/${id}/preview`,
-    sync: (id) => `/satusehat/diagnoses/${id}/sync`,
+    preview: (id) => `${satusehatApiBasePath}/diagnoses/${id}/preview`,
+    sync: (id) => `${satusehatApiBasePath}/diagnoses/${id}/sync`,
   },
   'laboratory-order-item': {
-    preview: (id) => `/satusehat/laboratory-order-items/${id}/preview`,
-    sync: (id) => `/satusehat/laboratory-order-items/${id}/sync`,
+    preview: (id) => `${satusehatApiBasePath}/laboratory-order-items/${id}/preview`,
+    sync: (id) => `${satusehatApiBasePath}/laboratory-order-items/${id}/sync`,
   },
   'radiology-order-item': {
-    preview: (id) => `/satusehat/radiology-order-items/${id}/preview`,
-    sync: (id) => `/satusehat/radiology-order-items/${id}/sync`,
+    preview: (id) => `${satusehatApiBasePath}/radiology-order-items/${id}/preview`,
+    sync: (id) => `${satusehatApiBasePath}/radiology-order-items/${id}/sync`,
   },
   prescription: {
-    preview: (id) => `/satusehat/prescriptions/${id}/preview`,
-    sync: (id) => `/satusehat/prescriptions/${id}/sync`,
+    preview: (id) => `${satusehatApiBasePath}/prescriptions/${id}/preview`,
+    sync: (id) => `${satusehatApiBasePath}/prescriptions/${id}/sync`,
   },
   dispensing: {
-    preview: (id) => `/satusehat/dispensings/${id}/preview`,
-    sync: (id) => `/satusehat/dispensings/${id}/sync`,
+    preview: (id) => `${satusehatApiBasePath}/dispensings/${id}/preview`,
+    sync: (id) => `${satusehatApiBasePath}/dispensings/${id}/sync`,
   },
 };
 
 export const satusehatApi = {
-  getStatus: () => api.get<{ data: SatusehatStatusResponse }>('/satusehat/status'),
+  getStatus: () => api.get<{ data: SatusehatStatusResponse }>(`${satusehatApiBasePath}/status`),
 
   getLogs: (limit = 50, resourceType?: string, operation?: string, success?: boolean) =>
     api.get<{ data: SatusehatLog[] }>(
-      `/satusehat/logs?limit=${limit}`
+      `${satusehatApiBasePath}/logs?limit=${limit}`
       + `${resourceType ? `&resource_type=${encodeURIComponent(resourceType)}` : ''}`
       + `${operation ? `&operation=${encodeURIComponent(operation)}` : ''}`
       + `${typeof success === 'boolean' ? `&success=${success}` : ''}`
     ),
 
-  retryLog: (id: number) => api.post(`/satusehat/logs/${id}/retry`),
+  retryLog: (id: number) => api.post(`${satusehatApiBasePath}/logs/${id}/retry`),
 
-  testConnection: () => api.post('/satusehat/test-connection'),
+  testConnection: () => api.post(`${satusehatApiBasePath}/test-connection`),
 
   previewResource: (resource: SatusehatResourceKey, id: number | string) =>
     api.get(satusehatResourcePaths[resource].preview(id)),
@@ -327,10 +532,38 @@ export const satusehatApi = {
     api.post(satusehatResourcePaths[resource].sync(id)),
 
   getAutoSyncVisit: (visitId: number | string) =>
-    api.get<SatusehatAutoSyncVisitResponse>(`/satusehat/visits/${visitId}/auto-sync`),
+    api.get<SatusehatAutoSyncVisitResponse>(`${satusehatApiBasePath}/visits/${visitId}/auto-sync`),
 
   autoSyncVisit: (visitId: number | string, async = false) =>
-    api.post<SatusehatAutoSyncVisitResponse>(`/satusehat/visits/${visitId}/auto-sync${async ? '?async=true' : ''}`),
+    api.post<SatusehatAutoSyncVisitResponse>(`${satusehatApiBasePath}/visits/${visitId}/auto-sync${async ? '?async=true' : ''}`),
+};
+
+export const bpjsBridgeApi = {
+  getStatus: () => api.get<{ data: BpjsStatusResponse }>(`${bpjsApiBasePath}/status`),
+
+  getLogs: (limit = 50, domain?: BpjsDomainKey | 'all', success?: boolean) =>
+    api.get<{ data: BpjsLog[] }>(
+      `${bpjsApiBasePath}/logs?limit=${limit}`
+      + `${domain && domain !== 'all' ? `&domain=${encodeURIComponent(domain)}` : ''}`
+      + `${typeof success === 'boolean' ? `&success=${success}` : ''}`
+    ),
+
+  testConnection: (domain: BpjsDomainKey) =>
+    api.post<{ data: BpjsConnectionTestResult; message?: string }>(`${bpjsApiBasePath}/${domain}/test-connection`),
+
+  getPoliReferences: (params?: { date?: string; q?: string }) =>
+    api.get<{ data: BpjsReferencePoli[] }>(
+      `${bpjsApiBasePath}/antrean/references/poli`
+      + `${params?.date ? `?date=${encodeURIComponent(params.date)}` : ''}`
+      + `${params?.q ? `${params?.date ? '&' : '?'}q=${encodeURIComponent(params.q)}` : ''}`
+    ),
+
+  getDoctorReferences: (params?: { date?: string; q?: string }) =>
+    api.get<{ data: BpjsReferenceDoctor[] }>(
+      `${bpjsApiBasePath}/antrean/references/dokter`
+      + `${params?.date ? `?date=${encodeURIComponent(params.date)}` : ''}`
+      + `${params?.q ? `${params?.date ? '&' : '?'}q=${encodeURIComponent(params.q)}` : ''}`
+    ),
 };
 
 // ========================
@@ -351,12 +584,14 @@ export interface Polyclinic {
   satusehat_location_id?: string;
   satusehat_organization_synced_at?: string;
   satusehat_location_synced_at?: string;
+  bpjs_poli_code?: string;
   created_at?: string;
   updated_at?: string;
 }
 
 export interface Doctor {
   id: number;
+  employee_id?: number;
   user_id?: number;
   full_name: string;
   nik_number?: string;
@@ -368,11 +603,59 @@ export interface Doctor {
   is_active: boolean;
   satusehat_practitioner_id?: string;
   satusehat_synced_at?: string;
+  bpjs_doctor_code?: string;
+  employee?: Employee;
   user?: User;
   polyclinics?: Polyclinic[];
   schedules?: DoctorSchedule[];
   created_at?: string;
   updated_at?: string;
+}
+
+export interface Employee {
+  id: number;
+  user_id?: number;
+  full_name: string;
+  employee_code?: string;
+  nik_number?: string;
+  nip_number?: string;
+  profession: string;
+  license_number?: string;
+  phone?: string;
+  requires_satusehat: boolean;
+  satusehat_practitioner_id?: string;
+  satusehat_synced_at?: string;
+  is_active: boolean;
+  user?: User;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface EmployeeListSummary {
+  total_count: number;
+  active_count: number;
+  inactive_count: number;
+  satusehat_required_count: number;
+  satusehat_optional_count: number;
+  linked_account_count: number;
+}
+
+export interface DoctorListSummary {
+  total_count: number;
+  active_count: number;
+  inactive_count: number;
+  satusehat_required_count: number;
+  satusehat_optional_count: number;
+  unlinked_employee_count: number;
+}
+
+export interface UserListSummary {
+  total_count: number;
+  active_count: number;
+  inactive_count: number;
+  linked_employee_count: number;
+  linked_satusehat_count: number;
+  unlinked_user_count: number;
 }
 
 export interface DoctorSchedule {
@@ -643,6 +926,7 @@ export interface ICD10 {
   name_id: string;
   category: string;
   chapter: string;
+  system?: string;
 }
 
 export interface LabTestCategory {
@@ -693,10 +977,20 @@ export const polyclinicsApi = {
 
 export const doctorsApi = {
   getAll: (params?: string) => api.get(`/doctors${params ? `?${params}` : ''}`),
+  getSummary: () => api.get<{ data: DoctorListSummary }>('/doctors/summary'),
   getById: (id: number) => api.get(`/doctors/${id}`),
   create: (data: any) => api.post('/doctors', data),
   update: (id: number, data: any) => api.put(`/doctors/${id}`, data),
   delete: (id: number) => api.delete(`/doctors/${id}`),
+};
+
+export const employeesApi = {
+  getAll: (params?: string) => api.get<{ data: Employee[] }>(`/employees${params ? `?${params}` : ''}`),
+  getSummary: () => api.get<{ data: EmployeeListSummary }>('/employees/summary'),
+  getById: (id: number) => api.get<{ data: Employee }>(`/employees/${id}`),
+  create: (data: any) => api.post<{ data: Employee }>('/employees', data),
+  update: (id: number, data: any) => api.put<{ data: Employee }>(`/employees/${id}`, data),
+  delete: (id: number) => api.delete(`/employees/${id}`),
 };
 
 export const doctorSchedulesApi = {
@@ -716,7 +1010,7 @@ export const medicinesApi = {
   searchKFA: (keyword: string, page = 1, size = 10) => api.get<{ data: KFAProductSearchResponse }>(`/medicines/kfa/search?keyword=${encodeURIComponent(keyword)}&page=${page}&size=${size}`),
   getKFADetail: (code: string) => api.get<{ data: KFAProductDetail }>(`/medicines/kfa/${encodeURIComponent(code)}`),
   getById: (id: number) => api.get(`/medicines/${id}`),
-  syncSatusehatMedication: (id: number) => api.post<{ data: { medicine: Medicine }; message: string }>(`/satusehat/medicines/${id}/sync`),
+  syncSatusehatMedication: (id: number) => api.post<{ data: { medicine: Medicine }; message: string }>(`${satusehatApiBasePath}/medicines/${id}/sync`),
   create: (data: any) => api.post('/medicines', data),
   update: (id: number, data: any) => api.put(`/medicines/${id}`, data),
   delete: (id: number) => api.delete(`/medicines/${id}`),
@@ -785,16 +1079,8 @@ export const suppliersApi = {
 export const physicalExamImagesApi = {
   getAll: (params?: string) => api.get<{ data: PhysicalExamImageMaster[] }>(`/physical-exam-images${params ? `?${params}` : ''}`),
   getById: (id: number) => api.get<{ data: PhysicalExamImageMaster }>(`/physical-exam-images/${id}`),
-  create: (data: FormData) => api.post<{ data: PhysicalExamImageMaster }>('/physical-exam-images', data, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-  }),
-  update: (id: number, data: FormData) => api.put<{ data: PhysicalExamImageMaster }>(`/physical-exam-images/${id}`, data, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-  }),
+  create: (data: FormData) => api.post<{ data: PhysicalExamImageMaster }>('/physical-exam-images', data),
+  update: (id: number, data: FormData) => api.put<{ data: PhysicalExamImageMaster }>(`/physical-exam-images/${id}`, data),
   delete: (id: number) => api.delete(`/physical-exam-images/${id}`),
 };
 
@@ -905,6 +1191,13 @@ export interface Patient {
   updated_at?: string;
 }
 
+export interface PatientListResponse {
+  data: Patient[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
 export interface RegionProvince {
   id: number;
   name: string;
@@ -954,6 +1247,33 @@ export interface Visit {
   updated_at?: string;
 }
 
+export interface ControlScheduleItem {
+  medical_record_id: number;
+  visit_id: number;
+  visit_number: string;
+  visit_date: string;
+  patient_id: number;
+  patient_name: string;
+  patient_phone: string;
+  medical_record_number: string;
+  polyclinic_id?: number;
+  doctor_name: string;
+  doctor_id?: number;
+  polyclinic_name: string;
+  payment_type?: 'umum' | 'bpjs' | 'asuransi' | string;
+  insurance_number?: string;
+  follow_up_at: string;
+  follow_up_instruction: string;
+  discharge_condition: string;
+  notes: string;
+  days_until_follow_up: number;
+  schedule_status: 'overdue' | 'today' | 'soon' | 'upcoming' | string;
+  schedule_status_label: string;
+  schedule_status_tone: 'destructive' | 'warning' | 'success' | string;
+  control_letter_print_path: string;
+  emr_path: string;
+}
+
 export interface RegistrationQueueItem {
   id: number;
   queue_date: string;
@@ -970,10 +1290,10 @@ export interface RegistrationQueueItem {
 }
 
 export const patientsApi = {
-  getAll: (params?: string) => api.get(`/patients${params ? `?${params}` : ''}`),
+  getAll: (params?: string) => api.get<PatientListResponse>(`/patients${params ? `?${params}` : ''}`),
   getById: (id: number) => api.get(`/patients/${id}`),
   getHistory: (id: number) => api.get(`/patients/${id}/history`),
-  syncSatusehat: (id: number) => api.post<{ data: { patient: Patient }; message: string }>(`/satusehat/patients/${id}/sync`),
+  syncSatusehat: (id: number) => api.post<{ data: { patient: Patient }; message: string }>(`${satusehatApiBasePath}/patients/${id}/sync`),
   create: (data: any) => api.post('/patients', data),
   update: (id: number, data: any) => api.put(`/patients/${id}`, data),
   delete: (id: number) => api.delete(`/patients/${id}`),
@@ -997,17 +1317,20 @@ export const regionsApi = {
 
 export const visitsApi = {
   getAll: (params?: string) => api.get(`/visits${params ? `?${params}` : ''}`),
+  getControlSchedules: () => api.get<{ data: ControlScheduleItem[] }>('/visits/control-schedules'),
   getToday: (params?: string) => api.get(`/visits/today${params ? `?${params}` : ''}`),
   getById: (id: number) => api.get(`/visits/${id}`),
-  syncSatusehatEncounter: (id: number) => api.post<{ data: { visit: Visit }; message: string }>(`/satusehat/encounters/${id}/sync`),
+  syncSatusehatEncounter: (id: number) => api.post<{ data: { visit: Visit }; message: string }>(`${satusehatApiBasePath}/encounters/${id}/sync`),
   create: (data: any) => api.post('/visits', data),
   update: (id: number, data: any) => api.put(`/visits/${id}`, data),
   delete: (id: number) => api.delete(`/visits/${id}`),
   cancelWorkspace: (id: number) => api.post(`/visits/${id}/cancel-workspace`),
   updateStatus: (id: number, data: { queue_status?: string; status?: string }) => api.patch(`/visits/${id}/status`, data),
+  callBPJS: (id: number) => api.post(`/visits/${id}/bpjs/panggil`),
 };
 
 export const queueApi = {
+  getPolyclinics: () => api.get<{ data: Polyclinic[] }>(`/queue/polyclinics`),
   getByPolyclinic: (polyclinicId: number) => api.get(`/queue/${polyclinicId}`),
   callNext: (polyclinicId: number) => api.post(`/queue/${polyclinicId}/call-next`),
 };
@@ -1028,7 +1351,7 @@ export const registrationQueueApi = {
 // ========================
 
 export type MedicalRecordSectionType = 'anamnesis' | 'physical_exam' | 'assessment' | 'plan' | 'prescription' | 'laboratory' | 'radiology' | 'procedure' | 'outcome';
-export type MedicalRecordSheetKey = 'pengkajian-awal-medis' | 'pengkajian-awal-gigi';
+export type MedicalRecordSheetKey = 'pengkajian-awal-medis' | 'pengkajian-awal-gigi' | 'surat';
 export type OdontogramChartType = 'permanent' | 'primary';
 export type OdontogramEntryStatus = 'draft' | 'cancelled' | 'final';
 export type OdontogramToothCondition = 'sound' | 'missing' | 'extracted' | 'retained_root' | 'impacted' | 'implant' | 'crown' | 'mobility';
@@ -1301,6 +1624,88 @@ export interface InformedConsent {
   updated_at?: string;
 }
 
+export interface TteSigner {
+  id: number;
+  full_name: string;
+  email: string;
+  is_doctor: boolean;
+  doctor_id?: number;
+}
+
+export interface TteVisitDocument {
+  document_key: string;
+  document_type: string;
+  document_label: string;
+  description: string;
+  signer_scope?: string;
+  signer_scope_label?: string;
+  preferred_signer_user_id?: number;
+  preferred_signer_name?: string;
+  signer_candidates?: TteSigner[];
+  signer_resolution_note?: string;
+  source_id?: number;
+  medical_record_id?: number;
+  print_path: string;
+  status: 'unsigned' | 'pending' | 'signed' | 'rejected' | 'revoked' | string;
+  status_label: string;
+  request_id?: number;
+  signer_user_id?: number;
+  signer_name?: string;
+  requested_by_name?: string;
+  requested_at?: string;
+  responded_at?: string;
+  signed_at?: string;
+  notes?: string;
+  rejection_reason?: string;
+  updated_at?: string;
+}
+
+export interface TteVisitDocumentsResponse {
+  visit_id: number;
+  visit_number: string;
+  visit_status: string;
+  visit_is_finalized: boolean;
+  patient_name: string;
+  documents: TteVisitDocument[];
+}
+
+export interface EmrReferencesResponse {
+  visit_id: number;
+  medicines: Medicine[];
+  medical_services: MedicalService[];
+  physical_exam_images: PhysicalExamImageMaster[];
+}
+
+export interface TteRequestPayload {
+  visit_id: number;
+  document_key: string;
+  requested_to_user_id: number;
+  notes?: string;
+}
+
+export interface TteInboxItem {
+  id: number;
+  visit_id: number;
+  visit_number: string;
+  patient_name: string;
+  polyclinic_name: string;
+  document_key: string;
+  document_type: string;
+  document_label: string;
+  status: 'pending' | 'signed' | 'rejected' | 'revoked' | string;
+  status_label: string;
+  requested_at: string;
+  responded_at?: string;
+  signed_at?: string;
+  requested_by_name: string;
+  requested_by_user_id: number;
+  signer_name: string;
+  notes?: string;
+  rejection_reason?: string;
+  print_path: string;
+  visit_status: string;
+}
+
 export interface UpdateInformedConsentPayload {
   action_description: string;
   risks: string;
@@ -1517,6 +1922,8 @@ export interface PaginatedResponse<T> {
 
 export const medicalRecordsApi = {
   getAll: (params?: string) => api.get(`/medical-records${params ? `?${params}` : ''}`),
+  getReferences: (visitId: number) => api.get<{ data: EmrReferencesResponse }>(`/medical-records/visit/${visitId}/references`),
+  searchIcd10: (params?: string) => api.get<{ data: ICD10[] }>(`/medical-records/references/icd10${params ? `?${params}` : ''}`),
   getById: (id: number) => api.get(`/medical-records/${id}`),
   getByVisit: (visitId: number) => api.get(`/medical-records/visit/${visitId}`),
   printInitialAssessmentEntry: (visitId: number, options: { entryGroupKey?: string; recordIds?: number[]; sheetKey?: MedicalRecordSheetKey; autoPrint?: boolean }) => api.get(`/medical-records/visit/${visitId}/print/initial-assessment`, {
@@ -1526,6 +1933,17 @@ export const medicalRecordsApi = {
       ...(options.sheetKey ? { sheet_key: options.sheetKey } : {}),
       autoprint: options.autoPrint === false ? '0' : '1',
     },
+    responseType: 'blob',
+  }),
+  printSuratEntry: (visitId: number, options: { entryGroupKey?: string; recordIds?: number[]; autoPrint?: boolean }) => api.get(`/medical-records/visit/${visitId}/print/surat`, {
+    params: {
+      ...(options.entryGroupKey ? { entry_group_key: options.entryGroupKey } : {}),
+      ...(options.recordIds?.length ? { record_ids: options.recordIds.join(',') } : {}),
+      autoprint: options.autoPrint === false ? '0' : '1',
+    },
+    responseType: 'blob',
+  }),
+  printControlLetter: (visitId: number) => api.get(`/medical-records/visit/${visitId}/print/surat-kontrol`, {
     responseType: 'blob',
   }),
   printMedicalResume: (visitId: number) => api.get(`/medical-records/visit/${visitId}/print/resume-medis`, {
@@ -1598,6 +2016,15 @@ export const medicalRecordsApi = {
 export const informedConsentsApi = {
   print: (id: number) => api.get(`/informed-consents/${id}/print`, { responseType: 'blob' }),
   update: (id: number, data: UpdateInformedConsentPayload) => api.put<{ data: InformedConsent }>(`/informed-consents/${id}`, data),
+};
+
+export const tteApi = {
+  getSigners: () => api.get<{ data: TteSigner[] }>('/tte/signers'),
+  getVisitDocuments: (visitId: number) => api.get<{ data: TteVisitDocumentsResponse }>(`/tte/visits/${visitId}/documents`),
+  request: (data: TteRequestPayload) => api.post<{ data: TteVisitDocument; message: string }>('/tte/requests', data),
+  getInbox: () => api.get<{ data: TteInboxItem[] }>('/tte/requests/inbox'),
+  approve: (id: number) => api.post<{ data: TteInboxItem; message: string }>(`/tte/requests/${id}/approve`),
+  reject: (id: number, reason: string) => api.post<{ data: TteInboxItem; message: string }>(`/tte/requests/${id}/reject`, { reason }),
 };
 
 export const odontogramApi = {
@@ -1694,6 +2121,181 @@ export interface CashierQueueItem {
   total_amount: number;
   paid_amount: number;
 }
+
+// ---- Dashboard ----
+
+export interface DashboardVisitTrend {
+  date: string;
+  total: number;
+  completed: number;
+  cancelled: number;
+}
+
+export interface DashboardTopPolyclinic {
+  name: string;
+  visits: number;
+}
+
+export interface DashboardTopDiagnosis {
+  code: string;
+  name: string;
+  count: number;
+}
+
+export interface DashboardLowStockMedicine {
+  id: number;
+  code: string;
+  name: string;
+  current_stock: number;
+  min_stock: number;
+}
+
+export interface DashboardRecentVisit {
+  id: number;
+  visit_number: string;
+  patient_name: string;
+  doctor_name: string;
+  poly_name: string;
+  status: string;
+  queue_status: string;
+  visit_date: string;
+}
+
+export interface DashboardRevenueTrend {
+  date: string;
+  amount: number;
+}
+
+export interface DashboardPatientTrend {
+  month: string;
+  new_patients: number;
+  total_visits: number;
+}
+
+export interface DashboardReportParams {
+  start_date: string;
+  end_date: string;
+}
+
+export type ReportCenterType =
+  | 'kunjungan'
+  | 'keuangan'
+  | 'pasien'
+  | 'diagnosa'
+  | 'farmasi'
+  | 'penunjang'
+  | 'kinerja'
+  | 'rl-rawat-jalan';
+
+export interface ReportCenterParams extends DashboardReportParams {
+  type: ReportCenterType;
+}
+
+export interface ReportCenterColumn {
+  key: string;
+  label: string;
+  kind: 'text' | 'number' | 'currency' | 'date' | 'badge';
+}
+
+export interface ReportCenterMetric {
+  label: string;
+  value: string;
+  helper?: string;
+}
+
+export interface ReportCenterDataset {
+  report_type: ReportCenterType;
+  title: string;
+  subtitle: string;
+  columns: ReportCenterColumn[];
+  metrics: ReportCenterMetric[];
+  rows: Record<string, unknown>[];
+  generated_at: string;
+  start_date: string;
+  end_date: string;
+  period_text: string;
+}
+
+export interface DashboardSummary {
+  generated_at: string;
+  today_visits: number;
+  today_completed: number;
+  today_in_progress: number;
+  today_cancelled: number;
+  today_registered: number;
+  month_visits: number;
+  month_completed: number;
+  queue_waiting: number;
+  queue_called: number;
+  queue_processing: number;
+  queue_done: number;
+  revenue_today: number;
+  revenue_month: number;
+  invoices_paid: number;
+  invoices_unpaid: number;
+  total_patients: number;
+  new_patients_month: number;
+  active_doctors: number;
+  active_polyclinics: number;
+  rx_ordered: number;
+  rx_preparing: number;
+  rx_ready: number;
+  rx_dispensed: number;
+  lab_ordered: number;
+  lab_preparing: number;
+  lab_completed: number;
+  rad_ordered: number;
+  rad_completed: number;
+  visit_trend_7d: DashboardVisitTrend[];
+  revenue_trend_7d: DashboardRevenueTrend[];
+  patient_trend_6m: DashboardPatientTrend[];
+  top_polyclinics: DashboardTopPolyclinic[];
+  top_diagnoses: DashboardTopDiagnosis[];
+  low_stock: DashboardLowStockMedicine[];
+  recent_visits: DashboardRecentVisit[];
+}
+
+export const dashboardApi = {
+  getSummary: () => api.get<{ data: DashboardSummary }>('/dashboard/summary'),
+  downloadReportPdf: (params: DashboardReportParams) => api.get('/dashboard/report/pdf', {
+    params,
+    responseType: 'blob',
+  }),
+  downloadReportExcel: (params: DashboardReportParams) => api.get('/dashboard/report/excel', {
+    params,
+    responseType: 'blob',
+  }),
+};
+
+export const reportsApi = {
+  getPreview: (params: ReportCenterParams) => api.get<{ data: ReportCenterDataset }>('/reports/preview', {
+    params,
+  }),
+  downloadPdf: (params: ReportCenterParams) => api.get('/reports/export/pdf', {
+    params,
+    responseType: 'blob',
+  }),
+  downloadExcel: (params: ReportCenterParams) => api.get('/reports/export/excel', {
+    params,
+    responseType: 'blob',
+  }),
+  downloadManagementPdf: (params: DashboardReportParams) => api.get('/reports/management/pdf', {
+    params,
+    responseType: 'blob',
+  }),
+  downloadManagementExcel: (params: DashboardReportParams) => api.get('/reports/management/excel', {
+    params,
+    responseType: 'blob',
+  }),
+  downloadFinancePdf: (params: DashboardReportParams) => api.get('/reports/finance/pdf', {
+    params,
+    responseType: 'blob',
+  }),
+  downloadFinanceExcel: (params: DashboardReportParams) => api.get('/reports/finance/excel', {
+    params,
+    responseType: 'blob',
+  }),
+};
 
 export interface BillingStats {
   date: string;

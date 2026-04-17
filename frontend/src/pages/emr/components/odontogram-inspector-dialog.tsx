@@ -3,8 +3,10 @@ import { Button } from '@/components/ui/button';
 import {
 	Dialog,
 	DialogContent,
+	DialogDescription,
 	DialogFooter,
 	DialogHeader,
+	DialogTitle,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -81,6 +83,12 @@ export function OdontogramInspectorDialog({
 			<DialogContent className="w-[min(900px,calc(100vw-20px))] max-w-4xl overflow-hidden rounded-none border-border/70 p-0 [&>button]:right-3 [&>button]:top-3 sm:[&>button]:right-4 sm:[&>button]:top-4">
 				<div className="border-b border-border/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.96),rgba(255,255,255,1))] px-3 py-3 sm:px-4 sm:py-3.5">
 					<DialogHeader className="space-y-1.5 text-left">
+						<DialogTitle className="sr-only">
+							Inspector odontogram gigi {target.toothNumber}
+						</DialogTitle>
+						<DialogDescription className="sr-only">
+							Lihat dan ubah kondisi whole tooth, kondisi permukaan, serta catatan odontogram untuk gigi yang dipilih.
+						</DialogDescription>
 						<div className="flex flex-wrap gap-1.5">
 							<span className="border border-border/70 bg-background px-2 py-1 text-[11px] text-muted-foreground">FDI {target.toothNumber}</span>
 							<span className="border border-border/70 bg-background px-2 py-1 text-[11px] text-muted-foreground">{toothDefinition.toothKind === 'anterior' ? 'Anterior' : 'Posterior'}</span>

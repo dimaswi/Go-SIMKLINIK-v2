@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { SearchableSelect } from '@/components/ui/searchable-select';
-import type { ICD10, MedicalRecordDiagnosis } from '@/lib/api';
+import { medicalRecordsApi, type ICD10, type MedicalRecordDiagnosis } from '@/lib/api';
 import { FilePlus2 } from 'lucide-react';
 import { PAPER_SELECT_TRIGGER_CLASSNAME, TableCell, TableRow, TableSection, TextEditor } from './form-fields';
 
@@ -30,13 +30,51 @@ export function DiagnosisEditor({
   readOnly,
 }: DiagnosisEditorProps) {
   const [selectedIcd10, setSelectedIcd10] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState<ICD10[]>([]);
+  const [searching, setSearching] = useState(false);
   const [diagnosisType, setDiagnosisType] = useState<'primer' | 'sekunder'>('primer');
   const [workingDiagnosis, setWorkingDiagnosis] = useState('');
   const [differentialDiagnosis, setDifferentialDiagnosis] = useState('');
   const [assessmentNarrative, setAssessmentNarrative] = useState('');
   const [notes, setNotes] = useState('');
+  const searchDebounceRef = useRef<number | null>(null);
 
-  const icd10Options = icd10List.map((item) => ({
+  useEffect(() => {
+    const trimmed = searchTerm.trim();
+
+    if (searchDebounceRef.current) {
+      window.clearTimeout(searchDebounceRef.current);
+    }
+
+    if (trimmed.length < 2) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+
+    searchDebounceRef.current = window.setTimeout(async () => {
+      setSearching(true);
+      try {
+        const response = await medicalRecordsApi.searchIcd10(`q=${encodeURIComponent(trimmed)}&limit=50&system=ICD10_2010_IM`);
+        setSearchResults(response.data.data || []);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+
+    return () => {
+      if (searchDebounceRef.current) {
+        window.clearTimeout(searchDebounceRef.current);
+      }
+    };
+  }, [searchTerm]);
+
+  const resolvedIcd10List = searchTerm.trim().length >= 2 ? searchResults : icd10List;
+
+  const icd10Options = resolvedIcd10List.map((item) => ({
     value: String(item.id),
     label: `${item.code} — ${item.name_id || item.name}`,
   }));
@@ -45,7 +83,7 @@ export function DiagnosisEditor({
     <section className="space-y-2">
       <div className="px-0.5">
         <p className="text-[13px] font-semibold tracking-tight">Diagnosis ICD-10</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">Setiap diagnosis menyimpan diagnosa kerja, diagnosis banding, dan narasi assessment masing-masing.</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">Pilihan kode diagnosis difilter ke master ICD-10. Setiap diagnosis menyimpan diagnosa kerja, diagnosis banding, dan narasi assessment masing-masing.</p>
       </div>
 
       <div className="border border-border/70 bg-background">
@@ -106,8 +144,10 @@ export function DiagnosisEditor({
                 options={icd10Options}
                 value={selectedIcd10}
                 onValueChange={setSelectedIcd10}
+                onSearchChange={setSearchTerm}
                 placeholder="Cari ICD-10"
                 searchPlaceholder="Kode atau nama diagnosis"
+                emptyText={searchTerm.trim().length < 2 ? 'Ketik minimal 2 karakter.' : searching ? 'Mencari...' : 'Tidak ditemukan.'}
                 square
                 className={PAPER_SELECT_TRIGGER_CLASSNAME}
               />
@@ -142,6 +182,8 @@ export function DiagnosisEditor({
                       notes: notes.trim(),
                     });
                     setSelectedIcd10('');
+                    setSearchTerm('');
+                    setSearchResults([]);
                     setDiagnosisType('primer');
                     setWorkingDiagnosis('');
                     setDifferentialDiagnosis('');

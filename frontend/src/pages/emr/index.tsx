@@ -125,7 +125,7 @@ export default function MedicalRecordsIndex() {
   const { toast } = useToast();
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('active');
   const [cancelTarget, setCancelTarget] = useState<Visit | null>(null);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelingVisitId, setCancelingVisitId] = useState<number | null>(null);
@@ -148,6 +148,10 @@ export default function MedicalRecordsIndex() {
   }, [toast]);
 
   const filteredVisits = visits.filter((visit) => {
+    if (statusFilter === 'active') {
+      return visit.status === 'registered' || visit.status === 'in_progress';
+    }
+
     if (statusFilter && visit.status !== statusFilter) return false;
     return true;
   });
@@ -204,6 +208,7 @@ export default function MedicalRecordsIndex() {
           <div className="w-44">
             <SearchableSelect
               options={[
+                { value: 'active', label: 'Workspace Aktif' },
                 { value: 'registered', label: 'Terdaftar' },
                 { value: 'in_progress', label: 'Aktif' },
                 { value: 'completed', label: 'Final' },
@@ -218,7 +223,11 @@ export default function MedicalRecordsIndex() {
       />
       <div className="flex items-center gap-2 px-1 text-sm text-muted-foreground">
         <FileText className="h-4 w-4" />
-        <span>Total {filteredVisits.length} kunjungan EMR</span>
+        <span>
+          {statusFilter === 'active'
+            ? `${filteredVisits.length} workspace aktif ditampilkan. Data final disembunyikan secara default.`
+            : `Total ${filteredVisits.length} kunjungan EMR`}
+        </span>
       </div>
 
       <ConfirmDialog

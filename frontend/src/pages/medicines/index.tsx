@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { setPageTitle } from '@/lib/page-title';
 import { Loader2, Plus } from 'lucide-react';
+import { MasterDataListShell } from '@/pages/master-data/shared';
 
 export default function MedicinesPage() {
   const navigate = useNavigate();
@@ -47,9 +48,15 @@ export default function MedicinesPage() {
 
   return (
     <div className="flex flex-1 min-h-0 flex-col gap-4 p-4">
-      <DataTable columns={columns} data={data} searchPlaceholder="Cari obat berdasarkan nama, kode, atau nama generik..." pageSize={10}
-        toolbarActions={hasPermission('medicines.create') ? <Button onClick={() => navigate('/medicines/create')}><Plus className="h-4 w-4" />Tambah Obat</Button> : undefined}
-      />
+      <MasterDataListShell
+        title="Daftar Obat"
+        subtitle="Kelola detail obat, kode, dan nama generik untuk mendukung layanan farmasi klinik."
+        totalCount={data.length}
+      >
+        <DataTable columns={columns} data={data} searchPlaceholder="Cari obat berdasarkan nama, kode, atau nama generik..." pageSize={10} className="h-full"
+          toolbarActions={hasPermission('medicines.create') ? <Button onClick={() => navigate('/medicines/create')} className="rounded-none shadow-none"><Plus className="h-4 w-4" />Tambah Obat</Button> : undefined}
+        />
+      </MasterDataListShell>
       <ConfirmDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen} onConfirm={confirmDelete} title="Hapus Obat" description="Apakah Anda yakin ingin menghapus obat ini?" confirmText="Hapus" cancelText="Batal" variant="destructive" />
     </div>
   );

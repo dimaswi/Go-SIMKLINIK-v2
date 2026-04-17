@@ -876,7 +876,7 @@ func PrintOdontogramEntry(c *gin.Context) {
 	addOdontogramPDFSummaryTable(pdf, entry.Teeth)
 
 	// ---- Signature ----
-	addOdontogramPDFSignature(pdf, hospitalInfo, entry, generatedAt)
+	addOdontogramPDFSignature(pdf, hospitalInfo, entry, generatedAt, resolveTTEVerificationBaseURLForRequest(c))
 
 	// Output
 	var output bytes.Buffer
@@ -903,48 +903,7 @@ func odontogramStatusLabel(status string) string {
 	}
 }
 
-func addOdontogramPDFSignature(pdf *gofpdf.Fpdf, hospitalInfo initialAssessmentHospitalInfo, entry models.OdontogramEntry, generatedAt time.Time) {
-	ensureInitialAssessmentPDFSpace(pdf, 30)
-	left, _, right, _ := pdf.GetMargins()
-	pageWidth, _ := pdf.GetPageSize()
-	contentWidth := pageWidth - left - right
-	columnGap := 12.0
-	columnWidth := (contentWidth - columnGap) / 2
-	leftColumnX := left
-	rightColumnX := left + columnWidth + columnGap
-	currentY := pdf.GetY() + 4
-
-	signatureLocation := strings.TrimSpace(hospitalInfo.City)
-	signatureDate := formatDateIndonesian(generatedAt)
-	locationDateLabel := signatureDate
-	if signatureLocation != "" {
-		locationDateLabel = signatureLocation + ", " + signatureDate
-	}
-
-	pdf.SetFont("Arial", "", 9)
-	pdf.SetXY(rightColumnX, currentY)
-	pdf.CellFormat(columnWidth, 5, locationDateLabel, "", 1, "C", false, 0, "")
-
-	currentY = pdf.GetY() + 2
-	pdf.SetXY(leftColumnX, currentY)
-	pdf.CellFormat(columnWidth, 5, "Pasien / Keluarga", "", 0, "C", false, 0, "")
-	pdf.SetXY(rightColumnX, currentY)
-	pdf.CellFormat(columnWidth, 5, "Dokter Pemeriksa", "", 1, "C", false, 0, "")
-
-	lineWidth := minFloat64(52, columnWidth-26)
-	leftLineX := leftColumnX + ((columnWidth - lineWidth) / 2)
-	rightLineX := rightColumnX + ((columnWidth - lineWidth) / 2)
-	signatureLineY := pdf.GetY() + 12
-	pdf.SetDrawColor(60, 60, 60)
-	pdf.Line(leftLineX, signatureLineY, leftLineX+lineWidth, signatureLineY)
-	pdf.Line(rightLineX, signatureLineY, rightLineX+lineWidth, signatureLineY)
-
-	pdf.SetFont("Arial", "B", 9)
-	pdf.SetY(signatureLineY + 2.5)
-	pdf.SetXY(leftColumnX, pdf.GetY())
-	pdf.CellFormat(columnWidth, 5, fallbackText(entry.Patient.FullName), "", 0, "C", false, 0, "")
-	pdf.SetXY(rightColumnX, pdf.GetY())
-	pdf.CellFormat(columnWidth, 5, fallbackText(entry.Doctor.FullName), "", 1, "C", false, 0, "")
-	pdf.SetFont("Arial", "", 9)
-	pdf.SetY(pdf.GetY() + 2)
+func addOdontogramPDFSignature(pdf *gofpdf.Fpdf, hospitalInfo initialAssessmentHospitalInfo, entry models.OdontogramEntry, generatedAt time.Time, validationBaseURL string) {
+	tteSignature := loadTTESignedSignatureByDocumentKeyWithBaseURL(fmt.Sprintf("odontogram:%d", entry.ID), validationBaseURL)
+	addOrderPrintSignatureSectionWithTTE(pdf, hospitalInfo, generatedAt, "Pasien / Keluarga", entry.Patient.FullName, "Dokter Pemeriksa", entry.Doctor.FullName, tteSignature)
 }

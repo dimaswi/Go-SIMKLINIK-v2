@@ -1,0 +1,9 @@
+.env
+.git
+.gitignore
+backups
+uploads
+tmp
+dist
+build
+*.log

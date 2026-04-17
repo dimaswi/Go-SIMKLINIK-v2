@@ -60,6 +60,7 @@ export type MedicalSheetKey =
   | 'cppt'
   | 'lembar-penunjang'
   | 'lembar-resep-terapi'
+  | 'surat'
   | 'informed-consent'
   | 'lembar-tindakan-kecil'
   | 'resume-medis';

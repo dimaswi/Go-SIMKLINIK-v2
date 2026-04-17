@@ -31,15 +31,16 @@ type procedurePrintActionView struct {
 }
 
 type procedurePrintViewData struct {
-	GeneratedAt     time.Time
-	Record          models.MedicalRecord
-	Visit           models.Visit
-	PatientFields   []initialAssessmentPrintField
-	VisitFields     []initialAssessmentPrintField
-	EntryFields     []initialAssessmentPrintField
-	Actions         []procedurePrintActionView
-	EntryNotes      string
-	OdontogramEntry *models.OdontogramEntry
+	GeneratedAt       time.Time
+	Record            models.MedicalRecord
+	Visit             models.Visit
+	PatientFields     []initialAssessmentPrintField
+	VisitFields       []initialAssessmentPrintField
+	EntryFields       []initialAssessmentPrintField
+	Actions           []procedurePrintActionView
+	EntryNotes        string
+	OdontogramEntry   *models.OdontogramEntry
+	ValidationBaseURL string
 }
 
 func PrintProcedureRecord(c *gin.Context) {
@@ -138,7 +139,7 @@ func procedureRecordNeedsOdontogram(record models.MedicalRecord) bool {
 
 func buildProcedurePrintViewData(c *gin.Context, record models.MedicalRecord, odontogramEntry *models.OdontogramEntry) procedurePrintViewData {
 	visit := resolvePrintVisit(record)
-	printedBy := strings.TrimSpace(c.GetString("email"))
+	printedBy := resolvePrintedByLabel(c)
 
 	return procedurePrintViewData{
 		GeneratedAt:   time.Now(),
@@ -158,9 +159,10 @@ func buildProcedurePrintViewData(c *gin.Context, record models.MedicalRecord, od
 			{Label: "Jumlah Item", Value: fmt.Sprintf("%d tindakan", len(record.Actions))},
 			{Label: "Petugas Cetak", Value: fallbackText(printedBy)},
 		},
-		Actions:         buildProcedurePrintActionViews(record.Actions),
-		EntryNotes:      strings.TrimSpace(record.Notes),
-		OdontogramEntry: odontogramEntry,
+		Actions:           buildProcedurePrintActionViews(record.Actions),
+		EntryNotes:        strings.TrimSpace(record.Notes),
+		OdontogramEntry:   odontogramEntry,
+		ValidationBaseURL: resolveTTEVerificationBaseURLForRequest(c),
 	}
 }
 
@@ -296,47 +298,8 @@ func addProcedureOdontogramSection(pdf *gofpdf.Fpdf, entry models.OdontogramEntr
 }
 
 func addProcedurePrintSignatureSection(pdf *gofpdf.Fpdf, hospitalInfo initialAssessmentHospitalInfo, data procedurePrintViewData) {
-	ensureInitialAssessmentPDFSpace(pdf, 38)
-	left, _, right, _ := pdf.GetMargins()
-	pageWidth, _ := pdf.GetPageSize()
-	contentWidth := pageWidth - left - right
-	columnGap := 12.0
-	columnWidth := (contentWidth - columnGap) / 2
-	leftColumnX := left
-	rightColumnX := left + columnWidth + columnGap
-	currentY := pdf.GetY() + 4
-
-	locationDateLabel := formatDateIndonesian(data.GeneratedAt)
-	if city := strings.TrimSpace(hospitalInfo.City); city != "" {
-		locationDateLabel = city + ", " + locationDateLabel
-	}
-
-	pdf.SetFont("Arial", "", 10)
-	pdf.SetXY(rightColumnX, currentY)
-	pdf.CellFormat(columnWidth, 5, locationDateLabel, "", 1, "C", false, 0, "")
-
-	currentY = pdf.GetY() + 3
-	pdf.SetXY(leftColumnX, currentY)
-	pdf.CellFormat(columnWidth, 5, "Pasien / Keluarga", "", 0, "C", false, 0, "")
-	pdf.SetXY(rightColumnX, currentY)
-	pdf.CellFormat(columnWidth, 5, "Dokter Pemeriksa", "", 1, "C", false, 0, "")
-
-	lineWidth := minFloat64(52, columnWidth-26)
-	leftLineX := leftColumnX + ((columnWidth - lineWidth) / 2)
-	rightLineX := rightColumnX + ((columnWidth - lineWidth) / 2)
-	signatureLineY := pdf.GetY() + 16
-	pdf.SetDrawColor(60, 60, 60)
-	pdf.Line(leftLineX, signatureLineY, leftLineX+lineWidth, signatureLineY)
-	pdf.Line(rightLineX, signatureLineY, rightLineX+lineWidth, signatureLineY)
-
-	pdf.SetFont("Arial", "B", 10)
-	pdf.SetY(signatureLineY + 2.5)
-	pdf.SetXY(leftColumnX, pdf.GetY())
-	pdf.CellFormat(columnWidth, 5, fallbackText(data.Visit.Patient.FullName), "", 0, "C", false, 0, "")
-	pdf.SetXY(rightColumnX, pdf.GetY())
-	pdf.CellFormat(columnWidth, 5, fallbackText(data.Visit.Doctor.FullName), "", 1, "C", false, 0, "")
-	pdf.SetFont("Arial", "", 9)
-	pdf.SetY(pdf.GetY() + 4)
+	tteSignature := loadTTESignedSignatureByDocumentKeyWithBaseURL(fmt.Sprintf("procedure:%d", data.Record.ID), data.ValidationBaseURL)
+	addOrderPrintSignatureSectionWithTTE(pdf, hospitalInfo, data.GeneratedAt, "Pasien / Keluarga", data.Visit.Patient.FullName, "Dokter Pemeriksa", data.Visit.Doctor.FullName, tteSignature)
 }
 
 func buildProcedureTargetLines(action models.MedicalAction) []string {

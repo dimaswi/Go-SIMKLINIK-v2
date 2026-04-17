@@ -19,6 +19,7 @@ type User struct {
 	IsActive  bool           `gorm:"default:true" json:"is_active"`
 	RoleID    uint           `gorm:"not null;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"role_id"`
 	Role      Role           `gorm:"foreignKey:RoleID" json:"role,omitempty"`
+	Employee  *Employee      `gorm:"foreignKey:UserID" json:"employee,omitempty"`
 }
 
 // HashPassword hashes the user password

@@ -19,6 +19,10 @@ import (
 )
 
 func RetryFailedSyncLog(ctx context.Context, config Config, entry models.SATUSEHATLog) (ResourceOperationResult, error) {
+	if err := config.EnsureEnabled(); err != nil {
+		return ResourceOperationResult{}, err
+	}
+
 	if strings.TrimSpace(strings.ToLower(entry.Operation)) != "sync" {
 		return ResourceOperationResult{}, fmt.Errorf("hanya log operation=sync yang bisa di-retry")
 	}
@@ -48,6 +52,12 @@ func RetryFailedSyncLog(ctx context.Context, config Config, entry models.SATUSEH
 	if err := json.Unmarshal([]byte(entry.RequestPayload), &payload); err != nil {
 		return ResourceOperationResult{}, fmt.Errorf("payload log tidak valid JSON: %w", err)
 	}
+
+	refreshedPayload, err := refreshRetryPayload(ctx, config, entry, payload)
+	if err != nil {
+		return ResourceOperationResult{}, err
+	}
+	payload = refreshedPayload
 
 	ensureRetryPayloadIdentifier(entry.ResourceType, method, endpoint, payload, config)
 
@@ -116,6 +126,7 @@ func RetryFailedSyncLog(ctx context.Context, config Config, entry models.SATUSEH
 	request.Header.Set("X-Idempotency-Key", operationKey)
 
 	client := &http.Client{Timeout: 45 * time.Second}
+	throttleSATUSEHATCall()
 	response, err := client.Do(request)
 	if err != nil {
 		RecordActivityLog(ActivityLogEntry{
@@ -256,6 +267,12 @@ func resolveLocalResourceIDByPayloadIdentifier(resourceType string, payload map[
 	}
 
 	switch normalizeResourceType(resourceType) {
+	case "encounter":
+		var visit models.Visit
+		if err := database.DB.Select("satusehat_encounter_id").Where("visit_number = ?", identifierValue).First(&visit).Error; err != nil {
+			return ""
+		}
+		return strings.TrimSpace(visit.SatusehatEncounterID)
 	case "medicationrequest":
 		prescriptionID := extractResourceNumericID(identifierValue, "prescription-")
 		if prescriptionID == 0 {
@@ -397,6 +414,11 @@ func persistResolvedResourceIDForRetry(resourceType string, payload map[string]a
 	now := time.Now()
 
 	switch normalizeResourceType(resourceType) {
+	case "encounter":
+		return database.DB.Model(&models.Visit{}).Where("visit_number = ?", identifierValue).Updates(map[string]any{
+			"satusehat_encounter_id": trimmedResourceID,
+			"satusehat_synced_at":    now,
+		}).Error
 	case "medicationrequest":
 		prescriptionID := extractResourceNumericID(identifierValue, "prescription-")
 		if prescriptionID == 0 {
@@ -547,6 +569,67 @@ func extractFirstIdentifier(payload map[string]any) (string, string) {
 	}
 
 	return "", ""
+}
+
+func refreshRetryPayload(ctx context.Context, config Config, entry models.SATUSEHATLog, payload map[string]any) (map[string]any, error) {
+	switch normalizeResourceType(entry.ResourceType) {
+	case "encounter":
+		visit, err := loadVisitForEncounterRetry(entry, payload)
+		if err != nil {
+			return nil, fmt.Errorf("gagal menyiapkan payload Encounter retry: %w", err)
+		}
+
+		preview := BuildEncounterPreview(visit, config)
+		if !preview.Ready {
+			message := strings.Join(preview.Warnings, "; ")
+			if strings.TrimSpace(message) == "" {
+				message = "payload Encounter belum siap"
+			}
+			return nil, fmt.Errorf("payload Encounter retry belum siap: %s", message)
+		}
+
+		return preview.Resource, nil
+	default:
+		return payload, nil
+	}
+}
+
+func loadVisitForEncounterRetry(entry models.SATUSEHATLog, payload map[string]any) (models.Visit, error) {
+	var visit models.Visit
+	if database.DB == nil {
+		return visit, fmt.Errorf("database belum terhubung")
+	}
+
+	_, identifierValue := extractFirstIdentifier(payload)
+	if strings.TrimSpace(identifierValue) != "" {
+		err := database.DB.
+			Preload("Patient").
+			Preload("Doctor").
+			Preload("Polyclinic").
+			Where("visit_number = ?", strings.TrimSpace(identifierValue)).
+			First(&visit).Error
+		if err == nil {
+			return visit, nil
+		}
+	}
+
+	resourceID := strings.TrimSpace(entry.ResourceID)
+	if resourceID == "" {
+		resourceID = extractResourceIDFromRetryEndpoint(strings.TrimSpace(entry.Endpoint))
+	}
+	if resourceID != "" {
+		err := database.DB.
+			Preload("Patient").
+			Preload("Doctor").
+			Preload("Polyclinic").
+			Where("satusehat_encounter_id = ?", resourceID).
+			First(&visit).Error
+		if err == nil {
+			return visit, nil
+		}
+	}
+
+	return visit, fmt.Errorf("kunjungan untuk Encounter retry tidak ditemukan")
 }
 
 func extractResourceNumericID(value, prefix string) uint {

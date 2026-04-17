@@ -12,7 +12,7 @@ func BuildProcedurePreview(action models.MedicalAction, config Config) ResourceP
 	warnings := make([]string, 0, 6)
 	patientReference := strings.TrimSpace(record.Patient.SatusehatPatientID)
 	encounterReference := strings.TrimSpace(record.Visit.SatusehatEncounterID)
-	practitionerReference := strings.TrimSpace(record.Doctor.SatusehatPractitionerID)
+	practitionerActor := ResolveMedicalRecordRequesterActor(record)
 	procedureName := firstNonEmptyText(action.ServiceNameSnapshot, action.MedicalService.Name)
 	procedureCode := firstNonEmptyText(action.ServiceCodeSnapshot, action.MedicalService.Code)
 
@@ -52,15 +52,15 @@ func BuildProcedurePreview(action models.MedicalAction, config Config) ResourceP
 	if existingID := strings.TrimSpace(action.SatusehatProcedureID); existingID != "" {
 		resource["id"] = existingID
 	}
-	if practitionerReference != "" {
+	if practitionerActor.Ready() {
 		resource["performer"] = []map[string]any{{
 			"actor": map[string]any{
-				"reference": fmt.Sprintf("Practitioner/%s", practitionerReference),
-				"display":   record.Doctor.FullName,
+				"reference": practitionerActor.Reference(),
+				"display":   practitionerActor.Display,
 			},
 		}}
 	} else {
-		warnings = append(warnings, "Doctor belum memiliki SATUSEHAT Practitioner ID; performer akan diabaikan sementara.")
+		warnings = append(warnings, "Pegawai/dokter pelaksana belum memiliki SATUSEHAT Practitioner ID; performer akan diabaikan sementara.")
 	}
 	if action.Quantity > 1 {
 		resource["note"] = []map[string]any{{
@@ -86,7 +86,7 @@ func BuildCarePlanPreview(record models.MedicalRecord, config Config) ResourcePr
 	warnings := make([]string, 0, 6)
 	patientReference := strings.TrimSpace(record.Patient.SatusehatPatientID)
 	encounterReference := strings.TrimSpace(record.Visit.SatusehatEncounterID)
-	practitionerReference := strings.TrimSpace(record.Doctor.SatusehatPractitionerID)
+	practitionerActor := ResolveMedicalRecordRequesterActor(record)
 	organizationReference := strings.TrimSpace(config.OrganizationID)
 	planSummary := firstNonEmptyText(record.Plan, record.FollowUpInstruction)
 
@@ -135,10 +135,10 @@ func BuildCarePlanPreview(record models.MedicalRecord, config Config) ResourcePr
 		period["end"] = formatFHIRDateTime(*record.FollowUpAt)
 	}
 	authorReady := false
-	if practitionerReference != "" {
+	if practitionerActor.Ready() {
 		resource["author"] = map[string]any{
-			"reference": fmt.Sprintf("Practitioner/%s", practitionerReference),
-			"display":   record.Doctor.FullName,
+			"reference": practitionerActor.Reference(),
+			"display":   practitionerActor.Display,
 		}
 		authorReady = true
 	} else if organizationReference != "" {
@@ -147,7 +147,7 @@ func BuildCarePlanPreview(record models.MedicalRecord, config Config) ResourcePr
 			"display":   "Fasilitas pelayanan",
 		}
 		authorReady = true
-		warnings = append(warnings, "Doctor belum memiliki SATUSEHAT Practitioner ID; author CarePlan memakai Organization sebagai fallback.")
+		warnings = append(warnings, "Pegawai/dokter pemeriksa belum memiliki SATUSEHAT Practitioner ID; author CarePlan memakai Organization sebagai fallback.")
 	} else if patientReference != "" {
 		resource["author"] = map[string]any{
 			"reference": fmt.Sprintf("Patient/%s", patientReference),
@@ -156,7 +156,7 @@ func BuildCarePlanPreview(record models.MedicalRecord, config Config) ResourcePr
 		authorReady = true
 		warnings = append(warnings, "Doctor dan Organization belum memiliki SATUSEHAT ID; author CarePlan memakai Patient sebagai fallback.")
 	} else {
-		warnings = append(warnings, "Doctor belum memiliki SATUSEHAT Practitioner ID dan Organization SATUSEHAT belum tersedia; author CarePlan wajib dilengkapi.")
+		warnings = append(warnings, "Pegawai/dokter pemeriksa belum memiliki SATUSEHAT Practitioner ID dan Organization SATUSEHAT belum tersedia; author CarePlan wajib dilengkapi.")
 	}
 
 	activity := make([]map[string]any, 0, 2)
@@ -206,7 +206,7 @@ func BuildCarePlanPreview(record models.MedicalRecord, config Config) ResourcePr
 func BuildGoalPreview(record models.MedicalRecord, config Config) ResourcePreview {
 	warnings := make([]string, 0, 6)
 	patientReference := strings.TrimSpace(record.Patient.SatusehatPatientID)
-	practitionerReference := strings.TrimSpace(record.Doctor.SatusehatPractitionerID)
+	practitionerActor := ResolveMedicalRecordRequesterActor(record)
 	goalSummary := strings.TrimSpace(firstNonEmptyText(record.Plan, record.FollowUpInstruction, record.Assessment))
 
 	if patientReference == "" {
@@ -256,12 +256,12 @@ func BuildGoalPreview(record models.MedicalRecord, config Config) ResourcePrevie
 			"reference": fmt.Sprintf("Condition/%s", conditionReference),
 		}}
 	}
-	if practitionerReference != "" {
+	if practitionerActor.Ready() {
 		resource["expressedBy"] = map[string]any{
-			"reference": fmt.Sprintf("Practitioner/%s", practitionerReference),
+			"reference": practitionerActor.Reference(),
 		}
 	} else {
-		warnings = append(warnings, "Doctor belum memiliki SATUSEHAT Practitioner ID; expressedBy Goal akan diabaikan.")
+		warnings = append(warnings, "Pegawai/dokter pemeriksa belum memiliki SATUSEHAT Practitioner ID; expressedBy Goal akan diabaikan.")
 	}
 
 	targets := make([]map[string]any, 0, 1)
@@ -301,7 +301,7 @@ func BuildAllergyIntolerancePreview(record models.MedicalRecord, config Config) 
 	warnings := make([]string, 0, 6)
 	patientReference := strings.TrimSpace(record.Patient.SatusehatPatientID)
 	encounterReference := strings.TrimSpace(record.Visit.SatusehatEncounterID)
-	practitionerReference := strings.TrimSpace(record.Doctor.SatusehatPractitionerID)
+	practitionerActor := ResolveMedicalRecordRequesterActor(record)
 	allergySummary := firstNonEmptyText(record.AllergyNotes, record.Patient.Allergies, record.ClinicalAlert)
 
 	if patientReference == "" {
@@ -354,10 +354,10 @@ func BuildAllergyIntolerancePreview(record models.MedicalRecord, config Config) 
 			"display":   record.Visit.VisitNumber,
 		}
 	}
-	if practitionerReference != "" {
+	if practitionerActor.Ready() {
 		resource["recorder"] = map[string]any{
-			"reference": fmt.Sprintf("Practitioner/%s", practitionerReference),
-			"display":   record.Doctor.FullName,
+			"reference": practitionerActor.Reference(),
+			"display":   practitionerActor.Display,
 		}
 	}
 
@@ -388,7 +388,7 @@ func BuildCompositionPreview(record models.MedicalRecord, config Config) Resourc
 	warnings := make([]string, 0, 6)
 	patientReference := strings.TrimSpace(record.Patient.SatusehatPatientID)
 	encounterReference := strings.TrimSpace(record.Visit.SatusehatEncounterID)
-	practitionerReference := strings.TrimSpace(record.Doctor.SatusehatPractitionerID)
+	practitionerActor := ResolveMedicalRecordRequesterActor(record)
 
 	if patientReference == "" {
 		warnings = append(warnings, "Patient belum memiliki SATUSEHAT Patient ID.")
@@ -426,13 +426,13 @@ func BuildCompositionPreview(record models.MedicalRecord, config Config) Resourc
 	if existingID := strings.TrimSpace(record.SatusehatCompositionID); existingID != "" {
 		resource["id"] = existingID
 	}
-	if practitionerReference != "" {
+	if practitionerActor.Ready() {
 		resource["author"] = []map[string]any{{
-			"reference": fmt.Sprintf("Practitioner/%s", practitionerReference),
-			"display":   record.Doctor.FullName,
+			"reference": practitionerActor.Reference(),
+			"display":   practitionerActor.Display,
 		}}
 	} else {
-		warnings = append(warnings, "Doctor belum memiliki SATUSEHAT Practitioner ID; author akan diabaikan sementara.")
+		warnings = append(warnings, "Pegawai/dokter pemeriksa belum memiliki SATUSEHAT Practitioner ID; author akan diabaikan sementara.")
 	}
 
 	sections := make([]map[string]any, 0, 8)

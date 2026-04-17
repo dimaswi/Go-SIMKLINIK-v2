@@ -14,6 +14,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(getInitialState);
   const location = useLocation();
   const isEmrFormPage = /^\/emr\/\d+\/(form|sheets)\//.test(location.pathname);
+  const isConstrainedPage = isEmrFormPage || /^\/reports\/?$/.test(location.pathname);
 
   const handleOpenChange = (newOpen: boolean) => {
     setOpen(newOpen);
@@ -23,13 +24,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider open={open} onOpenChange={handleOpenChange}>
       <AppSidebar />
-      <SidebarInset className={isEmrFormPage ? 'overflow-hidden' : undefined}>
+      <SidebarInset className={isConstrainedPage ? 'overflow-hidden' : undefined}>
         <AppHeader />
-        {isEmrFormPage ? (
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {isConstrainedPage ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-auto md:overflow-hidden">
             {children}
           </div>
-        ) : children}
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+            {children}
+          </div>
+        )}
       </SidebarInset>
     </SidebarProvider>
   );

@@ -1,30 +1,54 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { BpjsReferencePicker } from '@/components/bpjs-reference-picker';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
-import { doctorsApi, polyclinicsApi, type Polyclinic } from '@/lib/api';
+import { doctorsApi, employeesApi, polyclinicsApi, type Employee, type Polyclinic } from '@/lib/api';
+import { useBpjsAntreanEnabled } from '@/hooks/use-bpjs-antrean-enabled';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, User, Phone, Stethoscope, FileText } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
 import { MasterDataAsideSection, MasterDataAsideStack, MasterDataLegacySections, MasterDataPageShell } from '@/pages/master-data/shared';
 
+function getEmployeeHint(employee: Employee) {
+  return employee.nip_number || employee.nik_number || employee.profession || '-';
+}
+
 export default function DoctorCreate() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const { bpjsAntreanEnabled } = useBpjsAntreanEnabled();
   const [polyclinics, setPolyclinics] = useState<Polyclinic[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedPolyclinics, setSelectedPolyclinics] = useState<number[]>([]);
   const [formData, setFormData] = useState({
-    full_name: '', nik_number: '', nip_number: '', sip_number: '', specialization: '', phone: '', is_active: true,
+    employee_id: '', full_name: '', nik_number: '', nip_number: '', sip_number: '', specialization: '', phone: '', is_active: true, bpjs_doctor_code: '',
   });
 
   useEffect(() => {
     setPageTitle('Tambah Dokter');
     polyclinicsApi.getAll().then(res => setPolyclinics(res.data.data)).catch(() => {});
+    employeesApi.getAll('profession=doctor').then(res => setEmployees(res.data.data)).catch(() => {});
   }, []);
+
+  const selectedEmployee = employees.find((employee) => String(employee.id) === formData.employee_id);
+
+  const handleEmployeeChange = (value: string) => {
+    const employee = employees.find((item) => String(item.id) === value);
+    setFormData((current) => ({
+      ...current,
+      employee_id: value,
+      full_name: employee?.full_name || current.full_name,
+      nik_number: employee?.nik_number || current.nik_number,
+      nip_number: employee?.nip_number || current.nip_number,
+      phone: employee?.phone || current.phone,
+    }));
+  };
 
   const togglePolyclinic = (id: number) => {
     setSelectedPolyclinics(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
@@ -34,7 +58,7 @@ export default function DoctorCreate() {
     e.preventDefault();
     setLoading(true);
     try {
-      await doctorsApi.create({ ...formData, polyclinic_ids: selectedPolyclinics });
+      await doctorsApi.create({ ...formData, employee_id: formData.employee_id ? Number(formData.employee_id) : null, polyclinic_ids: selectedPolyclinics });
       toast({ variant: "success", title: "Berhasil!", description: "Dokter berhasil dibuat." });
       setTimeout(() => navigate('/doctors'), 400);
     } catch (error: any) {
@@ -58,26 +82,48 @@ export default function DoctorCreate() {
                 <div className="space-y-1"><p className="truncate font-medium">{formData.full_name || 'Nama belum diisi'}</p><p className="truncate text-muted-foreground">NIK: {formData.nik_number || '-'}</p><p className="truncate text-muted-foreground">NIP: {formData.nip_number || '-'}</p><p className="truncate text-muted-foreground">{formData.specialization || '-'}</p><p className="text-muted-foreground">Poli: {selectedPolyclinics.length} dipilih</p><p className="text-muted-foreground">Status: {formData.is_active ? 'Aktif' : 'Nonaktif'}</p></div>
               </MasterDataAsideSection>
             </div>
+            <div>
+              <MasterDataAsideSection title="Tautan Pegawai" helper="Dokter idealnya ditautkan ke master pegawai agar akun dan identitas konsisten.">
+                <p className="text-sm text-muted-foreground">{selectedEmployee ? `Tertaut ke pegawai ${selectedEmployee.full_name}.` : 'Belum ditautkan ke master pegawai.'}</p>
+                <p className="mt-2 text-sm text-muted-foreground">{selectedEmployee ? (selectedEmployee.requires_satusehat ? 'Pegawai ini ditandai perlu SATUSEHAT, jadi profil dokter akan siap mengikuti alur integrasi.' : 'Pegawai ini ditandai tidak perlu SATUSEHAT, jadi profil dokter tidak diprioritaskan untuk integrasi.') : 'Jika pegawai dokter dipilih, status kebutuhan SATUSEHAT akan mengikuti master pegawai tersebut.'}</p>
+              </MasterDataAsideSection>
+            </div>
           </MasterDataAsideStack>
         }
       >
         <MasterDataLegacySections>
           <div className="space-y-6">
           <section className="space-y-4 rounded-lg border border-border/80 p-5">
+            <div className="space-y-2">
+              <Label htmlFor="employee_id" className="text-xs font-medium flex items-center gap-2"><User className="h-3.5 w-3.5 text-muted-foreground" />Master Pegawai Dokter</Label>
+              <SearchableSelect
+                options={employees.map((employee) => ({ value: String(employee.id), label: `${employee.full_name} (${employee.employee_code || getEmployeeHint(employee)})` }))}
+                value={formData.employee_id}
+                onValueChange={handleEmployeeChange}
+                placeholder="Pilih pegawai dokter..."
+                searchPlaceholder="Cari pegawai dokter..."
+                noneLabel="Tanpa tautan pegawai"
+              />
+              {selectedEmployee ? (
+                <p className="text-xs text-muted-foreground">
+                  SATUSEHAT pegawai: {selectedEmployee.requires_satusehat ? 'Perlu integrasi' : 'Tidak perlu integrasi'}.
+                </p>
+              ) : null}
+            </div>
             <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="full_name" className="text-xs font-medium flex items-center gap-2"><User className="h-3.5 w-3.5 text-muted-foreground" />Nama Lengkap</Label>
-                <Input id="full_name" required placeholder="dr. Ahmad" value={formData.full_name} onChange={e => setFormData({ ...formData, full_name: e.target.value })} className="h-10 text-sm" />
+                <Input id="full_name" required placeholder="dr. Ahmad" value={formData.full_name} onChange={e => setFormData({ ...formData, full_name: e.target.value })} className="h-10 text-sm" readOnly={Boolean(selectedEmployee)} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="nik_number" className="text-xs font-medium flex items-center gap-2"><FileText className="h-3.5 w-3.5 text-muted-foreground" />NIK</Label>
-                <Input id="nik_number" placeholder="16 digit NIK dokter" value={formData.nik_number} onChange={e => setFormData({ ...formData, nik_number: e.target.value })} className="h-10 text-sm" />
+                <Input id="nik_number" placeholder="16 digit NIK dokter" value={formData.nik_number} onChange={e => setFormData({ ...formData, nik_number: e.target.value })} className="h-10 text-sm" readOnly={Boolean(selectedEmployee)} />
               </div>
             </div>
             <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="nip_number" className="text-xs font-medium flex items-center gap-2"><FileText className="h-3.5 w-3.5 text-muted-foreground" />NIP</Label>
-                <Input id="nip_number" placeholder="1987xxxxxxxxxxxx" value={formData.nip_number} onChange={e => setFormData({ ...formData, nip_number: e.target.value })} className="h-10 text-sm" />
+                <Input id="nip_number" placeholder="1987xxxxxxxxxxxx" value={formData.nip_number} onChange={e => setFormData({ ...formData, nip_number: e.target.value })} className="h-10 text-sm" readOnly={Boolean(selectedEmployee)} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="sip_number" className="text-xs font-medium flex items-center gap-2"><FileText className="h-3.5 w-3.5 text-muted-foreground" />Nomor SIP</Label>
@@ -89,8 +135,15 @@ export default function DoctorCreate() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="phone" className="text-xs font-medium flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" />Telepon</Label>
-                <Input id="phone" placeholder="08xxxxxxxxxx" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} className="h-10 text-sm" />
+                <Input id="phone" placeholder="08xxxxxxxxxx" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} className="h-10 text-sm" readOnly={Boolean(selectedEmployee)} />
               </div>
+              {bpjsAntreanEnabled ? (
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="bpjs_doctor_code" className="text-xs font-medium">Kode Dokter BPJS</Label>
+                  <Input id="bpjs_doctor_code" placeholder="Kode BPJS" value={formData.bpjs_doctor_code} onChange={e => setFormData({ ...formData, bpjs_doctor_code: e.target.value })} className="h-10 text-sm" />
+                  <BpjsReferencePicker type="dokter" value={formData.bpjs_doctor_code} onValueChange={(value) => setFormData({ ...formData, bpjs_doctor_code: value })} disabled={loading} />
+                </div>
+              ) : null}
             </div>
             <div className="flex items-center justify-between rounded-md border p-4">
               <div className="space-y-0.5">

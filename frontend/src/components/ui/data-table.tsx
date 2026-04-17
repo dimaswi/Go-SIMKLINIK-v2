@@ -47,6 +47,7 @@ interface DataTableProps<TData, TValue> {
   pageSize?: number
   toolbarActions?: React.ReactNode
   className?: string
+  fixedLayout?: boolean
   emptyMessage?: React.ReactNode
   showSelectionSummary?: boolean
 }
@@ -61,6 +62,7 @@ export function DataTable<TData, TValue>({
   pageSize = 10,
   toolbarActions,
   className,
+  fixedLayout = false,
   emptyMessage = "No results.",
   showSelectionSummary = true,
 }: DataTableProps<TData, TValue>) {
@@ -100,7 +102,7 @@ export function DataTable<TData, TValue>({
   const hasToolbar = showSearch || showColumnVisibility || Boolean(toolbarActions)
 
   return (
-    <div className={cn("flex h-full min-h-0 w-full flex-col", className)}>
+    <div className={cn("flex h-auto min-h-0 w-full flex-col overflow-visible sm:h-full sm:overflow-hidden", className)}>
       {hasToolbar && (
         <div className="flex flex-col gap-3 pb-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -109,7 +111,7 @@ export function DataTable<TData, TValue>({
                 placeholder={searchPlaceholder}
                 value={globalFilter ?? ""}
                 onChange={(event) => setGlobalFilter(event.target.value)}
-                className="max-w-sm"
+                className="w-full max-w-sm"
               />
             )}
           </div>
@@ -147,16 +149,22 @@ export function DataTable<TData, TValue>({
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1 flex-col rounded-md border">
+      <div className="flex min-h-0 flex-col overflow-visible rounded-md border sm:flex-1 sm:overflow-hidden">
         {/* Table */}
-        <div className="min-h-0 flex-1 overflow-auto">
-          <Table>
+        <div className="overflow-x-auto overflow-y-visible overscroll-contain sm:min-h-0 sm:flex-1 sm:overflow-auto">
+          <Table className={cn(fixedLayout ? "table-fixed" : undefined)}>
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup: any) => (
                 <TableRow key={headerGroup.id}>
                   {headerGroup.headers.map((header: any) => {
+                    const headerMeta = header.column.columnDef.meta as { headerClassName?: string } | undefined
+                    const headerSize = header.getSize?.()
                     return (
-                      <TableHead key={header.id}>
+                      <TableHead
+                        key={header.id}
+                        className={headerMeta?.headerClassName}
+                        style={fixedLayout && Number.isFinite(headerSize) ? { width: `${headerSize}px`, minWidth: `${headerSize}px` } : undefined}
+                      >
                         {header.isPlaceholder
                           ? null
                           : flexRender(
@@ -176,14 +184,21 @@ export function DataTable<TData, TValue>({
                     key={row.id}
                     data-state={row.getIsSelected() && "selected"}
                   >
-                    {row.getVisibleCells().map((cell: any) => (
-                      <TableCell key={cell.id}>
+                    {row.getVisibleCells().map((cell: any) => {
+                      const cellMeta = cell.column.columnDef.meta as { cellClassName?: string } | undefined
+                      const cellSize = cell.column.getSize?.()
+                      return (
+                      <TableCell
+                        key={cell.id}
+                        className={cellMeta?.cellClassName}
+                        style={fixedLayout && Number.isFinite(cellSize) ? { width: `${cellSize}px`, minWidth: `${cellSize}px` } : undefined}
+                      >
                         {flexRender(
                           cell.column.columnDef.cell,
                           cell.getContext()
                         )}
                       </TableCell>
-                    ))}
+                    )})}
                   </TableRow>
                 ))
               ) : (
@@ -202,15 +217,16 @@ export function DataTable<TData, TValue>({
 
         {/* Pagination */}
         {showPagination && (
-          <div className="flex items-center justify-between space-x-2 border-t bg-muted/10 px-4 py-3">
-            <div className="flex-1 text-sm text-muted-foreground">
+          <div className="shrink-0 border-t bg-muted/10 px-4 py-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:space-x-2">
+            <div className="flex-1 text-xs text-muted-foreground sm:text-sm">
               {showSelectionSummary
                 ? <>{table.getFilteredSelectedRowModel().rows.length} of{" "}{table.getFilteredRowModel().rows.length} row(s) selected.</>
                 : <>{table.getFilteredRowModel().rows.length} row(s)</>}
             </div>
-            <div className="flex items-center space-x-6">
-              <div className="flex items-center space-x-2">
-                <p className="text-sm font-medium">Rows per page</p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4 lg:justify-end lg:space-x-6">
+              <div className="flex items-center justify-between gap-2 sm:justify-start sm:space-x-2">
+                <p className="text-xs font-medium sm:text-sm">Rows per page</p>
                 <Select
                   value={`${Math.min(table.getState().pagination.pageSize, 10)}`}
                   onValueChange={(value) => {
@@ -229,7 +245,7 @@ export function DataTable<TData, TValue>({
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex w-[100px] items-center justify-center text-sm font-medium">
+              <div className="flex items-center justify-center text-xs font-medium sm:min-w-[100px] sm:text-sm">
                 Page {table.getState().pagination.pageIndex + 1} of{" "}
                 {table.getPageCount()}
               </div>
@@ -271,6 +287,7 @@ export function DataTable<TData, TValue>({
                   <ChevronsRight className="h-4 w-4" />
                 </Button>
               </div>
+            </div>
             </div>
           </div>
         )}

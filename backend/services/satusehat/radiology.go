@@ -23,7 +23,8 @@ func BuildRadiologyItemPreview(item models.RadiologyOrderItem, config Config) Ra
 	record := item.MedicalRecord
 	patientReference := strings.TrimSpace(record.Patient.SatusehatPatientID)
 	encounterReference := strings.TrimSpace(record.Visit.SatusehatEncounterID)
-	practitionerReference := strings.TrimSpace(record.Doctor.SatusehatPractitionerID)
+	requesterActor := ResolveMedicalRecordRequesterActor(record)
+	performerActor := ResolveRadiologyPerformerActor(item)
 	organizationReference := strings.TrimSpace(config.OrganizationID)
 
 	if patientReference == "" {
@@ -81,15 +82,20 @@ func BuildRadiologyItemPreview(item models.RadiologyOrderItem, config Config) Ra
 			},
 		}}
 	}
-	if practitionerReference != "" {
+	if requesterActor.Ready() {
 		serviceRequest.Resource["requester"] = map[string]any{
-			"reference": fmt.Sprintf("Practitioner/%s", practitionerReference),
-			"display":   record.Doctor.FullName,
+			"reference": requesterActor.Reference(),
+			"display":   requesterActor.Display,
 		}
 	} else {
-		warnings = append(warnings, "Doctor belum memiliki SATUSEHAT Practitioner ID; requester akan diabaikan sementara.")
+		warnings = append(warnings, "Pegawai/dokter pengaju belum memiliki SATUSEHAT Practitioner ID; requester akan diabaikan sementara.")
 	}
-	if organizationReference != "" {
+	if performerActor.Ready() {
+		serviceRequest.Resource["performer"] = []map[string]any{{
+			"reference": performerActor.Reference(),
+			"display":   performerActor.Display,
+		}}
+	} else if organizationReference != "" {
 		serviceRequest.Resource["performer"] = []map[string]any{{
 			"reference": fmt.Sprintf("Organization/%s", organizationReference),
 		}}
@@ -155,10 +161,10 @@ func BuildRadiologyItemPreview(item models.RadiologyOrderItem, config Config) Ra
 				"reference": fmt.Sprintf("Organization/%s", organizationReference),
 			}}
 			reportPerformerReady = true
-		} else if practitionerReference != "" {
+		} else if performerActor.Ready() {
 			report.Resource["performer"] = []map[string]any{{
-				"reference": fmt.Sprintf("Practitioner/%s", practitionerReference),
-				"display":   record.Doctor.FullName,
+				"reference": performerActor.Reference(),
+				"display":   performerActor.Display,
 			}}
 			reportPerformerReady = true
 		}
@@ -208,6 +214,7 @@ func BuildRadiologyItemPreview(item models.RadiologyOrderItem, config Config) Ra
 
 func buildRadiologyObservationPreviews(item models.RadiologyOrderItem, record models.MedicalRecord, organizationID, serviceRequestReference string) []NamedResourcePreview {
 	observations := make([]NamedResourcePreview, 0, len(item.ParameterResults))
+	performerActor := ResolveRadiologyPerformerActor(item)
 	for _, parameter := range item.ParameterResults {
 		trimmedResultValue := strings.TrimSpace(parameter.ResultValue)
 		if trimmedResultValue == "" {
@@ -249,10 +256,10 @@ func buildRadiologyObservationPreviews(item models.RadiologyOrderItem, record mo
 		if note := strings.TrimSpace(firstNonEmptyText(parameter.ResultNotes, parameter.Flag)); note != "" {
 			resource["note"] = []map[string]any{{"text": note}}
 		}
-		if practitionerID := strings.TrimSpace(record.Doctor.SatusehatPractitionerID); practitionerID != "" {
+		if performerActor.Ready() {
 			resource["performer"] = []map[string]any{{
-				"reference": fmt.Sprintf("Practitioner/%s", practitionerID),
-				"display":   record.Doctor.FullName,
+				"reference": performerActor.Reference(),
+				"display":   performerActor.Display,
 			}}
 		} else if strings.TrimSpace(organizationID) != "" {
 			resource["performer"] = []map[string]any{{

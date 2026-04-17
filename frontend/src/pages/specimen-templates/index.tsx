@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { setPageTitle } from '@/lib/page-title';
 import { FlaskConical, Loader2, Plus } from 'lucide-react';
+import { MasterDataListShell } from '@/pages/master-data/shared';
 
 export default function SpecimenTemplatesPage() {
   const navigate = useNavigate();
@@ -59,14 +60,21 @@ export default function SpecimenTemplatesPage() {
 
   return (
     <div className="flex flex-1 min-h-0 flex-col gap-4 p-4">
-      <DataTable
-        columns={columns}
-        data={data}
-        searchPlaceholder="Cari template specimen atau kode SNOMED..."
-        pageSize={10}
-        toolbarActions={hasPermission('medical_services.create') ? <Button onClick={() => navigate('/specimen-templates/create')}><Plus className="h-4 w-4" />Tambah Template</Button> : undefined}
-        emptyMessage={<div className="flex flex-col items-center justify-center gap-2 py-10 text-center text-muted-foreground"><FlaskConical className="h-8 w-8" /><p>Belum ada template specimen.</p></div>}
-      />
+      <MasterDataListShell
+        title="Daftar Template Specimen"
+        subtitle="Kelola template specimen laboratorium dan kode SNOMED sebagai referensi order pemeriksaan."
+        totalCount={data.length}
+      >
+        <DataTable
+          className="h-full"
+          columns={columns}
+          data={data}
+          searchPlaceholder="Cari template specimen atau kode SNOMED..."
+          pageSize={10}
+          toolbarActions={hasPermission('medical_services.create') ? <Button onClick={() => navigate('/specimen-templates/create')} className="rounded-none shadow-none"><Plus className="h-4 w-4" />Tambah Template</Button> : undefined}
+          emptyMessage={<div className="flex flex-col items-center justify-center gap-2 py-10 text-center text-muted-foreground"><FlaskConical className="h-8 w-8" /><p>Belum ada template specimen.</p></div>}
+        />
+      </MasterDataListShell>
       <ConfirmDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen} onConfirm={confirmDelete} title="Hapus Template Specimen" description="Apakah Anda yakin ingin menghapus template specimen ini?" confirmText="Hapus" cancelText="Batal" variant="destructive" />
     </div>
   );
