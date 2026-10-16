@@ -4,15 +4,16 @@ import { Badge } from '@/components/ui/badge';
 import { DataTable } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { createDoctorColumns } from './columns';
-import { doctorsApi, satusehatApi, type Doctor, type DoctorListSummary } from '@/lib/api';
+import { doctorsApi, satusehatApi, type Doctor } from '@/lib/api';
 import { usePermission } from '@/hooks/usePermission';
 import { useToast } from '@/hooks/use-toast';
+import { Input } from '@/components/ui/input';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { setPageTitle } from '@/lib/page-title';
-import { Loader2, Plus } from 'lucide-react';
-import { MasterDataDetailItem, MasterDataListShell, formatMasterDataDateTime } from '@/pages/master-data/shared';
+import { Loader2, Plus, RefreshCw, UserCheck } from 'lucide-react';
+import { MasterDataDetailItem, formatMasterDataDateTime } from '@/pages/master-data/shared';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -35,12 +36,13 @@ export default function DoctorsPage() {
   const { hasPermission } = usePermission();
   const { toast } = useToast();
   const [data, setData] = useState<Doctor[]>([]);
-  const [summary, setSummary] = useState<DoctorListSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<number | null>(null);
   const [satusehatFilter, setSatusehatFilter] = useState<'all' | 'required' | 'not-required' | 'unlinked'>('all');
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [search, setSearch] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
   const [previewDoctor, setPreviewDoctor] = useState<Doctor | null>(null);
   const [previewData, setPreviewData] = useState<Record<string, unknown> | null>(null);
@@ -66,12 +68,7 @@ export default function DoctorsPage() {
         params.set('is_active', 'false');
       }
 
-      const [summaryResponse, listResponse] = await Promise.all([
-        doctorsApi.getSummary(),
-        doctorsApi.getAll(params.toString()),
-      ]);
-
-      setSummary(summaryResponse.data.data);
+      const listResponse = await doctorsApi.getAll(params.toString());
       setData(listResponse.data.data);
     } catch (error) {
       toast({ variant: "destructive", title: "Error!", description: error instanceof Error ? error.message : "Gagal memuat data." });
@@ -174,81 +171,121 @@ export default function DoctorsPage() {
     syncingDoctorId,
   });
 
-  const satusehatRequiredCount = summary?.satusehat_required_count ?? 0
-  const satusehatOptionalCount = summary?.satusehat_optional_count ?? 0
-  const unlinkedEmployeeCount = summary?.unlinked_employee_count ?? 0
-  const activeCount = summary?.active_count ?? 0
-  const inactiveCount = summary?.inactive_count ?? 0
   const previewWarnings = asArray(previewData?.warnings).map((item) => asString(item).trim()).filter(Boolean)
   const previewResource = asRecord(previewData?.resource)
   const previewReady = typeof previewData?.ready === 'boolean' ? previewData.ready : null
+
+  const filteredDoctors = data.filter((doc) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    const nameMatch = doc.full_name?.toLowerCase().includes(q);
+    const nikMatch = doc.nik_number?.toLowerCase().includes(q);
+    const nipMatch = doc.nip_number?.toLowerCase().includes(q);
+    const sipMatch = doc.sip_number?.toLowerCase().includes(q);
+    const specMatch = doc.specialization?.toLowerCase().includes(q);
+    return nameMatch || nikMatch || nipMatch || sipMatch || specMatch;
+  });
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
 
   if (loading) {
     return <div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   }
 
   return (
-    <div className="flex flex-1 min-h-0 flex-col gap-4 p-4">
-      <MasterDataListShell
-        title="Daftar Dokter"
-        subtitle="Kelola data identitas dokter, spesialisasi, dan informasi SIP untuk operasional klinik."
-        totalCount={data.length}
-        badges={
-          <>
-            <Badge variant="outline" className="rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.16em]">
-              {satusehatRequiredCount} perlu SATUSEHAT
-            </Badge>
-            <Badge variant="outline" className="rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.16em]">
-              {satusehatOptionalCount} tidak perlu
-            </Badge>
-            <Badge variant="outline" className="rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.16em]">
-              {unlinkedEmployeeCount} belum tertaut pegawai
-            </Badge>
-            <Badge variant="outline" className="rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.16em]">
-              {activeCount} aktif
-            </Badge>
-            <Badge variant="outline" className="rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.16em]">
-              {inactiveCount} nonaktif
-            </Badge>
-          </>
-        }
-      >
-        <DataTable
-          className="h-full"
-          columns={columns}
-          data={data}
-          searchPlaceholder="Cari dokter berdasarkan nama, NIK, NIP, spesialisasi, atau SIP..."
-          pageSize={10}
-          toolbarActions={
-            <>
-              <Select value={satusehatFilter} onValueChange={(value: 'all' | 'required' | 'not-required' | 'unlinked') => setSatusehatFilter(value)}>
-                <SelectTrigger className="w-[220px] rounded-none">
-                  <SelectValue placeholder="Filter SATUSEHAT" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua dokter</SelectItem>
-                  <SelectItem value="required">Perlu SATUSEHAT</SelectItem>
-                  <SelectItem value="not-required">Tidak perlu SATUSEHAT</SelectItem>
-                  <SelectItem value="unlinked">Belum tertaut pegawai</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={activeFilter} onValueChange={(value: 'all' | 'active' | 'inactive') => setActiveFilter(value)}>
-                <SelectTrigger className="w-[180px] rounded-none">
-                  <SelectValue placeholder="Filter status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua status</SelectItem>
-                  <SelectItem value="active">Aktif</SelectItem>
-                  <SelectItem value="inactive">Nonaktif</SelectItem>
-                </SelectContent>
-              </Select>
-              {hasPermission('doctors.create') ? (
-                <Button onClick={() => navigate('/doctors/create')} className="rounded-none shadow-none"><Plus className="h-4 w-4" />Tambah Dokter</Button>
-              ) : null}
-            </>
-          }
-        />
-      </MasterDataListShell>
+    <div className="p-6">
+      <div className="border border-border bg-card shadow-none">
+        <div className="flex flex-col gap-3 p-4 border-b border-border xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="flex h-9 w-9 items-center justify-center border border-border bg-muted/20">
+              <UserCheck className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-base font-semibold tracking-tight text-foreground">
+                Data Dokter
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                Kelola master data dokter, spesialisasi, dan SIP ({filteredDoctors.length} dokter)
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari dokter / spesialisasi / SIP..."
+              className="h-9 w-48 sm:w-56 rounded-none text-xs focus:ring-inset"
+            />
+
+            <SearchableSelect
+              options={[
+                { value: 'all', label: 'Semua SATUSEHAT' },
+                { value: 'required', label: 'Perlu SATUSEHAT' },
+                { value: 'not-required', label: 'Tidak Perlu SATUSEHAT' },
+                { value: 'unlinked', label: 'Belum Tertaut Pegawai' },
+              ]}
+              value={satusehatFilter}
+              onValueChange={(val) => setSatusehatFilter(val as any)}
+              placeholder="SATUSEHAT"
+              className="h-9 w-40 rounded-none text-xs focus:ring-inset shrink-0"
+              square
+            />
+
+            <SearchableSelect
+              options={[
+                { value: 'all', label: 'Semua Status' },
+                { value: 'active', label: 'Aktif' },
+                { value: 'inactive', label: 'Nonaktif' },
+              ]}
+              value={activeFilter}
+              onValueChange={(val) => setActiveFilter(val as any)}
+              placeholder="Status"
+              className="h-9 w-32 rounded-none text-xs focus:ring-inset shrink-0"
+              square
+            />
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void handleRefresh()}
+              disabled={refreshing}
+              className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
+            >
+              <RefreshCw className={refreshing ? 'mr-1.5 h-3.5 w-3.5 animate-spin' : 'mr-1.5 h-3.5 w-3.5'} />
+              Segarkan
+            </Button>
+
+            {hasPermission('doctors.create') ? (
+              <Button
+                className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
+                onClick={() => navigate('/doctors/create')}
+              >
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
+                Tambah Dokter
+              </Button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="p-0">
+          <DataTable
+            columns={columns}
+            data={filteredDoctors}
+            showSearch={false}
+            showColumnVisibility={false}
+            showSelectionSummary={false}
+            pageSize={10}
+            emptyMessage="Tidak ada data dokter yang sesuai."
+          />
+        </div>
+      </div>
+
       <ConfirmDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen} onConfirm={confirmDelete} title="Hapus Dokter" description="Apakah Anda yakin ingin menghapus dokter ini? Tindakan ini tidak dapat dibatalkan." confirmText="Hapus" cancelText="Batal" variant="destructive" />
 
       <Dialog open={previewDialogOpen} onOpenChange={setPreviewDialogOpen}>

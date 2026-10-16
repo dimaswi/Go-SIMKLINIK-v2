@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"starter/backend/models"
+	"strconv"
 	"strings"
 
 	"gorm.io/driver/postgres"
@@ -15,6 +16,7 @@ import (
 )
 
 var DB *gorm.DB
+var migrationDB *gorm.DB
 
 func prepareMedicalRecordSchema() {
 	DB.Exec("DROP INDEX IF EXISTS idx_medical_records_visit_id")
@@ -452,8 +454,14 @@ func Connect(dsn string) error {
 		return err
 	}
 
+	migrationDB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{DisableForeignKeyConstraintWhenMigrating: true})
+	if err != nil {
+		return err
+	}
+
 	// Ensure PostgreSQL session uses local timezone for DATE() calculations
 	DB.Exec("SET timezone = 'Asia/Jakarta'")
+	migrationDB.Exec("SET timezone = 'Asia/Jakarta'")
 
 	log.Println("Database connected successfully")
 	return nil
@@ -472,16 +480,444 @@ func ensureDoctorCompatibilityColumns() error {
 	return nil
 }
 
+func ensureRBACBaseTables() error {
+	if err := DB.Exec(`
+		CREATE TABLE IF NOT EXISTS roles (
+			id BIGSERIAL PRIMARY KEY,
+			created_at TIMESTAMPTZ,
+			updated_at TIMESTAMPTZ,
+			deleted_at TIMESTAMPTZ,
+			name VARCHAR(100) NOT NULL,
+			description VARCHAR(255)
+		)
+	`).Error; err != nil {
+		return err
+	}
+
+	if err := DB.Exec(`
+		CREATE TABLE IF NOT EXISTS permissions (
+			id BIGSERIAL PRIMARY KEY,
+			created_at TIMESTAMPTZ,
+			updated_at TIMESTAMPTZ,
+			deleted_at TIMESTAMPTZ,
+			name VARCHAR(100) NOT NULL,
+			module VARCHAR(50) NOT NULL,
+			category VARCHAR(50) NOT NULL,
+			description VARCHAR(255),
+			actions JSON
+		)
+	`).Error; err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func ensureReferencedColumnConstraint(tableName, columnName, constraintName string) error {
+	if !DB.Migrator().HasTable(tableName) {
+		return nil
+	}
+
+	var hasReferenceConstraint bool
+	if err := DB.Raw(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.table_constraints tc
+			JOIN information_schema.key_column_usage kcu
+				ON tc.constraint_name = kcu.constraint_name
+				AND tc.table_schema = kcu.table_schema
+				AND tc.table_name = kcu.table_name
+			WHERE tc.table_schema = current_schema()
+				AND tc.table_name = ?
+				AND kcu.column_name = ?
+				AND tc.constraint_type IN ('PRIMARY KEY', 'UNIQUE')
+		)
+	`, tableName, columnName).Scan(&hasReferenceConstraint).Error; err != nil {
+		return err
+	}
+
+	if hasReferenceConstraint {
+		return nil
+	}
+
+	var nullCount int64
+	if err := DB.Table(tableName).Where(fmt.Sprintf("%s IS NULL", columnName)).Count(&nullCount).Error; err != nil {
+		return err
+	}
+	if nullCount > 0 {
+		return fmt.Errorf("cannot add unique reference constraint on %s.%s: found %d rows with NULL values", tableName, columnName, nullCount)
+	}
+
+	type duplicateKeyRow struct {
+		Value uint
+		Count int64
+	}
+
+	var duplicate duplicateKeyRow
+	if err := DB.Table(tableName).
+		Select(fmt.Sprintf("%s AS value, COUNT(*) AS count", columnName)).
+		Group(columnName).
+		Having("COUNT(*) > 1").
+		Order("count DESC").
+		Limit(1).
+		Scan(&duplicate).Error; err != nil {
+		return err
+	}
+	if duplicate.Count > 0 {
+		return fmt.Errorf("cannot add unique reference constraint on %s.%s: duplicate value %d appears %d times", tableName, columnName, duplicate.Value, duplicate.Count)
+	}
+
+	return DB.Exec(fmt.Sprintf(`ALTER TABLE "%s" ADD CONSTRAINT "%s" UNIQUE ("%s")`, tableName, constraintName, columnName)).Error
+}
+
+func ensureRBACReferenceConstraints() error {
+	if err := ensureReferencedColumnConstraint("roles", "id", "roles_id_reference_key"); err != nil {
+		return err
+	}
+	if err := ensureReferencedColumnConstraint("permissions", "id", "permissions_id_reference_key"); err != nil {
+		return err
+	}
+	return nil
+}
+
+type legacyUserIdentityRow struct {
+	ID        uint   `gorm:"column:id"`
+	Username  string `gorm:"column:username"`
+	Email     string `gorm:"column:email"`
+	IsActive  bool   `gorm:"column:is_active"`
+}
+
+type legacySettingRow struct {
+	ID  uint   `gorm:"column:id"`
+	Key string `gorm:"column:key"`
+}
+
+type legacyUniqueTextRow struct {
+	ID    uint   `gorm:"column:id"`
+	Value string `gorm:"column:value"`
+}
+
+func reserveUniqueMigrationValue(candidate string, seen map[string]uint, userID uint, maxLength int) string {
+	trimmedCandidate := strings.TrimSpace(candidate)
+	if trimmedCandidate == "" {
+		trimmedCandidate = "legacy"
+	}
+
+	trimmedCandidate = strings.ToLower(trimmedCandidate)
+	if len(trimmedCandidate) > maxLength {
+		trimmedCandidate = trimmedCandidate[:maxLength]
+	}
+
+	if existingID, exists := seen[trimmedCandidate]; !exists || existingID == userID {
+		return trimmedCandidate
+	}
+
+	for attempt := 1; attempt < 1000; attempt += 1 {
+		suffix := fmt.Sprintf("-%d-%d", userID, attempt)
+		baseLength := maxLength - len(suffix)
+		if baseLength < 1 {
+			baseLength = 1
+		}
+		base := trimmedCandidate
+		if len(base) > baseLength {
+			base = base[:baseLength]
+		}
+		candidateWithSuffix := base + suffix
+		if existingID, exists := seen[candidateWithSuffix]; !exists || existingID == userID {
+			return candidateWithSuffix
+		}
+	}
+
+	return fmt.Sprintf("legacy-%d", userID)
+}
+
+func buildLegacyUniqueUsername(current string, userID uint, seen map[string]uint) string {
+	base := strings.TrimSpace(current)
+	if base == "" {
+		base = "legacy-user"
+	}
+
+	return reserveUniqueMigrationValue(fmt.Sprintf("%s-%d", base, userID), seen, userID, 50)
+}
+
+func buildLegacyUniqueEmail(current string, userID uint, seen map[string]uint) string {
+	trimmed := strings.TrimSpace(current)
+	if trimmed == "" {
+		return reserveUniqueMigrationValue(fmt.Sprintf("legacy-user-%d", userID), seen, userID, 150-len("@invalid.local")) + "@invalid.local"
+	}
+
+	parts := strings.SplitN(trimmed, "@", 2)
+	localPart := parts[0]
+	domainPart := "invalid.local"
+	if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
+		domainPart = strings.TrimSpace(parts[1])
+	}
+	if strings.TrimSpace(localPart) == "" {
+		localPart = "legacy-user"
+	}
+
+	suffix := "+dup" + strconv.FormatUint(uint64(userID), 10)
+	maxLocalLength := 150 - len(domainPart) - 1 - len(suffix)
+	if maxLocalLength < 1 {
+		maxLocalLength = 1
+	}
+	if len(localPart) > maxLocalLength {
+		localPart = localPart[:maxLocalLength]
+	}
+
+	return reserveUniqueMigrationValue(localPart+suffix, seen, userID, 150-len(domainPart)-1) + "@" + domainPart
+}
+
+func normalizeLegacyUserUniqueness() error {
+	if !DB.Migrator().HasTable("users") {
+		return nil
+	}
+
+	var users []legacyUserIdentityRow
+	if err := DB.Table("users").
+		Select("id, username, email, is_active, deleted_at").
+		Order("CASE WHEN deleted_at IS NULL THEN 0 ELSE 1 END ASC").
+		Order("is_active DESC").
+		Order("id ASC").
+		Scan(&users).Error; err != nil {
+		return err
+	}
+
+	seenUsernames := make(map[string]uint)
+	seenEmails := make(map[string]uint)
+
+	for _, user := range users {
+		updates := map[string]any{}
+
+		normalizedUsername := strings.ToLower(strings.TrimSpace(user.Username))
+		if normalizedUsername == "" {
+			updates["username"] = buildLegacyUniqueUsername(user.Username, user.ID, seenUsernames)
+			normalizedUsername = strings.ToLower(updates["username"].(string))
+		}
+		if existingID, exists := seenUsernames[normalizedUsername]; exists && existingID != user.ID {
+			updates["username"] = buildLegacyUniqueUsername(user.Username, user.ID, seenUsernames)
+			normalizedUsername = strings.ToLower(updates["username"].(string))
+		}
+		seenUsernames[normalizedUsername] = user.ID
+
+		normalizedEmail := strings.ToLower(strings.TrimSpace(user.Email))
+		if normalizedEmail == "" {
+			updates["email"] = buildLegacyUniqueEmail(user.Email, user.ID, seenEmails)
+			normalizedEmail = strings.ToLower(updates["email"].(string))
+		}
+		if existingID, exists := seenEmails[normalizedEmail]; exists && existingID != user.ID {
+			updates["email"] = buildLegacyUniqueEmail(user.Email, user.ID, seenEmails)
+			normalizedEmail = strings.ToLower(updates["email"].(string))
+		}
+		seenEmails[normalizedEmail] = user.ID
+
+		if len(updates) > 0 {
+			if err := DB.Table("users").Where("id = ?", user.ID).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func buildLegacyUniqueSettingKey(current string, settingID uint, seen map[string]uint) string {
+	base := strings.TrimSpace(current)
+	if base == "" {
+		base = "legacy-setting"
+	}
+
+	return reserveUniqueMigrationValue(fmt.Sprintf("%s-%d", base, settingID), seen, settingID, 255)
+}
+
+func buildLegacyUniqueTextValue(current string, recordID uint, fallbackPrefix string, seen map[string]uint, maxLength int) string {
+	base := strings.TrimSpace(current)
+	if base == "" {
+		base = fallbackPrefix
+	}
+
+	return reserveUniqueMigrationValue(fmt.Sprintf("%s-%d", base, recordID), seen, recordID, maxLength)
+}
+
+func normalizeLegacyUniqueTextColumn(tableName, columnName, fallbackPrefix string, maxLength int) error {
+	if !DB.Migrator().HasTable(tableName) || !DB.Migrator().HasColumn(tableName, columnName) {
+		return nil
+	}
+
+	query := DB.Table(tableName).
+		Select(fmt.Sprintf("id, %s AS value", columnName))
+
+	if DB.Migrator().HasColumn(tableName, "deleted_at") {
+		query = query.Order("CASE WHEN deleted_at IS NULL THEN 0 ELSE 1 END ASC")
+	}
+	if DB.Migrator().HasColumn(tableName, "is_active") {
+		query = query.Order("is_active DESC")
+	}
+	if DB.Migrator().HasColumn(tableName, "updated_at") {
+		query = query.Order("updated_at DESC")
+	}
+	query = query.Order("id ASC")
+
+	var rows []legacyUniqueTextRow
+	if err := query.Scan(&rows).Error; err != nil {
+		return err
+	}
+
+	seen := make(map[string]uint)
+	for _, row := range rows {
+		normalizedValue := strings.TrimSpace(row.Value)
+		if normalizedValue == "" {
+			newValue := buildLegacyUniqueTextValue(row.Value, row.ID, fallbackPrefix, seen, maxLength)
+			if err := DB.Table(tableName).Where("id = ?", row.ID).Update(columnName, newValue).Error; err != nil {
+				return err
+			}
+			seen[newValue] = row.ID
+			continue
+		}
+
+		if existingID, exists := seen[normalizedValue]; exists && existingID != row.ID {
+			newValue := buildLegacyUniqueTextValue(row.Value, row.ID, fallbackPrefix, seen, maxLength)
+			if err := DB.Table(tableName).Where("id = ?", row.ID).Update(columnName, newValue).Error; err != nil {
+				return err
+			}
+			seen[newValue] = row.ID
+			continue
+		}
+
+		if normalizedValue != row.Value {
+			if err := DB.Table(tableName).Where("id = ?", row.ID).Update(columnName, normalizedValue).Error; err != nil {
+				return err
+			}
+		}
+		seen[normalizedValue] = row.ID
+	}
+
+	return nil
+}
+
+func normalizeLegacyRBACUniqueness() error {
+	if err := normalizeLegacyUniqueTextColumn("roles", "name", "legacy-role", 100); err != nil {
+		return err
+	}
+	if err := normalizeLegacyUniqueTextColumn("permissions", "name", "legacy-permission", 100); err != nil {
+		return err
+	}
+	return nil
+}
+
+func normalizeLegacySettingUniqueness() error {
+	if !DB.Migrator().HasTable("settings") {
+		return nil
+	}
+
+	var settings []legacySettingRow
+	if err := DB.Table("settings").
+		Select("id, key").
+		Order("CASE WHEN deleted_at IS NULL THEN 0 ELSE 1 END ASC").
+		Order("updated_at DESC").
+		Order("id DESC").
+		Scan(&settings).Error; err != nil {
+		return err
+	}
+
+	seenKeys := make(map[string]uint)
+	for _, setting := range settings {
+		normalizedKey := strings.TrimSpace(setting.Key)
+		if normalizedKey == "" {
+			newKey := buildLegacyUniqueSettingKey(setting.Key, setting.ID, seenKeys)
+			if err := DB.Table("settings").Where("id = ?", setting.ID).Update("key", newKey).Error; err != nil {
+				return err
+			}
+			seenKeys[newKey] = setting.ID
+			continue
+		}
+
+		if existingID, exists := seenKeys[normalizedKey]; exists && existingID != setting.ID {
+			newKey := buildLegacyUniqueSettingKey(setting.Key, setting.ID, seenKeys)
+			if err := DB.Table("settings").Where("id = ?", setting.ID).Update("key", newKey).Error; err != nil {
+				return err
+			}
+			seenKeys[newKey] = setting.ID
+			continue
+		}
+
+		if normalizedKey != setting.Key {
+			if err := DB.Table("settings").Where("id = ?", setting.ID).Update("key", normalizedKey).Error; err != nil {
+				return err
+			}
+		}
+		seenKeys[normalizedKey] = setting.ID
+	}
+
+	return nil
+}
+
+func isLegacyDuplicateIndexError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	normalized := strings.ToLower(err.Error())
+	if !strings.Contains(normalized, "sqlstate 23505") {
+		return false
+	}
+
+	return strings.Contains(normalized, "could not create unique index") || strings.Contains(normalized, "duplicate key value violates unique constraint")
+}
+
+func autoMigrateModelsSafely(models ...any) error {
+	dbForMigration := migrationDB
+	if dbForMigration == nil {
+		dbForMigration = DB
+	}
+
+	for _, model := range models {
+		if err := dbForMigration.AutoMigrate(model); err != nil {
+			if isLegacyDuplicateIndexError(err) {
+				log.Printf("WARNING: skipping legacy unique-index enforcement for model %T because production data still contains duplicates: %v", model, err)
+				continue
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
 func Migrate() error {
 	prepareMedicalRecordSchema()
 
-	// Auto-migrate master tables first so legacy laboratory data can be backfilled
-	err := DB.AutoMigrate(
-		// Core RBAC & Settings
+	if err := ensureRBACBaseTables(); err != nil {
+		return err
+	}
+
+	if err := ensureRBACReferenceConstraints(); err != nil {
+		return err
+	}
+
+	if err := normalizeLegacyRBACUniqueness(); err != nil {
+		return err
+	}
+
+	if err := autoMigrateModelsSafely(
 		&models.Role{},
 		&models.Permission{},
+	); err != nil {
+		return err
+	}
+
+	if err := normalizeLegacyUserUniqueness(); err != nil {
+		return err
+	}
+
+	if err := normalizeLegacySettingUniqueness(); err != nil {
+		return err
+	}
+
+	// Auto-migrate master tables first so legacy laboratory data can be backfilled
+	err := autoMigrateModelsSafely(
+		// Core RBAC & Settings
 		&models.RolePermission{},
-		&models.User{},
 		&models.Setting{},
 		&models.SystemBackupFile{},
 		&models.DocumentSignatureRequest{},
@@ -556,6 +992,10 @@ func Migrate() error {
 		return err
 	}
 
+	if err := autoMigrateModelsSafely(&models.User{}); err != nil {
+		return err
+	}
+
 	if err := ensureDoctorCompatibilityColumns(); err != nil {
 		return err
 	}
@@ -571,7 +1011,7 @@ func Migrate() error {
 	}
 
 	// Migrate legacy laboratory tables after backfill so foreign keys can be created safely
-	err = DB.AutoMigrate(
+	err = autoMigrateModelsSafely(
 
 		&models.LaboratoryOrderItem{},
 		&models.LaboratoryOrderSpecimen{},

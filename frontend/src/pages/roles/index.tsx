@@ -1,15 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { setPageTitle } from '@/lib/page-title';
 import { DataTable } from '@/components/ui/data-table';
+import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { createRoleColumns } from './columns';
 import { rolesApi, type Role } from '@/lib/api';
 import { usePermission } from '@/hooks/usePermission';
 import { useToast } from '@/hooks/use-toast';
 import { ConfirmDialog } from '@/components/confirm-dialog';
-import { Loader2, Plus } from 'lucide-react';
-import { MasterDataListShell } from '@/pages/master-data/shared';
+import { Loader2, Plus, RefreshCw, ShieldCheck } from 'lucide-react';
 
 export default function RolesPage() {
   const navigate = useNavigate();
@@ -17,18 +17,15 @@ export default function RolesPage() {
   const { toast } = useToast();
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [search, setSearch] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [roleToDelete, setRoleToDelete] = useState<number | null>(null);
 
-  useEffect(() => {
-    setPageTitle('Roles');
-    loadRoles();
-  }, []);
-
-  const loadRoles = async () => {
+  const loadRoles = useCallback(async () => {
     try {
       const response = await rolesApi.getAll();
-      setRoles(response.data.data);
+      setRoles(response.data.data || []);
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -38,11 +35,35 @@ export default function RolesPage() {
     } finally {
       setLoading(false);
     }
+  }, [toast]);
+
+  useEffect(() => {
+    setPageTitle('Roles');
+    loadRoles();
+  }, [loadRoles]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadRoles();
+    setRefreshing(false);
+  };
+
+  const handleView = (id: number) => {
+    navigate(`/roles/${id}`);
+  };
+
+  const handleEdit = (id: number) => {
+    navigate(`/roles/${id}/edit`);
+  };
+
+  const handleDeleteClick = (id: number) => {
+    setRoleToDelete(id);
+    setDeleteDialogOpen(true);
   };
 
   const confirmDelete = async () => {
     if (!roleToDelete) return;
-    
+
     try {
       await rolesApi.delete(roleToDelete);
       toast({
@@ -63,29 +84,20 @@ export default function RolesPage() {
     }
   };
 
-  // Handle actions
-  const handleView = (id: number) => {
-    navigate(`/roles/${id}`);
-  };
-
-  const handleEdit = (id: number) => {
-    navigate(`/roles/${id}/edit`);
-  };
-
-  const handleDeleteClick = (id: number) => {
-    setRoleToDelete(id);
-    setDeleteDialogOpen(true);
-  };
-
-  // Create columns
-  const columns = createRoleColumns({
+  const columns = useMemo(() => createRoleColumns({
     onView: handleView,
     onEdit: handleEdit,
     onDelete: handleDeleteClick,
     hasViewPermission: hasPermission('roles.view'),
     hasEditPermission: hasPermission('roles.update'),
     hasDeletePermission: hasPermission('roles.delete'),
-  });
+  }), [hasPermission]);
+
+  const filteredRoles = useMemo(() => {
+    if (!search.trim()) return roles;
+    const q = search.toLowerCase();
+    return roles.filter((r) => r.name?.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q));
+  }, [roles, search]);
 
   if (loading) {
     return (
@@ -96,28 +108,67 @@ export default function RolesPage() {
   }
 
   return (
-    <div className="flex flex-1 min-h-0 flex-col gap-4 p-4">
-      <MasterDataListShell
-        title="Daftar Role"
-        subtitle="Kelola peran akses pengguna agar hak menu dan aksi tetap terkontrol."
-        totalCount={roles.length}
-      >
-        <DataTable
-          className="h-full"
-          columns={columns}
-          data={roles}
-          searchPlaceholder="Search roles by name or description..."
-          pageSize={10}
-          toolbarActions={
-            hasPermission('roles.create') ? (
-              <Button onClick={() => navigate('/roles/create')} className="rounded-none shadow-none">
-                <Plus className="h-4 w-4" />
-                Add Role
+    <div className="p-6">
+      <div className="border border-border bg-card shadow-none">
+        <div className="flex flex-col gap-3 p-4 border-b border-border xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="flex h-9 w-9 items-center justify-center border border-border bg-muted/20">
+              <ShieldCheck className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-base font-semibold tracking-tight text-foreground">
+                Peran Pengguna (Roles)
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                Kelola wewenang hak akses peran sistem ({filteredRoles.length} role)
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari role..."
+              className="h-9 w-48 sm:w-56 rounded-none text-xs focus:ring-inset"
+            />
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void handleRefresh()}
+              disabled={refreshing}
+              className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
+            >
+              <RefreshCw className={refreshing ? 'mr-1.5 h-3.5 w-3.5 animate-spin' : 'mr-1.5 h-3.5 w-3.5'} />
+              Segarkan
+            </Button>
+
+            {hasPermission('roles.create') ? (
+              <Button
+                className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
+                onClick={() => navigate('/roles/create')}
+              >
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
+                Tambah Role
               </Button>
-            ) : undefined
-          }
-        />
-      </MasterDataListShell>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="p-0">
+          <DataTable
+            columns={columns}
+            data={filteredRoles}
+            showSearch={false}
+            showColumnVisibility={false}
+            showSelectionSummary={false}
+            pageSize={10}
+            emptyMessage="Tidak ada role yang sesuai."
+          />
+        </div>
+      </div>
 
       <ConfirmDialog
         open={deleteDialogOpen}

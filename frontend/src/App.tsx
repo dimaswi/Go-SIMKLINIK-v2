@@ -6,18 +6,11 @@ import { ProtectedRoute as PermissionGuard } from './components/protected-route'
 import { Toaster } from '@/components/ui/toaster';
 import { Loader2 } from 'lucide-react';
 import PharmacyIndex from './pages/pharmacy/index';
-import PharmacyReceiveIndex from './pages/pharmacy/receive/index';
-import PharmacyProcessIndex from './pages/pharmacy/process/index';
-import PharmacyHandoverIndex from './pages/pharmacy/handover/index';
-import PharmacyCompletedIndex from './pages/pharmacy/completed/index';
+import PharmacyShow from './pages/pharmacy/show';
 import LaboratoryIndex from './pages/laboratory/index';
-import LaboratoryReceiveIndex from './pages/laboratory/receive/index';
-import LaboratoryProcessIndex from './pages/laboratory/process/index';
-import LaboratoryCompletedIndex from './pages/laboratory/completed/index';
+import LaboratoryShow from './pages/laboratory/show';
 import RadiologyIndex from './pages/radiology/index';
-import RadiologyReceiveIndex from './pages/radiology/receive/index';
-import RadiologyProcessIndex from './pages/radiology/process/index';
-import RadiologyCompletedIndex from './pages/radiology/completed/index';
+import RadiologyShow from './pages/radiology/show';
 import KasirIndex from './pages/kasir/index';
 import KasirDetail from './pages/kasir/detail';
 
@@ -354,22 +347,18 @@ function App() {
 
           {/* Pharmacy */}
           <Route path="/pharmacy" element={<ProtectedRoute><PermissionGuard permission={["pharmacy.view", "pharmacy.process", "prescriptions.view", "prescriptions.process"]}><PharmacyIndex /></PermissionGuard></ProtectedRoute>} />
-          <Route path="/pharmacy/receive" element={<ProtectedRoute><PermissionGuard permission={["pharmacy.view", "pharmacy.process", "prescriptions.view", "prescriptions.process"]}><PharmacyReceiveIndex /></PermissionGuard></ProtectedRoute>} />
-          <Route path="/pharmacy/process" element={<ProtectedRoute><PermissionGuard permission={["pharmacy.view", "pharmacy.process", "prescriptions.view", "prescriptions.process"]}><PharmacyProcessIndex /></PermissionGuard></ProtectedRoute>} />
-          <Route path="/pharmacy/handover" element={<ProtectedRoute><PermissionGuard permission={["pharmacy.view", "pharmacy.process", "prescriptions.view", "prescriptions.process"]}><PharmacyHandoverIndex /></PermissionGuard></ProtectedRoute>} />
-          <Route path="/pharmacy/completed" element={<ProtectedRoute><PermissionGuard permission={["pharmacy.view", "pharmacy.process", "prescriptions.view", "prescriptions.process"]}><PharmacyCompletedIndex /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/pharmacy/:id" element={<ProtectedRoute><PermissionGuard permission={["pharmacy.view", "pharmacy.process", "prescriptions.view", "prescriptions.process"]}><PharmacyShow /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/pharmacy/*" element={<Navigate to="/pharmacy" replace />} />
 
           {/* Laboratory */}
           <Route path="/laboratory" element={<ProtectedRoute><PermissionGuard permission={["laboratory.view", "laboratory.process"]}><LaboratoryIndex /></PermissionGuard></ProtectedRoute>} />
-          <Route path="/laboratory/receive" element={<ProtectedRoute><PermissionGuard permission={["laboratory.view", "laboratory.process"]}><LaboratoryReceiveIndex /></PermissionGuard></ProtectedRoute>} />
-          <Route path="/laboratory/process" element={<ProtectedRoute><PermissionGuard permission={["laboratory.view", "laboratory.process"]}><LaboratoryProcessIndex /></PermissionGuard></ProtectedRoute>} />
-          <Route path="/laboratory/completed" element={<ProtectedRoute><PermissionGuard permission={["laboratory.view", "laboratory.process"]}><LaboratoryCompletedIndex /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/laboratory/:id" element={<ProtectedRoute><PermissionGuard permission={["laboratory.view", "laboratory.process"]}><LaboratoryShow /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/laboratory/*" element={<Navigate to="/laboratory" replace />} />
 
           {/* Radiology */}
           <Route path="/radiology" element={<ProtectedRoute><PermissionGuard permission={["radiology.view", "radiology.process"]}><RadiologyIndex /></PermissionGuard></ProtectedRoute>} />
-          <Route path="/radiology/receive" element={<ProtectedRoute><PermissionGuard permission={["radiology.view", "radiology.process"]}><RadiologyReceiveIndex /></PermissionGuard></ProtectedRoute>} />
-          <Route path="/radiology/process" element={<ProtectedRoute><PermissionGuard permission={["radiology.view", "radiology.process"]}><RadiologyProcessIndex /></PermissionGuard></ProtectedRoute>} />
-          <Route path="/radiology/completed" element={<ProtectedRoute><PermissionGuard permission={["radiology.view", "radiology.process"]}><RadiologyCompletedIndex /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/radiology/:id" element={<ProtectedRoute><PermissionGuard permission={["radiology.view", "radiology.process"]}><RadiologyShow /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/radiology/*" element={<Navigate to="/radiology" replace />} />
 
           {/* Kasir */}
           <Route path="/kasir" element={<ProtectedRoute><PermissionGuard permission={["invoices.view", "invoices.pay"]}><KasirIndex /></PermissionGuard></ProtectedRoute>} />

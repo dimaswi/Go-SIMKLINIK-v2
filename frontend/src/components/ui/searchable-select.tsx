@@ -156,8 +156,10 @@ export function SearchableSelect({
     setOpen(false)
   }
 
+  const widthClass = className?.split(' ').filter(c => c.startsWith('w-') || c.startsWith('max-w-') || c.startsWith('min-w-') || c === 'shrink-0').join(' ') || 'w-full'
+
   return (
-    <div ref={containerRef} className="relative w-full">
+    <div ref={containerRef} className={cn("relative", widthClass)}>
       <Input
         ref={inputRef}
         role="combobox"
@@ -251,7 +253,7 @@ export function SearchableSelect({
           }
         }}
         className={cn(
-          'h-10 w-full pr-10 text-sm font-normal',
+          'h-9 w-full pr-10 text-sm font-normal outline-none focus:outline-none focus:ring-1 focus:ring-ring focus:ring-inset focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset focus:border-ring',
           square && 'rounded-none shadow-none',
           className
         )}

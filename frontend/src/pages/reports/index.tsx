@@ -325,82 +325,38 @@ export default function ReportsIndex() {
 
   const activeDataset = dataset?.report_type === activeTab ? dataset : null;
   const columns = useMemo(() => createColumns(activeDataset?.columns || []), [activeDataset?.columns]);
-  const metricItems = activeDataset?.metrics || [];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-hidden p-4 lg:p-6">
-      <section className="relative shrink-0 overflow-hidden border border-border/70 bg-[linear-gradient(125deg,#fff7ed_0%,#f8fafc_45%,#ecfeff_100%)] p-5 lg:p-7">
-        <div className="pointer-events-none absolute -left-8 top-2 h-40 w-40 rounded-full bg-amber-300/20 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-16 right-0 h-52 w-52 rounded-full bg-sky-300/20 blur-3xl" />
-        <div className="relative z-10 grid gap-5 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-end">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge className="rounded-none border-0 bg-stone-900 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-white">Report Center</Badge>
-              <Badge variant="outline" className="rounded-none px-2.5 py-1 text-[10px] uppercase tracking-[0.16em]">Rawat Jalan</Badge>
-              <Badge variant="outline" className="rounded-none px-2.5 py-1 text-[10px] uppercase tracking-[0.16em]">Preview + Export</Badge>
-            </div>
-            <div>
-              <h1 className="text-xl font-semibold tracking-tight text-foreground lg:text-2xl">Pusat laporan operasional</h1>
-              <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-						Pilih jenis laporan, lihat datanya dalam tabel lebih dulu, lalu lakukan export langsung dari toolbar tabel. Tab sudah disesuaikan dengan data yang memang tersedia di SIMKLINIK.
-              </p>
-            </div>
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden p-4">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ReportCenterType)} className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+        {/* Unified Header: Tabs on Left, Date Period on Right */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 pb-2">
+          <div className="shrink-0 overflow-x-auto">
+            <TabsList className="flex h-auto min-w-max gap-0 bg-transparent p-0 text-muted-foreground md:min-w-full">
+              {reportTabs.map((tab) => (
+                <TabsTrigger
+                  key={tab.value}
+                  value={tab.value}
+                  className="-mb-px rounded-none border-b-2 border-transparent px-4 pb-2 pt-1 text-sm font-medium data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
+                >
+                  {tab.shortLabel}
+                </TabsTrigger>
+              ))}
+            </TabsList>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1 border border-border/70 bg-background/90 px-3 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Mulai</p>
-              <Input type="date" value={reportStartDate} onChange={(event) => setReportStartDate(event.target.value)} className="h-9 rounded-none" />
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">Periode:</span>
+              <Input type="date" value={reportStartDate} onChange={(event) => setReportStartDate(event.target.value)} className="h-8 w-[135px] rounded-none text-xs" />
+              <span className="text-xs text-muted-foreground">-</span>
+              <Input type="date" value={reportEndDate} onChange={(event) => setReportEndDate(event.target.value)} className="h-8 w-[135px] rounded-none text-xs" />
             </div>
-            <div className="space-y-1 border border-border/70 bg-background/90 px-3 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Sampai</p>
-              <Input type="date" value={reportEndDate} onChange={(event) => setReportEndDate(event.target.value)} className="h-9 rounded-none" />
-            </div>
-            <div className="col-span-2 min-h-5 px-1 text-xs text-muted-foreground">
-              {rangeError ? <span className="text-rose-700">{rangeError}</span> : 'Data otomatis diperbarui saat rentang tanggal diubah.'}
-            </div>
+            {rangeError ? <span className="text-xs text-rose-700">{rangeError}</span> : null}
           </div>
         </div>
-      </section>
 
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ReportCenterType)} className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
-        <div className="shrink-0 overflow-x-auto border-b border-border/70">
-          <TabsList className="flex h-auto min-w-max gap-0 bg-transparent p-0 text-muted-foreground md:min-w-full">
-            {reportTabs.map((tab) => (
-              <TabsTrigger
-                key={tab.value}
-                value={tab.value}
-                className="-mb-px rounded-none border-b-2 border-transparent px-4 pb-3 pt-1 text-sm font-medium data-[state=active]:border-stone-900 data-[state=active]:bg-transparent data-[state=active]:text-stone-900 data-[state=active]:shadow-none md:flex-1 md:justify-center"
-              >
-                {tab.shortLabel}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </div>
-
-        <TabsContent value={activeTab} className="mt-0 flex min-h-0 flex-1 flex-col gap-4 overflow-hidden outline-none">
-          <div className="shrink-0 border-b border-border/70 pb-3">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="text-xl tracking-tight text-foreground">{activeDataset?.title || activeMeta.label}</h2>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">{activeDataset?.subtitle || activeMeta.description}</p>
-            </div>
-            <Badge variant="outline" className="rounded-none px-2.5 py-1 text-[10px] uppercase tracking-[0.16em]">
-              {activeDataset?.period_text || `${appliedRange.start} s/d ${appliedRange.end}`}
-            </Badge>
-            </div>
-          </div>
-
-          <div className="shrink-0 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {metricItems.map((metric) => (
-              <div key={metric.label} className="border border-border/70 bg-muted/20 p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{metric.label}</p>
-                <p className="mt-1 text-xl font-semibold text-foreground">{metric.value}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{metric.helper || 'Ringkasan indikator utama untuk tab laporan aktif.'}</p>
-              </div>
-            ))}
-          </div>
-
+        <TabsContent value={activeTab} className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden outline-none">
           <div className="min-h-0 flex-1 overflow-hidden">
             {loading ? (
               <div className="flex h-full min-h-[320px] items-center justify-center border border-dashed border-border/70">

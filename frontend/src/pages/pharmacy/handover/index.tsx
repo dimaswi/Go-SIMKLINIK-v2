@@ -10,9 +10,8 @@ import { useToast } from '@/hooks/use-toast';
 import { medicalRecordsApi, pharmacyApi, satusehatApi, type MedicalRecord } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
 import { OrderDetailDialog } from '../components/order-detail-dialog';
-import { PharmacyStatCard } from '../components/stat-card';
 import { createColumns } from './columns';
-import { filterPharmacyOrders, getPolyclinicOptions, getRecordTotalPrice, PHARMACY_ACTION_META } from '../utils';
+import { filterPharmacyOrders, getPolyclinicOptions, PHARMACY_ACTION_META } from '../utils';
 import { Loader2, RefreshCw, ShoppingBag } from 'lucide-react';
 
 type SatusehatResultState = {
@@ -69,18 +68,6 @@ export default function PharmacyHandoverIndex() {
   const polyclinicOptions = useMemo(() => getPolyclinicOptions(orders), [orders]);
   const filteredOrders = useMemo(() => filterPharmacyOrders(orders, search, polyclinicFilter), [orders, polyclinicFilter, search]);
 
-  const stats = useMemo(() => {
-    const totalItems = orders.reduce(
-      (total, record) => total + (record.prescriptions?.length || 0) + (record.prescription_compounds?.length || 0),
-      0,
-    );
-
-    return {
-      totalOrders: orders.length,
-      totalItems,
-      totalValue: orders.reduce((total, record) => total + getRecordTotalPrice(record), 0),
-    };
-  }, [orders]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -191,52 +178,42 @@ export default function PharmacyHandoverIndex() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 p-4 lg:p-6">
-      <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-3">
-        <PharmacyStatCard label="Siap Diserahkan" value={String(stats.totalOrders)} helper="Resep yang sudah selesai diproses dan menunggu diserahkan ke pasien." />
-        <PharmacyStatCard label="Total Item" value={String(stats.totalItems)} helper="Jumlah item obat pada resep yang menunggu handover ke pasien." />
-        <PharmacyStatCard label="Nilai Penyerahan" value={new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(stats.totalValue)} helper="Nilai total resep yang siap diserahkan di loket farmasi." />
-      </section>
-
-      <section className="border border-border/70 bg-background px-5 py-4">
-        <div className="grid w-full gap-2 md:grid-cols-2 xl:grid-cols-[minmax(280px,360px)_220px_auto]">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
+      <DataTable
+        columns={columns}
+        data={filteredOrders}
+        showSearch={false}
+        showColumnVisibility={false}
+        showSelectionSummary={false}
+        pageSize={10}
+        emptyMessage="Belum ada resep yang siap diserahkan."
+        className="min-h-0 flex-1"
+        toolbarActions={
+          <div className="flex flex-wrap items-center gap-2">
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Cari pasien, no. RM, kunjungan, dokter, atau nama obat..."
-              className="w-full rounded-none"
+              placeholder="Cari pasien, no. RM, kunjungan, dokter, atau obat..."
+              className="h-9 w-[260px] rounded-none"
             />
-            <SearchableSelect
-              options={polyclinicOptions}
-              value={polyclinicFilter}
-              onValueChange={setPolyclinicFilter}
-              placeholder="Semua poli"
-              searchPlaceholder="Cari poli"
-              noneLabel="Semua poli"
-              square
-              className="w-full"
-            />
-            <div className="flex items-center gap-2 md:col-span-2 xl:col-span-1 xl:justify-end">
-              <Button type="button" variant="outline" className="rounded-none" onClick={() => void handleRefresh()} disabled={refreshing}>
-                {refreshing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1.5 h-4 w-4" />}
-                Muat Ulang
-              </Button>
+            <div className="w-[180px]">
+              <SearchableSelect
+                options={polyclinicOptions}
+                value={polyclinicFilter}
+                onValueChange={setPolyclinicFilter}
+                placeholder="Semua poli"
+                searchPlaceholder="Cari poli"
+                noneLabel="Semua poli"
+                square
+              />
             </div>
-        </div>
-      </section>
-
-      <section className="flex min-h-0 flex-1 flex-col">
-        <DataTable
-          columns={columns}
-          data={filteredOrders}
-          showSearch={false}
-          showColumnVisibility={false}
-          showSelectionSummary={false}
-          pageSize={10}
-          emptyMessage="Belum ada resep yang siap diserahkan."
-          className="min-h-0 flex-1"
-        />
-      </section>
+            <Button type="button" variant="outline" className="h-9 rounded-none" onClick={() => void handleRefresh()} disabled={refreshing}>
+              {refreshing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1.5 h-4 w-4" />}
+              Muat Ulang
+            </Button>
+          </div>
+        }
+      />
 
       <OrderDetailDialog
         order={selectedOrder}

@@ -13,7 +13,7 @@ import { billingApi } from '@/lib/api';
 import type { CashierQueueItem, Invoice } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
 import { formatCurrency, formatDateTime } from './utils';
-import { ArrowRight, Eye, Loader2, Plus, Printer, RefreshCw } from 'lucide-react';
+import { ArrowRight, Eye, Loader2, Plus, Printer, Receipt, RefreshCw } from 'lucide-react';
 
 // ── Status helpers ─────────────────────────────────────────────────────────
 
@@ -32,15 +32,6 @@ const INVOICE_STATUS_CLASS: Record<string, string> = {
 };
 
 // ── Kasir stat card ─────────────────────────────────────────────────────────
-
-function KasirStatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="border border-border/70 bg-background px-4 py-4">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
-      <div className="mt-2 text-lg font-semibold tracking-tight text-foreground">{value}</div>
-    </div>
-  );
-}
 
 // ── Main page ───────────────────────────────────────────────────────────────
 
@@ -137,19 +128,6 @@ export default function KasirIndexPage() {
     }
   }, [toast]);
 
-  // ── Stats derived from loaded data ──
-  const stats = useMemo(() => {
-    const belumBayar = invoices.filter(i => i.status === 'belum_bayar').length;
-    const sebagian = invoices.filter(i => i.status === 'sebagian').length;
-    const lunas = invoices.filter(i => i.status === 'lunas').length;
-    const revenue = invoices
-      .filter(i => i.status === 'lunas' || i.status === 'sebagian')
-      .reduce((sum, i) => sum + i.paid_amount, 0);
-    const pending = invoices
-      .filter(i => i.status === 'belum_bayar' || i.status === 'sebagian')
-      .reduce((sum, i) => sum + (i.total_amount - i.paid_amount), 0);
-    return { total: invoices.length, belumBayar, sebagian, lunas, revenue, pending };
-  }, [invoices]);
 
   // ── Queue columns ──
   const queueColumns: ColumnDef<CashierQueueItem>[] = useMemo(() => [
@@ -357,126 +335,106 @@ export default function KasirIndexPage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 p-4 lg:p-6">
-      {/* Stat cards */}
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-        <KasirStatCard
-          label="Total Invoice"
-          value={String(stats.total)}
-        />
-        <KasirStatCard
-          label="Lunas"
-          value={String(stats.lunas)}
-        />
-        <KasirStatCard
-          label="Bayar Sebagian"
-          value={String(stats.sebagian)}
-        />
-        <KasirStatCard
-          label="Belum Bayar"
-          value={String(stats.belumBayar)}
-        />
-        <KasirStatCard
-          label="Hari Ini"
-          value={formatCurrency(stats.revenue)}
-        />
-        <KasirStatCard
-          label="Pending"
-          value={formatCurrency(stats.pending)}
-        />
-      </section>
+    <div className="p-6">
+      <div className="border border-border bg-card shadow-none">
+        <div className="flex flex-col gap-3 p-4 border-b border-border xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="flex h-9 w-9 items-center justify-center border border-border bg-muted/20">
+              <Receipt className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-base font-semibold tracking-tight text-foreground">
+                Kasir & Billing
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                {activeView === 'queue'
+                  ? `Antrean kasir rawat jalan (${queue.length} antrean)`
+                  : `Daftar riwayat invoice pembayaran (${invoices.length} invoice)`}
+              </p>
+            </div>
+          </div>
 
-      {/* View switcher + filters */}
-      <section className="border border-border/70 bg-background px-5 py-4">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-            <div className="flex items-center gap-1 rounded-none border border-border/70 xl:min-w-[420px]">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 rounded-none border border-border/70 p-0.5">
               <button
                 type="button"
                 onClick={() => setActiveView('queue')}
-                className={`flex-1 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors ${activeView === 'queue' ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`px-2.5 py-1 text-xs font-medium transition-colors ${activeView === 'queue' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
               >
-                Antrian Kasir ({queue.length})
+                Antrean Kasir ({queue.length})
               </button>
               <button
                 type="button"
                 onClick={() => setActiveView('invoices')}
-                className={`flex-1 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors ${activeView === 'invoices' ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`px-2.5 py-1 text-xs font-medium transition-colors ${activeView === 'invoices' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 Invoice ({invoices.length})
               </button>
             </div>
+
             {activeView === 'queue' ? (
-              <div className="w-full sm:w-[220px] xl:w-[220px]">
-                <Input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="rounded-none"
-                />
-              </div>
-            ) : (
-              <div className="inline-flex min-h-10 items-center border border-dashed border-border/70 px-3 text-xs text-muted-foreground xl:max-w-[280px]">
-                Menampilkan 10 invoice terbaru tanpa filter tanggal.
-              </div>
-            )}
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center xl:justify-end">
-            <div className="w-full sm:w-[220px]">
-              <SearchableSelect
-                options={[
-                  { value: 'belum_bayar', label: 'Belum Bayar' },
-                  { value: 'sebagian', label: 'Bayar Sebagian' },
-                  { value: 'lunas', label: 'Lunas' },
-                  { value: 'batal', label: 'Dibatalkan' },
-                ]}
-                value={statusFilter}
-                onValueChange={setStatusFilter}
-                placeholder="Semua Status"
-                noneLabel="Semua Status"
-                square
+              <Input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="h-9 w-36 rounded-none text-xs"
               />
-            </div>
+            ) : null}
+
+            <SearchableSelect
+              options={[
+                { value: '', label: 'Semua Status' },
+                { value: 'belum_bayar', label: 'Belum Bayar' },
+                { value: 'sebagian', label: 'Bayar Sebagian' },
+                { value: 'lunas', label: 'Lunas' },
+                { value: 'batal', label: 'Dibatalkan' },
+              ]}
+              value={statusFilter}
+              onValueChange={setStatusFilter}
+              placeholder="Semua Status"
+              noneLabel="Semua Status"
+              className="h-9 w-36 rounded-none text-xs focus:ring-inset shrink-0"
+              square
+            />
+
             <Button
               type="button"
               variant="outline"
-              className="rounded-none shadow-none sm:self-stretch"
+              size="sm"
+              className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
               onClick={() => void handleRefresh()}
               disabled={refreshing}
             >
-              {refreshing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1.5 h-4 w-4" />}
-              Muat Ulang
+              {refreshing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
+              Segarkan
             </Button>
           </div>
         </div>
-      </section>
 
-      {/* DataTable */}
-      <section className="flex min-h-0 flex-1 flex-col">
-        {activeView === 'queue' ? (
-          <DataTable
-            columns={queueColumns}
-            data={queue}
-            showSearch={false}
-            showColumnVisibility={false}
-            showSelectionSummary={false}
-            pageSize={15}
-            emptyMessage="Tidak ada kunjungan yang menunggu kasir hari ini."
-            className="min-h-0 flex-1"
-          />
-        ) : (
-          <DataTable
-            columns={invoiceColumns}
-            data={invoices}
-            showSearch={false}
-            showColumnVisibility={false}
-            showSelectionSummary={false}
-            pageSize={10}
-            emptyMessage="Tidak ada invoice untuk filter yang dipilih."
-            className="min-h-0 flex-1"
-          />
-        )}
-      </section>
+        <div className="p-0">
+          {activeView === 'queue' ? (
+            <DataTable
+              columns={queueColumns}
+              data={queue}
+              showSearch={false}
+              showColumnVisibility={false}
+              showSelectionSummary={false}
+              pageSize={10}
+              emptyMessage="Tidak ada kunjungan yang menunggu kasir hari ini."
+            />
+          ) : (
+            <DataTable
+              columns={invoiceColumns}
+              data={invoices}
+              showSearch={false}
+              showColumnVisibility={false}
+              showSelectionSummary={false}
+              pageSize={10}
+              emptyMessage="Tidak ada invoice untuk filter yang dipilih."
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 }

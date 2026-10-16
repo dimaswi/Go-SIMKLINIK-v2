@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 export function MasterDataPageShell({
@@ -123,39 +122,17 @@ export function formatMasterDataDateTime(value?: string) {
 }
 
 export function MasterDataListShell({
-  title,
-  subtitle,
-  totalCount,
-  badges,
   children,
 }: {
-  title: string;
-  subtitle: string;
-  totalCount: number;
+  title?: string;
+  subtitle?: string;
+  totalCount?: number;
   badges?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden border border-border/70 bg-background">
-      <div className="shrink-0 border-b border-border/70 px-3 py-3 sm:px-4 lg:px-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
-          <div className="space-y-1">
-            <h2 className="text-sm font-semibold tracking-tight text-foreground">{title}</h2>
-            <p className="text-[11px] leading-5 text-muted-foreground">{subtitle}</p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline" className="rounded-none px-2.5 py-1 text-[10px] uppercase tracking-[0.16em]">
-              {totalCount} data
-            </Badge>
-            {badges}
-          </div>
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 p-3 sm:p-4 lg:p-5">
-        {children}
-      </div>
-    </section>
+    <div className="flex min-h-0 flex-1 flex-col">
+      {children}
+    </div>
   );
 }

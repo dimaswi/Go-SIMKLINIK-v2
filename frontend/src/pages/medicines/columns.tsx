@@ -27,10 +27,11 @@ export function createMedicineColumns({ onView, onEdit, onDelete, hasViewPermiss
       cell: ({ row }) => {
         const med = row.original
         return (
-          <div className="flex flex-col">
-            <span className="font-medium">{med.name}</span>
-            <span className="text-sm text-muted-foreground">{med.code} {med.generic_name ? `· ${med.generic_name}` : ''}</span>
-            <span className="text-xs text-muted-foreground">KFA: {med.kfa_code || '-'}</span>
+          <div className="flex flex-col max-w-[260px]">
+            <span className="font-medium text-foreground truncate">{med.name}</span>
+            <span className="truncate text-xs text-muted-foreground">
+              {med.code}{med.generic_name ? ` · ${med.generic_name}` : ''}{med.kfa_code ? ` · KFA: ${med.kfa_code}` : ''}
+            </span>
           </div>
         )
       },

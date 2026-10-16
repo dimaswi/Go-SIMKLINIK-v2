@@ -108,93 +108,44 @@ const ROUTE_META: RouteMeta[] = [
   {
     pattern: /^\/pharmacy\/?$/,
     title: 'Farmasi',
-    subtitle: 'Ringkasan operasional unit farmasi dan antrean resep aktif',
-    badgeLabel: 'Ringkasan',
-    breadcrumb: 'Farmasi / Ringkasan',
+    subtitle: 'Kelola order dan penyerahan resep obat pasien',
+    badgeLabel: 'Farmasi',
+    breadcrumb: 'Farmasi',
   },
   {
-    pattern: /^\/pharmacy\/receive(?:\/.*)?$/,
+    pattern: /^\/pharmacy\/\d+$/,
     title: 'Farmasi',
-    subtitle: 'Terima resep baru dari EMR dan validasi order sebelum diproses',
-    badgeLabel: 'Terima Resep',
-    breadcrumb: 'Farmasi / Terima Resep',
-  },
-  {
-    pattern: /^\/pharmacy\/process(?:\/.*)?$/,
-    title: 'Farmasi',
-    subtitle: 'Kelola item resep, cek stok, dan siapkan obat untuk penyerahan',
-    badgeLabel: 'Proses Resep',
-    breadcrumb: 'Farmasi / Proses Resep',
-  },
-  {
-    pattern: /^\/pharmacy\/handover(?:\/.*)?$/,
-    title: 'Farmasi',
-    subtitle: 'Verifikasi akhir dan serahkan obat kepada pasien',
-    badgeLabel: 'Serahkan Resep',
-    breadcrumb: 'Farmasi / Serahkan Resep',
-  },
-  {
-    pattern: /^\/pharmacy\/completed(?:\/.*)?$/,
-    title: 'Farmasi',
-    subtitle: 'Lihat resep yang sudah selesai dispensing dan sudah diserahkan',
-    badgeLabel: 'Resep Selesai',
-    breadcrumb: 'Farmasi / Resep Selesai',
+    subtitle: 'Detail resep dan telaah obat pasien',
+    badgeLabel: 'Detail Resep',
+    breadcrumb: 'Farmasi / Detail Resep',
   },
   {
     pattern: /^\/laboratory\/?$/,
     title: 'Laboratorium',
-    subtitle: 'Ringkasan operasional unit laboratorium dan antrean order aktif',
-    badgeLabel: 'Ringkasan',
-    breadcrumb: 'Laboratorium / Ringkasan',
+    subtitle: 'Kelola order pemeriksaan laboratorium',
+    badgeLabel: 'Laboratorium',
+    breadcrumb: 'Laboratorium',
   },
   {
-    pattern: /^\/laboratory\/receive(?:\/.*)?$/,
+    pattern: /^\/laboratory\/\d+$/,
     title: 'Laboratorium',
-    subtitle: 'Terima order laboratorium baru dari EMR dan validasi order sebelum diproses',
-    badgeLabel: 'Terima Order',
-    breadcrumb: 'Laboratorium / Terima Order',
-  },
-  {
-    pattern: /^\/laboratory\/process(?:\/.*)?$/,
-    title: 'Laboratorium',
-    subtitle: 'Isi hasil laboratorium dan selesaikan order penunjang yang sedang diproses',
-    badgeLabel: 'Proses Hasil',
-    breadcrumb: 'Laboratorium / Proses Hasil',
-  },
-  {
-    pattern: /^\/laboratory\/completed(?:\/.*)?$/,
-    title: 'Laboratorium',
-    subtitle: 'Lihat order laboratorium yang sudah selesai dan hasilnya sudah tersedia',
-    badgeLabel: 'Hasil Selesai',
-    breadcrumb: 'Laboratorium / Hasil Selesai',
+    subtitle: 'Detail pemeriksaan dan input hasil laboratorium',
+    badgeLabel: 'Detail Hasil',
+    breadcrumb: 'Laboratorium / Detail Hasil',
   },
   {
     pattern: /^\/radiology\/?$/,
     title: 'Radiologi',
-    subtitle: 'Ringkasan operasional unit radiologi dan antrean order aktif',
-    badgeLabel: 'Ringkasan',
-    breadcrumb: 'Radiologi / Ringkasan',
+    subtitle: 'Kelola order pemeriksaan radiologi',
+    badgeLabel: 'Radiologi',
+    breadcrumb: 'Radiologi',
   },
   {
-    pattern: /^\/radiology\/receive(?:\/.*)?$/,
+    pattern: /^\/radiology\/\d+$/,
     title: 'Radiologi',
-    subtitle: 'Terima order radiologi baru dari EMR dan validasi order sebelum diproses',
-    badgeLabel: 'Terima Order',
-    breadcrumb: 'Radiologi / Terima Order',
-  },
-  {
-    pattern: /^\/radiology\/process(?:\/.*)?$/,
-    title: 'Radiologi',
-    subtitle: 'Isi temuan dan kesan radiologi untuk order yang sedang diproses',
-    badgeLabel: 'Proses Hasil',
-    breadcrumb: 'Radiologi / Proses Hasil',
-  },
-  {
-    pattern: /^\/radiology\/completed(?:\/.*)?$/,
-    title: 'Radiologi',
-    subtitle: 'Lihat order radiologi yang sudah selesai dan kembali ke EMR',
-    badgeLabel: 'Hasil Selesai',
-    breadcrumb: 'Radiologi / Hasil Selesai',
+    subtitle: 'Detail pemeriksaan dan input ekspertise radiologi',
+    badgeLabel: 'Detail Hasil',
+    breadcrumb: 'Radiologi / Detail Hasil',
   },
   {
     pattern: /^\/settings\/integrations(?:\/.*)?$/,
@@ -586,7 +537,7 @@ function AppHeader() {
                 BPJS {bpjsEnabled ? 'On' : 'Off'}
               </Badge>
             </div>
-            <p className="line-clamp-2 text-[11px] leading-4 text-muted-foreground sm:truncate sm:text-xs">{pageMeta.subtitle} · {breadcrumbLabel}</p>
+            <p className="line-clamp-1 text-[11px] leading-4 text-muted-foreground sm:truncate sm:text-xs">{breadcrumbLabel}</p>
           </div>
         </div>
 

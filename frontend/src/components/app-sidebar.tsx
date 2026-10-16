@@ -31,8 +31,6 @@ import {
   FileText,
   ImagePlus,
   PillBottle,
-  PackageCheck,
-  History,
   ScanLine,
   Banknote,
   PlugZap,
@@ -144,37 +142,18 @@ const menuItems: MenuItem[] = [
     label: 'Farmasi',
     icon: PillBottle,
     permission: ['pharmacy.view', 'pharmacy.process', 'prescriptions.view', 'prescriptions.process'],
-    submenu: [
-      { path: '/pharmacy', label: 'Ringkasan Farmasi', icon: PillBottle, permission: ['pharmacy.view', 'pharmacy.process'], exact: true },
-      { path: '/pharmacy/receive', label: 'Terima Resep', icon: PillBottle, permission: ['pharmacy.view', 'pharmacy.process'] },
-      { path: '/pharmacy/process', label: 'Proses Resep', icon: PackageSearch, permission: ['pharmacy.view', 'pharmacy.process'] },
-      { path: '/pharmacy/handover', label: 'Serahkan Resep', icon: PackageCheck, permission: ['pharmacy.view', 'pharmacy.process'] },
-      { path: '/pharmacy/completed', label: 'Resep Selesai', icon: History, permission: ['pharmacy.view', 'pharmacy.process'] },
-    ]
   },
   {
     path: '/laboratory',
     label: 'Laboratorium',
     icon: FlaskConical,
     permission: ['laboratory.view', 'laboratory.process'],
-    submenu: [
-      { path: '/laboratory', label: 'Ringkasan Laboratorium', icon: FlaskConical, permission: ['laboratory.view', 'laboratory.process'], exact: true },
-      { path: '/laboratory/receive', label: 'Terima Order', icon: FlaskConical, permission: ['laboratory.view', 'laboratory.process'] },
-      { path: '/laboratory/process', label: 'Proses Hasil', icon: PackageSearch, permission: ['laboratory.view', 'laboratory.process'] },
-      { path: '/laboratory/completed', label: 'Hasil Selesai', icon: History, permission: ['laboratory.view', 'laboratory.process'] },
-    ]
   },
   {
     path: '/radiology',
     label: 'Radiologi',
     icon: ScanLine,
     permission: ['radiology.view', 'radiology.process'],
-    submenu: [
-      { path: '/radiology', label: 'Ringkasan Radiologi', icon: ScanLine, permission: ['radiology.view', 'radiology.process'], exact: true },
-      { path: '/radiology/receive', label: 'Terima Order', icon: ScanLine, permission: ['radiology.view', 'radiology.process'] },
-      { path: '/radiology/process', label: 'Proses Hasil', icon: PackageSearch, permission: ['radiology.view', 'radiology.process'] },
-      { path: '/radiology/completed', label: 'Hasil Selesai', icon: History, permission: ['radiology.view', 'radiology.process'] },
-    ]
   },
   { path: '/kasir', label: 'Kasir', icon: Banknote, permission: ['invoices.view', 'invoices.pay'] },
   {

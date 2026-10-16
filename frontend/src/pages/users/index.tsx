@@ -1,30 +1,30 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Badge } from '@/components/ui/badge';
 import { DataTable } from '@/components/ui/data-table';
+import { Input } from '@/components/ui/input';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { createUserColumns } from './columns';
-import { employeesApi, type Employee, type UserListSummary, usersApi, type User } from '@/lib/api';
+import { employeesApi, type Employee, usersApi, type User } from '@/lib/api';
 import { usePermission } from '@/hooks/usePermission';
 import { useToast } from '@/hooks/use-toast';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { setPageTitle } from '@/lib/page-title';
-import { Loader2, Plus } from 'lucide-react';
-import { MasterDataListShell } from '@/pages/master-data/shared';
+import { Loader2, Plus, RefreshCw, UserCog } from 'lucide-react';
 
 export default function UsersPage() {
   const navigate = useNavigate();
   const { hasPermission } = usePermission();
   const { toast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
-  const [summary, setSummary] = useState<UserListSummary | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<number | null>(null);
   const [employeeFilter, setEmployeeFilter] = useState<'all' | 'linked-required' | 'linked-not-required' | 'unlinked'>('all');
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [search, setSearch] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -39,13 +39,11 @@ export default function UsersPage() {
         params.set('is_active', 'false');
       }
 
-      const [summaryRes, filteredUsersRes, employeesRes] = await Promise.all([
-        usersApi.getSummary(),
+      const [filteredUsersRes, employeesRes] = await Promise.all([
         usersApi.getAll(params.toString()),
         employeesApi.getAll(),
       ]);
 
-      setSummary(summaryRes.data.data);
       setUsers(filteredUsersRes.data.data);
       setEmployees(employeesRes.data.data);
     } catch (error) {
@@ -112,11 +110,23 @@ export default function UsersPage() {
     getLinkedEmployee: (userId) => employees.find((employee) => employee.user_id === userId),
   });
 
-  const linkedEmployeeCount = summary?.linked_employee_count ?? 0;
-  const linkedSatusehatCount = summary?.linked_satusehat_count ?? 0;
-  const unlinkedUserCount = summary?.unlinked_user_count ?? 0;
-  const activeCount = summary?.active_count ?? 0;
-  const inactiveCount = summary?.inactive_count ?? 0;
+  const filteredUsers = users.filter((u) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    const linkedEmp = employees.find((emp) => emp.user_id === u.id);
+    return (
+      u.full_name?.toLowerCase().includes(q) ||
+      u.username?.toLowerCase().includes(q) ||
+      u.email?.toLowerCase().includes(q) ||
+      linkedEmp?.full_name?.toLowerCase().includes(q)
+    );
+  });
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
 
   if (loading) {
     return (
@@ -127,70 +137,94 @@ export default function UsersPage() {
   }
 
   return (
-    <div className="flex flex-1 min-h-0 flex-col gap-4 p-4">
-      <MasterDataListShell
-        title="Daftar User"
-        subtitle="Kelola akun pengguna, role, dan status aktif dari satu tabel kerja."
-        totalCount={users.length}
-        badges={
-          <>
-            <Badge variant="outline" className="rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.16em]">
-              {linkedEmployeeCount} tertaut pegawai
-            </Badge>
-            <Badge variant="outline" className="rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.16em]">
-              {linkedSatusehatCount} pegawai SATUSEHAT
-            </Badge>
-            <Badge variant="outline" className="rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.16em]">
-              {unlinkedUserCount} belum tertaut
-            </Badge>
-            <Badge variant="outline" className="rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.16em]">
-              {activeCount} aktif
-            </Badge>
-            <Badge variant="outline" className="rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.16em]">
-              {inactiveCount} nonaktif
-            </Badge>
-          </>
-        }
-      >
-        <DataTable
-          className="h-full"
-          columns={columns}
-          data={users}
-          searchPlaceholder="Search users by name, username, or email..."
-          pageSize={10}
-          toolbarActions={
-            <>
-              <Select value={employeeFilter} onValueChange={(value: 'all' | 'linked-required' | 'linked-not-required' | 'unlinked') => setEmployeeFilter(value)}>
-                <SelectTrigger className="w-[240px] rounded-none">
-                  <SelectValue placeholder="Filter tautan pegawai" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua user</SelectItem>
-                  <SelectItem value="linked-required">Pegawai perlu SATUSEHAT</SelectItem>
-                  <SelectItem value="linked-not-required">Pegawai tidak perlu SATUSEHAT</SelectItem>
-                  <SelectItem value="unlinked">Belum tertaut pegawai</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={activeFilter} onValueChange={(value: 'all' | 'active' | 'inactive') => setActiveFilter(value)}>
-                <SelectTrigger className="w-[180px] rounded-none">
-                  <SelectValue placeholder="Filter status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua status</SelectItem>
-                  <SelectItem value="active">Aktif</SelectItem>
-                  <SelectItem value="inactive">Nonaktif</SelectItem>
-                </SelectContent>
-              </Select>
-              {hasPermission('users.create') ? (
-                <Button onClick={() => navigate('/users/create')} className="rounded-none shadow-none">
-                  <Plus className="h-4 w-4" />
-                  Add User
-                </Button>
-              ) : null}
-            </>
-          }
-        />
-      </MasterDataListShell>
+    <div className="p-6">
+      <div className="border border-border bg-card shadow-none">
+        <div className="flex flex-col gap-3 p-4 border-b border-border xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="flex h-9 w-9 items-center justify-center border border-border bg-muted/20">
+              <UserCog className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-base font-semibold tracking-tight text-foreground">
+                Pengguna Sistem
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                Kelola akun pengguna, role, dan tautan pegawai ({filteredUsers.length} pengguna)
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari user / email / pegawai..."
+              className="h-9 w-48 sm:w-56 rounded-none text-xs focus:ring-inset"
+            />
+
+            <SearchableSelect
+              options={[
+                { value: 'all', label: 'Semua User' },
+                { value: 'linked-required', label: 'Perlu SATUSEHAT' },
+                { value: 'linked-not-required', label: 'Tidak Perlu SATUSEHAT' },
+                { value: 'unlinked', label: 'Belum Tertaut' },
+              ]}
+              value={employeeFilter}
+              onValueChange={(val) => setEmployeeFilter(val as any)}
+              placeholder="Tautan Pegawai"
+              className="h-9 w-44 rounded-none text-xs focus:ring-inset shrink-0"
+              square
+            />
+
+            <SearchableSelect
+              options={[
+                { value: 'all', label: 'Semua Status' },
+                { value: 'active', label: 'Aktif' },
+                { value: 'inactive', label: 'Nonaktif' },
+              ]}
+              value={activeFilter}
+              onValueChange={(val) => setActiveFilter(val as any)}
+              placeholder="Status"
+              className="h-9 w-32 rounded-none text-xs focus:ring-inset shrink-0"
+              square
+            />
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void handleRefresh()}
+              disabled={refreshing}
+              className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
+            >
+              <RefreshCw className={refreshing ? 'mr-1.5 h-3.5 w-3.5 animate-spin' : 'mr-1.5 h-3.5 w-3.5'} />
+              Segarkan
+            </Button>
+
+            {hasPermission('users.create') ? (
+              <Button
+                className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
+                onClick={() => navigate('/users/create')}
+              >
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
+                Tambah Pengguna
+              </Button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="p-0">
+          <DataTable
+            columns={columns}
+            data={filteredUsers}
+            showSearch={false}
+            showColumnVisibility={false}
+            showSelectionSummary={false}
+            pageSize={10}
+            emptyMessage="Tidak ada pengguna yang sesuai."
+          />
+        </div>
+      </div>
 
       <ConfirmDialog
         open={deleteDialogOpen}

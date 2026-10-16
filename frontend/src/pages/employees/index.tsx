@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, Plus } from 'lucide-react';
+import { Loader2, Plus, RefreshCw, Users } from 'lucide-react';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { DataTable } from '@/components/ui/data-table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePermission } from '@/hooks/usePermission';
 import { useToast } from '@/hooks/use-toast';
-import { type Employee, type EmployeeListSummary, employeesApi, satusehatApi } from '@/lib/api';
+import { type Employee, employeesApi, satusehatApi } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
-import { MasterDataDetailItem, MasterDataListShell, formatMasterDataDateTime } from '@/pages/master-data/shared';
+import { MasterDataDetailItem, formatMasterDataDateTime } from '@/pages/master-data/shared';
 import { createEmployeeColumns } from './columns';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -35,12 +36,13 @@ export default function EmployeesPage() {
   const { hasPermission } = usePermission();
   const { toast } = useToast();
   const [data, setData] = useState<Employee[]>([]);
-  const [summary, setSummary] = useState<EmployeeListSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<number | null>(null);
   const [satusehatFilter, setSatusehatFilter] = useState<'all' | 'required' | 'not-required'>('all');
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [search, setSearch] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
   const [previewEmployee, setPreviewEmployee] = useState<Employee | null>(null);
   const [previewData, setPreviewData] = useState<Record<string, unknown> | null>(null);
@@ -63,12 +65,7 @@ export default function EmployeesPage() {
         params.set('is_active', 'false');
       }
 
-      const [summaryResponse, listResponse] = await Promise.all([
-        employeesApi.getSummary(),
-        employeesApi.getAll(params.toString()),
-      ]);
-
-      setSummary(summaryResponse.data.data);
+      const listResponse = await employeesApi.getAll(params.toString());
       setData(listResponse.data.data);
     } catch (error) {
       toast({ variant: 'destructive', title: 'Error!', description: error instanceof Error ? error.message : 'Gagal memuat data pegawai.' });
@@ -177,78 +174,120 @@ export default function EmployeesPage() {
     syncingEmployeeId,
   });
 
-  const satusehatRequiredCount = summary?.satusehat_required_count ?? 0;
-  const satusehatOptionalCount = summary?.satusehat_optional_count ?? 0;
-  const linkedAccountCount = summary?.linked_account_count ?? 0;
-  const activeCount = summary?.active_count ?? 0;
-  const inactiveCount = summary?.inactive_count ?? 0;
   const previewWarnings = asArray(previewData?.warnings).map((item) => asString(item).trim()).filter(Boolean);
   const previewResource = asRecord(previewData?.resource);
   const previewReady = typeof previewData?.ready === 'boolean' ? previewData.ready : null;
+
+  const filteredEmployees = data.filter((emp) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return (
+      emp.full_name?.toLowerCase().includes(q) ||
+      emp.employee_code?.toLowerCase().includes(q) ||
+      emp.nik_number?.toLowerCase().includes(q) ||
+      emp.nip_number?.toLowerCase().includes(q) ||
+      emp.profession?.toLowerCase().includes(q)
+    );
+  });
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
 
   if (loading) {
     return <div className="flex h-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
-      <MasterDataListShell
-        title="Daftar Pegawai"
-        subtitle="Kelola master pegawai lintas profesi dan tautan akun aplikasinya dari satu modul pusat."
-        totalCount={data.length}
-        badges={
-          <>
-            <Badge variant="outline" className="rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.16em]">
-              {satusehatRequiredCount} perlu SATUSEHAT
-            </Badge>
-            <Badge variant="outline" className="rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.16em]">
-              {satusehatOptionalCount} tidak perlu
-            </Badge>
-            <Badge variant="outline" className="rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.16em]">
-              {linkedAccountCount} akun tertaut
-            </Badge>
-            <Badge variant="outline" className="rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.16em]">
-              {activeCount} aktif
-            </Badge>
-            <Badge variant="outline" className="rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.16em]">
-              {inactiveCount} nonaktif
-            </Badge>
-          </>
-        }
-      >
-        <DataTable
-          className="h-full"
-          columns={columns}
-          data={data}
-          searchPlaceholder="Cari pegawai berdasarkan nama, kode, NIK, NIP, atau profesi..."
-          pageSize={10}
-          toolbarActions={
-            <>
-              <Select value={satusehatFilter} onValueChange={(value: 'all' | 'required' | 'not-required') => setSatusehatFilter(value)}>
-                <SelectTrigger className="w-[200px] rounded-none">
-                  <SelectValue placeholder="Filter SATUSEHAT" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua SATUSEHAT</SelectItem>
-                  <SelectItem value="required">Perlu SATUSEHAT</SelectItem>
-                  <SelectItem value="not-required">Tidak perlu SATUSEHAT</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={activeFilter} onValueChange={(value: 'all' | 'active' | 'inactive') => setActiveFilter(value)}>
-                <SelectTrigger className="w-[180px] rounded-none">
-                  <SelectValue placeholder="Filter status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua status</SelectItem>
-                  <SelectItem value="active">Aktif</SelectItem>
-                  <SelectItem value="inactive">Nonaktif</SelectItem>
-                </SelectContent>
-              </Select>
-              {hasPermission('employees.create') ? <Button onClick={() => navigate('/employees/create')} className="rounded-none shadow-none"><Plus className="h-4 w-4" />Tambah Pegawai</Button> : null}
-            </>
-          }
-        />
-      </MasterDataListShell>
+    <div className="p-6">
+      <div className="border border-border bg-card shadow-none">
+        <div className="flex flex-col gap-3 p-4 border-b border-border xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="flex h-9 w-9 items-center justify-center border border-border bg-muted/20">
+              <Users className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-base font-semibold tracking-tight text-foreground">
+                Data Pegawai
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                Kelola master pegawai klinik, profesi, dan akun sistem ({filteredEmployees.length} pegawai)
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari nama / kode / NIK / profesi..."
+              className="h-9 w-48 sm:w-56 rounded-none text-xs focus:ring-inset"
+            />
+
+            <SearchableSelect
+              options={[
+                { value: 'all', label: 'Semua SATUSEHAT' },
+                { value: 'required', label: 'Perlu SATUSEHAT' },
+                { value: 'not-required', label: 'Tidak Perlu SATUSEHAT' },
+              ]}
+              value={satusehatFilter}
+              onValueChange={(val) => setSatusehatFilter(val as any)}
+              placeholder="SATUSEHAT"
+              className="h-9 w-40 rounded-none text-xs focus:ring-inset shrink-0"
+              square
+            />
+
+            <SearchableSelect
+              options={[
+                { value: 'all', label: 'Semua Status' },
+                { value: 'active', label: 'Aktif' },
+                { value: 'inactive', label: 'Nonaktif' },
+              ]}
+              value={activeFilter}
+              onValueChange={(val) => setActiveFilter(val as any)}
+              placeholder="Status"
+              className="h-9 w-32 rounded-none text-xs focus:ring-inset shrink-0"
+              square
+            />
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void handleRefresh()}
+              disabled={refreshing}
+              className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
+            >
+              <RefreshCw className={refreshing ? 'mr-1.5 h-3.5 w-3.5 animate-spin' : 'mr-1.5 h-3.5 w-3.5'} />
+              Segarkan
+            </Button>
+
+            {hasPermission('employees.create') ? (
+              <Button
+                className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
+                onClick={() => navigate('/employees/create')}
+              >
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
+                Tambah Pegawai
+              </Button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="p-0">
+          <DataTable
+            columns={columns}
+            data={filteredEmployees}
+            showSearch={false}
+            showColumnVisibility={false}
+            showSelectionSummary={false}
+            pageSize={10}
+            emptyMessage="Tidak ada data pegawai yang sesuai."
+          />
+        </div>
+      </div>
 
       <ConfirmDialog
         open={deleteDialogOpen}

@@ -171,10 +171,7 @@ export default function PatientSearchIndex() {
       <div className="space-y-4 border border-border/70 bg-background p-4">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/60 pb-3">
           <div>
-            <h1 className="text-base font-semibold tracking-tight">Pencarian Pasien Cepat</h1>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Cari nama pasien atau No. Rekam Medis dari header, lalu persempit hasil dengan filter administratif.
-            </p>
+            <h1 className="text-base font-semibold tracking-tight">Pencarian Pasien</h1>
           </div>
           <div className="inline-flex items-center gap-2 text-xs text-muted-foreground">
             <UserRoundSearch className="h-4 w-4" />

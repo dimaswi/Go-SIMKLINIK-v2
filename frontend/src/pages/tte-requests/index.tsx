@@ -1,25 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import {
-  flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  useReactTable,
-} from "@tanstack/react-table";
-import { CheckCircle2, ChevronLeft, ChevronRight, FileText, Loader2, RefreshCw } from "lucide-react";
+import { CheckCircle2, FileSignature, FileText, Loader2, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import { api, tteApi, type TteInboxItem } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { setPageTitle } from "@/lib/page-title";
@@ -66,126 +51,31 @@ async function openAuthenticatedPdf(printPath: string) {
   }
 }
 
-/* ------------------------------------------------------------------ */
-/*  Plain table — NO DataTable, NO overflow-hidden wrappers            */
-/* ------------------------------------------------------------------ */
-function TTETable<T>({
-  columns,
-  data,
-  searchPlaceholder,
-  emptyMessage,
-}: {
-  columns: ColumnDef<T, any>[];
-  data: T[];
-  searchPlaceholder: string;
-  emptyMessage: string;
-}) {
-  const [globalFilter, setGlobalFilter] = useState("");
-
-  const table = useReactTable({
-    data,
-    columns,
-    state: { globalFilter },
-    onGlobalFilterChange: setGlobalFilter,
-    globalFilterFn: "includesString",
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize: 10 } },
-  });
-
-  return (
-    <div>
-      <div className="pb-4">
-        <Input
-          placeholder={searchPlaceholder}
-          value={globalFilter ?? ""}
-          onChange={(e) => setGlobalFilter(e.target.value)}
-          className="w-full max-w-sm"
-        />
-      </div>
-
-      <div className="rounded-md border">
-        <Table className="table-fixed">
-          <TableHeader>
-            {table.getHeaderGroups().map((hg) => (
-              <TableRow key={hg.id}>
-                {hg.headers.map((header) => {
-                  const meta = header.column.columnDef.meta as { headerClassName?: string } | undefined;
-                  return (
-                    <TableHead key={header.id} className={meta?.headerClassName}>
-                      {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
-                    </TableHead>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => {
-                    const meta = cell.column.columnDef.meta as { cellClassName?: string } | undefined;
-                    return (
-                      <TableCell key={cell.id} className={meta?.cellClassName}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </TableCell>
-                    );
-                  })}
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center">
-                  {emptyMessage}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* Pagination */}
-      <div className="flex items-center justify-between gap-4 pt-3">
-        <p className="text-xs text-muted-foreground">
-          {table.getFilteredRowModel().rows.length} row(s)
-        </p>
-        <div className="flex items-center gap-2">
-          <span className="text-xs">
-            Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
-          </span>
-          <Button variant="outline" size="icon" className="h-8 w-8 rounded-none" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button variant="outline" size="icon" className="h-8 w-8 rounded-none" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Page                                                               */
-/* ------------------------------------------------------------------ */
 export default function TTERequestsPage() {
   const { toast } = useToast();
   const [requests, setRequests] = useState<TteInboxItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
+  const [search, setSearch] = useState("");
   const [approvingId, setApprovingId] = useState<number | null>(null);
   const [previewingId, setPreviewingId] = useState<number | null>(null);
 
-  const loadRequests = useCallback(async () => {
-    setLoading(true);
+  const loadRequests = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
     try {
       const response = await tteApi.getInbox();
       setRequests(response.data.data || []);
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Gagal memuat inbox TTE", description: error.response?.data?.error || "Daftar request TTE tidak dapat dimuat." });
+      toast({
+        variant: "destructive",
+        title: "Gagal memuat inbox TTE",
+        description: error.response?.data?.error || "Daftar request TTE tidak dapat dimuat.",
+      });
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [toast]);
 
@@ -204,9 +94,17 @@ export default function TTERequestsPage() {
       const updated = response.data.data;
       setRequests((cur) => cur.map((item) => (item.id === updated.id ? updated : item)));
       notifyTTEBadgeRefresh();
-      toast({ variant: "success", title: "Request TTE di-ACC", description: `${updated.document_label} sudah ditandatangani secara internal.` });
+      toast({
+        variant: "success",
+        title: "Request TTE di-ACC",
+        description: `${updated.document_label} sudah ditandatangani secara internal.`,
+      });
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Gagal ACC request TTE", description: error.response?.data?.error || "Request TTE tidak dapat diproses." });
+      toast({
+        variant: "destructive",
+        title: "Gagal ACC request TTE",
+        description: error.response?.data?.error || "Request TTE tidak dapat diproses.",
+      });
     } finally {
       setApprovingId(null);
     }
@@ -218,7 +116,11 @@ export default function TTERequestsPage() {
     try {
       await openAuthenticatedPdf(item.print_path);
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Gagal membuka preview dokumen", description: error.response?.data?.error || error.message || "Preview PDF tidak tersedia." });
+      toast({
+        variant: "destructive",
+        title: "Gagal membuka preview dokumen",
+        description: error.response?.data?.error || error.message || "Preview PDF tidak tersedia.",
+      });
     } finally {
       setPreviewingId(null);
     }
@@ -231,16 +133,17 @@ export default function TTERequestsPage() {
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <div className="space-y-1.5 py-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm font-semibold tracking-tight">{item.document_label}</p>
-              <Badge variant="outline" className={cn("rounded-none shadow-none", getStatusClassName(item.status))}>{item.status_label}</Badge>
+          <div className="max-w-[260px] space-y-0.5">
+            <div className="flex items-center gap-1.5">
+              <p className="truncate text-sm font-semibold tracking-tight">{item.document_label}</p>
+              <Badge variant="outline" className={cn("shrink-0 rounded-none shadow-none text-xs", getStatusClassName(item.status))}>
+                {item.status_label}
+              </Badge>
             </div>
-            <p className="text-xs text-muted-foreground">{item.document_type || "-"}</p>
+            <p className="truncate text-xs text-muted-foreground">{item.document_type || "-"}</p>
           </div>
         );
       },
-      meta: { headerClassName: "w-[280px]", cellClassName: "align-top" },
     },
     {
       accessorFn: (item) => `${item.patient_name} ${item.visit_number} ${item.polyclinic_name}`,
@@ -249,14 +152,14 @@ export default function TTERequestsPage() {
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <div className="space-y-1 py-1">
-            <p className="text-sm font-medium">{item.patient_name || "-"}</p>
-            <p className="font-mono text-xs text-muted-foreground">{item.visit_number || "-"}</p>
-            <p className="text-xs text-muted-foreground">{item.polyclinic_name || "Poliklinik"}</p>
+          <div className="max-w-[220px] space-y-0.5">
+            <p className="truncate text-sm font-medium">{item.patient_name || "-"}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {item.visit_number || "-"} · {item.polyclinic_name || "Poliklinik"}
+            </p>
           </div>
         );
       },
-      meta: { headerClassName: "w-[220px]", cellClassName: "align-top" },
     },
     {
       accessorFn: (item) => `${item.requested_by_name} ${item.requested_at} ${item.signed_at || ""}`,
@@ -265,14 +168,18 @@ export default function TTERequestsPage() {
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <div className="space-y-1 py-1 text-xs">
-            <p className="text-muted-foreground">Diminta oleh {item.requested_by_name || "-"} pada {formatDateTime(item.requested_at)}</p>
-            {item.signed_at ? <p className="text-emerald-700">Ditandatangani {formatDateTime(item.signed_at)}</p> : null}
-            {item.responded_at && !item.signed_at ? <p className="text-muted-foreground">Diproses {formatDateTime(item.responded_at)}</p> : null}
+          <div className="max-w-[260px] space-y-0.5 text-xs">
+            <p className="truncate text-muted-foreground">
+              Diminta oleh {item.requested_by_name || "-"} · {formatDateTime(item.requested_at)}
+            </p>
+            {item.signed_at ? (
+              <p className="truncate text-emerald-700">Ditandatangani {formatDateTime(item.signed_at)}</p>
+            ) : item.responded_at ? (
+              <p className="truncate text-muted-foreground">Diproses {formatDateTime(item.responded_at)}</p>
+            ) : null}
           </div>
         );
       },
-      meta: { headerClassName: "w-[260px]", cellClassName: "align-top" },
     },
     {
       accessorFn: (item) => `${item.signer_name} ${item.notes || ""} ${item.rejection_reason || ""}`,
@@ -281,34 +188,45 @@ export default function TTERequestsPage() {
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <div className="space-y-1 py-1 text-xs">
-            <p className="text-muted-foreground">Signer: {item.signer_name || "-"}</p>
-            {item.rejection_reason ? <p className="text-rose-700">Alasan: {item.rejection_reason}</p> : null}
-            {item.notes ? <p className="text-muted-foreground">Catatan: {item.notes}</p> : null}
+          <div className="max-w-[220px] space-y-0.5 text-xs">
+            <p className="truncate font-medium text-foreground">Signer: {item.signer_name || "-"}</p>
+            {item.rejection_reason ? <p className="truncate text-rose-700">Alasan: {item.rejection_reason}</p> : null}
+            {item.notes ? <p className="truncate text-muted-foreground">Catatan: {item.notes}</p> : null}
           </div>
         );
       },
-      meta: { headerClassName: "w-[240px]", cellClassName: "align-top" },
     },
     {
       id: "actions",
-      header: "Aksi",
+      header: "",
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <div className="flex flex-wrap justify-end gap-2 py-1">
-            <Button type="button" variant="outline" size="sm" className="rounded-none" onClick={() => void handlePreview(item)} disabled={previewingId === item.id || !item.print_path}>
-              {previewingId === item.id ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <FileText className="mr-1.5 h-4 w-4" />}
+          <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 px-2.5 text-xs rounded-none shadow-none"
+              onClick={() => void handlePreview(item)}
+              disabled={previewingId === item.id || !item.print_path}
+            >
+              {previewingId === item.id ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <FileText className="mr-1.5 h-3.5 w-3.5" />}
               Preview
             </Button>
-            <Button type="button" size="sm" className="rounded-none" onClick={() => void handleApprove(item.id)} disabled={approvingId === item.id}>
-              {approvingId === item.id ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-4 w-4" />}
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 px-2.5 text-xs rounded-none shadow-none"
+              onClick={() => void handleApprove(item.id)}
+              disabled={approvingId === item.id}
+            >
+              {approvingId === item.id ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />}
               ACC
             </Button>
           </div>
         );
       },
-      meta: { headerClassName: "w-[170px] text-right", cellClassName: "align-top" },
     },
   ], [approvingId, previewingId]);
 
@@ -319,16 +237,17 @@ export default function TTERequestsPage() {
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <div className="space-y-1.5 py-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm font-semibold tracking-tight">{item.document_label}</p>
-              <Badge variant="outline" className={cn("rounded-none shadow-none", getStatusClassName(item.status))}>{item.status_label}</Badge>
+          <div className="max-w-[260px] space-y-0.5">
+            <div className="flex items-center gap-1.5">
+              <p className="truncate text-sm font-semibold tracking-tight">{item.document_label}</p>
+              <Badge variant="outline" className={cn("shrink-0 rounded-none shadow-none text-xs", getStatusClassName(item.status))}>
+                {item.status_label}
+              </Badge>
             </div>
-            <p className="text-xs text-muted-foreground">{item.document_type || "-"}</p>
+            <p className="truncate text-xs text-muted-foreground">{item.document_type || "-"}</p>
           </div>
         );
       },
-      meta: { headerClassName: "w-[280px]", cellClassName: "align-top" },
     },
     {
       accessorFn: (item) => `${item.patient_name} ${item.visit_number} ${item.polyclinic_name}`,
@@ -337,14 +256,14 @@ export default function TTERequestsPage() {
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <div className="space-y-1 py-1">
-            <p className="text-sm font-medium">{item.patient_name || "-"}</p>
-            <p className="font-mono text-xs text-muted-foreground">{item.visit_number || "-"}</p>
-            <p className="text-xs text-muted-foreground">{item.polyclinic_name || "Poliklinik"}</p>
+          <div className="max-w-[220px] space-y-0.5">
+            <p className="truncate text-sm font-medium">{item.patient_name || "-"}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {item.visit_number || "-"} · {item.polyclinic_name || "Poliklinik"}
+            </p>
           </div>
         );
       },
-      meta: { headerClassName: "w-[220px]", cellClassName: "align-top" },
     },
     {
       accessorFn: (item) => `${item.requested_by_name} ${item.requested_at} ${item.signed_at || ""} ${item.responded_at || ""}`,
@@ -353,17 +272,18 @@ export default function TTERequestsPage() {
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <div className="space-y-1 py-1 text-xs">
-            <p className="text-muted-foreground">Diminta oleh {item.requested_by_name || "-"} pada {formatDateTime(item.requested_at)}</p>
+          <div className="max-w-[260px] space-y-0.5 text-xs">
+            <p className="truncate text-muted-foreground">
+              Diminta oleh {item.requested_by_name || "-"} · {formatDateTime(item.requested_at)}
+            </p>
             {item.signed_at ? (
-              <p className="text-emerald-700">Ditandatangani {formatDateTime(item.signed_at)}</p>
+              <p className="truncate text-emerald-700">Ditandatangani {formatDateTime(item.signed_at)}</p>
             ) : item.responded_at ? (
-              <p className="text-muted-foreground">Diproses {formatDateTime(item.responded_at)}</p>
+              <p className="truncate text-muted-foreground">Diproses {formatDateTime(item.responded_at)}</p>
             ) : null}
           </div>
         );
       },
-      meta: { headerClassName: "w-[260px]", cellClassName: "align-top" },
     },
     {
       accessorFn: (item) => `${item.signer_name} ${item.notes || ""} ${item.rejection_reason || ""}`,
@@ -372,81 +292,142 @@ export default function TTERequestsPage() {
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <div className="space-y-1 py-1 text-xs">
-            <p className="text-muted-foreground">Signer: {item.signer_name || "-"}</p>
-            {item.rejection_reason ? <p className="text-rose-700">Alasan: {item.rejection_reason}</p> : null}
-            {item.notes ? <p className="text-muted-foreground">Catatan: {item.notes}</p> : null}
+          <div className="max-w-[220px] space-y-0.5 text-xs">
+            <p className="truncate font-medium text-foreground">Signer: {item.signer_name || "-"}</p>
+            {item.rejection_reason ? <p className="truncate text-rose-700">Alasan: {item.rejection_reason}</p> : null}
+            {item.notes ? <p className="truncate text-muted-foreground">Catatan: {item.notes}</p> : null}
           </div>
         );
       },
-      meta: { headerClassName: "w-[240px]", cellClassName: "align-top" },
     },
     {
       id: "actions",
-      header: "Aksi",
+      header: "",
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <div className="flex justify-end py-1">
-            <Button type="button" variant="outline" size="sm" className="rounded-none" onClick={() => void handlePreview(item)} disabled={previewingId === item.id || !item.print_path}>
-              {previewingId === item.id ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <FileText className="mr-1.5 h-4 w-4" />}
+          <div className="flex justify-end whitespace-nowrap">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 px-2.5 text-xs rounded-none shadow-none"
+              onClick={() => void handlePreview(item)}
+              disabled={previewingId === item.id || !item.print_path}
+            >
+              {previewingId === item.id ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <FileText className="mr-1.5 h-3.5 w-3.5" />}
               Preview
             </Button>
           </div>
         );
       },
-      meta: { headerClassName: "w-[110px] text-right", cellClassName: "align-top" },
     },
   ], [previewingId]);
 
+  const displayedList = activeTab === "pending" ? pendingRequests : historyRequests;
+
+  const filteredData = useMemo(() => {
+    if (!search.trim()) return displayedList;
+    const q = search.toLowerCase();
+    return displayedList.filter((item) =>
+      item.document_label?.toLowerCase().includes(q) ||
+      item.patient_name?.toLowerCase().includes(q) ||
+      item.visit_number?.toLowerCase().includes(q) ||
+      item.polyclinic_name?.toLowerCase().includes(q) ||
+      item.signer_name?.toLowerCase().includes(q) ||
+      item.requested_by_name?.toLowerCase().includes(q)
+    );
+  }, [displayedList, search]);
+
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
-    <div className="p-4">
-      <div className="border border-border/70 bg-background">
-        {/* Header */}
-        <div className="border-b border-border/70 px-4 py-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
-            <div className="space-y-1">
-              <h2 className="text-sm font-semibold tracking-tight text-foreground">ACC Request TTE</h2>
-              <p className="text-[11px] leading-5 text-muted-foreground">Tinjau dokumen yang dimintakan TTE ke akun Anda, preview PDF, lalu ACC dokumen yang sudah sesuai.</p>
+    <div className="p-6">
+      <div className="border border-border bg-card shadow-none">
+        <div className="flex flex-col gap-3 p-4 border-b border-border xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="flex h-9 w-9 items-center justify-center border border-border bg-muted/20">
+              <FileSignature className="h-5 w-5 text-primary" />
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="rounded-none px-2.5 py-1 text-[10px] uppercase tracking-[0.16em]">{requests.length} data</Badge>
-              <Badge variant="outline" className="rounded-none px-2.5 py-1 text-[10px] uppercase tracking-[0.16em]">{pendingRequests.length} menunggu ACC</Badge>
-              <Badge variant="outline" className="rounded-none px-2.5 py-1 text-[10px] uppercase tracking-[0.16em]">{historyRequests.length} riwayat</Badge>
-              <Button type="button" variant="outline" className="gap-1.5 rounded-none" onClick={() => void loadRequests()} disabled={loading}>
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                Muat Ulang
-              </Button>
+            <div>
+              <h1 className="text-base font-semibold tracking-tight text-foreground">
+                Permintaan TTE
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                {activeTab === "pending"
+                  ? `Daftar permintaan persetujuan tanda tangan elektronik (${pendingRequests.length} menunggu)`
+                  : `Riwayat permintaan tanda tangan elektronik (${historyRequests.length} riwayat)`}
+              </p>
             </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 rounded-none border border-border/70 p-0.5">
+              <button
+                type="button"
+                onClick={() => setActiveTab("pending")}
+                className={`h-7 px-3 text-xs font-medium transition-colors ${
+                  activeTab === "pending"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                Menunggu ACC ({pendingRequests.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("history")}
+                className={`h-7 px-3 text-xs font-medium transition-colors ${
+                  activeTab === "history"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                Riwayat ({historyRequests.length})
+              </button>
+            </div>
+
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari dokumen, pasien, dokter..."
+              className="h-9 w-52 sm:w-60 rounded-none text-xs focus:ring-inset"
+            />
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void loadRequests(true)}
+              disabled={refreshing}
+              className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
+            >
+              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+              Segarkan
+            </Button>
           </div>
         </div>
 
-        {/* Content */}
-        <div className="p-4">
-          {loading ? (
-            <div className="flex items-center justify-center py-20 text-muted-foreground">
-              <Loader2 className="h-6 w-6 animate-spin" />
-            </div>
-          ) : (
-            <Tabs defaultValue="pending">
-              <TabsList className="w-full justify-start rounded-none border-0 bg-transparent p-0">
-                <TabsTrigger value="pending" className="rounded-none border-0 border-b-[3px] border-transparent bg-transparent px-3 py-2 text-sm text-muted-foreground shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none">
-                  Menunggu ACC
-                </TabsTrigger>
-                <TabsTrigger value="history" className="rounded-none border-0 border-b-[3px] border-transparent bg-transparent px-3 py-2 text-sm text-muted-foreground shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none">
-                  Riwayat
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="pending" className="mt-4">
-                <TTETable columns={pendingColumns} data={pendingRequests} searchPlaceholder="Cari dokumen / pasien / kunjungan..." emptyMessage="Tidak ada request TTE yang sedang menunggu ACC." />
-              </TabsContent>
-
-              <TabsContent value="history" className="mt-4">
-                <TTETable columns={historyColumns} data={historyRequests} searchPlaceholder="Cari dokumen / pasien / kunjungan..." emptyMessage="Belum ada riwayat request TTE untuk akun ini." />
-              </TabsContent>
-            </Tabs>
-          )}
+        <div className="p-0">
+          <DataTable
+            columns={activeTab === "pending" ? pendingColumns : historyColumns}
+            data={filteredData}
+            showSearch={false}
+            showColumnVisibility={false}
+            showSelectionSummary={false}
+            pageSize={10}
+            emptyMessage={
+              activeTab === "pending"
+                ? "Tidak ada request TTE yang sedang menunggu ACC."
+                : "Belum ada riwayat request TTE untuk akun ini."
+            }
+          />
         </div>
       </div>
     </div>

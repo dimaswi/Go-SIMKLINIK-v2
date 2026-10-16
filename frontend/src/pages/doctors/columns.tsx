@@ -157,53 +157,23 @@ export function createDoctorColumns({
         const doctor = row.original
         const requiresSatusehat = doctor.employee ? doctor.employee.requires_satusehat : true
         const readiness = getPractitionerReadiness(doctor)
-        const isPreviewing = previewingDoctorId === doctor.id
-        const isSyncing = syncingDoctorId === doctor.id
 
         return (
-          <div className="flex min-w-[240px] flex-col gap-2">
+          <div className="flex max-w-[200px] flex-col gap-0.5">
             <div className="flex flex-wrap items-center gap-1.5">
-              <Badge variant={readiness.variant} className="w-fit rounded-none">
+              <Badge variant={readiness.variant} className="w-fit rounded-none text-xs">
                 {readiness.label}
               </Badge>
               {requiresSatusehat ? (
-                <Badge variant="outline" className="rounded-none">
+                <Badge variant="outline" className="rounded-none text-xs">
                   {readiness.readyCount}/{readiness.totalCount} siap
                 </Badge>
               ) : null}
             </div>
-            <span className="text-xs leading-5 text-muted-foreground">
-              {readiness.detail}
-            </span>
-            {requiresSatusehat ? (
-              <div className="flex flex-wrap items-center gap-1.5">
-                {hasPreviewSatusehatPermission ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 rounded-none px-2 text-[11px] shadow-none"
-                    onClick={() => onPreviewSatusehat(doctor)}
-                    disabled={isPreviewing || isSyncing}
-                  >
-                    {isPreviewing ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
-                    Preview
-                  </Button>
-                ) : null}
-                {hasSyncSatusehatPermission ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 rounded-none px-2 text-[11px] shadow-none"
-                    onClick={() => onSyncSatusehat(doctor)}
-                    disabled={isSyncing || isPreviewing}
-                  >
-                    <RefreshCw className={isSyncing ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'} />
-                    {doctor.satusehat_practitioner_id ? 'Sync ulang' : 'Sync'}
-                  </Button>
-                ) : null}
-              </div>
+            {readiness.detail ? (
+              <span className="truncate text-xs text-muted-foreground">
+                {readiness.detail}
+              </span>
             ) : null}
           </div>
         )
@@ -222,8 +192,40 @@ export function createDoctorColumns({
       header: () => <div className="text-right">Actions</div>,
       cell: ({ row }) => {
         const doc = row.original
+        const requiresSatusehat = doc.employee ? doc.employee.requires_satusehat : true
+        const isPreviewing = previewingDoctorId === doc.id
+        const isSyncing = syncingDoctorId === doc.id
+
         return (
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center justify-end gap-1">
+            {requiresSatusehat && hasPreviewSatusehatPermission ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => onPreviewSatusehat(doc)}
+                disabled={isPreviewing || isSyncing}
+                title="Preview SATUSEHAT"
+              >
+                {isPreviewing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                <span className="sr-only">Preview SATUSEHAT</span>
+              </Button>
+            ) : null}
+            {requiresSatusehat && hasSyncSatusehatPermission ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => onSyncSatusehat(doc)}
+                disabled={isSyncing || isPreviewing}
+                title={doc.satusehat_practitioner_id ? 'Sync ulang SATUSEHAT' : 'Sync ke SATUSEHAT'}
+              >
+                <RefreshCw className={isSyncing ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
+                <span className="sr-only">{doc.satusehat_practitioner_id ? 'Sync ulang SATUSEHAT' : 'Sync ke SATUSEHAT'}</span>
+              </Button>
+            ) : null}
             {hasViewPermission && (
               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onView(doc.id)}><Eye className="h-4 w-4" /><span className="sr-only">View</span></Button>
             )}
@@ -231,7 +233,7 @@ export function createDoctorColumns({
               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(doc.id)}><Edit className="h-4 w-4" /><span className="sr-only">Edit</span></Button>
             )}
             {hasDeletePermission && (
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onDelete(doc.id)}><Trash2 className="h-4 w-4" /><span className="sr-only">Delete</span></Button>
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => onDelete(doc.id)}><Trash2 className="h-4 w-4" /><span className="sr-only">Delete</span></Button>
             )}
           </div>
         )

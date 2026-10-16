@@ -72,29 +72,6 @@ function formatShortTime(value?: string) {
   return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 }
 
-function MetricCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="border border-border/70 bg-background px-3 py-2">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
-      <p className="mt-1 text-xl font-semibold tracking-tight text-foreground">{value}</p>
-    </div>
-  );
-}
-
-function WorkflowStep({ step, label, helper, value }: { step: string; label: string; helper: string; value: string }) {
-  return (
-    <div className="border border-border/70 bg-muted/10 px-3 py-2.5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{step}</p>
-          <p className="mt-1 text-sm font-semibold text-foreground">{label}</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">{helper}</p>
-        </div>
-        <p className="text-lg font-black leading-none text-foreground">{value}</p>
-      </div>
-    </div>
-  );
-}
 
 function QueueTicket({
   visit,
@@ -138,29 +115,24 @@ function QueueTicket({
 
 function Lane({
   title,
-  helper,
   count,
   children,
 }: {
   title: string;
-  helper: string;
   count: number;
   children: React.ReactNode;
 }) {
   return (
     <section className="flex min-h-0 flex-col overflow-hidden border border-border/70 bg-background">
-      <div className="border-b border-border/70 px-4 py-3">
+      <div className="border-b border-border/70 px-4 py-2.5">
         <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{title}</p>
-            <p className="mt-1 text-sm text-muted-foreground">{helper}</p>
-          </div>
-          <div className="flex h-9 min-w-9 items-center justify-center border border-border/70 px-2 text-sm font-semibold">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</p>
+          <span className="inline-flex h-6 min-w-6 items-center justify-center border border-border/70 bg-muted/40 px-2 text-xs font-semibold text-foreground">
             {count}
-          </div>
+          </span>
         </div>
       </div>
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">{children}</div>
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">{children}</div>
     </section>
   );
 }
@@ -232,29 +204,24 @@ function RegistrationTicketRow({
 
 function RegistrationLane({
   title,
-  helper,
   count,
   children,
 }: {
   title: string;
-  helper: string;
   count: number;
   children: React.ReactNode;
 }) {
   return (
     <section className="flex min-h-[260px] flex-col overflow-hidden border border-border/70 bg-background">
-      <div className="border-b border-border/70 px-4 py-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{title}</p>
-            <p className="mt-1 text-sm text-muted-foreground">{helper}</p>
-          </div>
-          <div className="flex h-9 min-w-9 items-center justify-center border border-border/70 px-2 text-sm font-semibold">
+      <div className="border-b border-border/70 px-4 py-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</p>
+          <span className="inline-flex h-6 min-w-6 items-center justify-center border border-border/70 bg-muted/40 px-2 text-xs font-semibold text-foreground">
             {count}
-          </div>
+          </span>
         </div>
       </div>
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-4">{children}</div>
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-3">{children}</div>
     </section>
   );
 }
@@ -277,6 +244,7 @@ export default function QueueDashboard() {
   const [registrationDeleteTarget, setRegistrationDeleteTarget] = useState<RegistrationQueueItem | null>(null);
   const [displayPickerOpen, setDisplayPickerOpen] = useState(false);
   const [displayTargetPoli, setDisplayTargetPoli] = useState('');
+  const [activeTab, setActiveTab] = useState<'pendaftaran' | 'poli' | 'all'>('pendaftaran');
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -474,22 +442,7 @@ export default function QueueDashboard() {
   const currentPolyclinic = polyclinics.find((item) => String(item.id) === selectedPoli) || null;
   const currentCall = queueData.in_consultation[0] || null;
   const nextWaiting = queueData.waiting[0] || null;
-  const activeRegistrationTicket = registrationTickets.find((item) => item.status === 'processing') || registrationTickets.find((item) => item.status === 'called') || null;
   const hasQueuePolyclinicAccess = polyclinics.length > 0;
-
-  const registrationStats = useMemo(() => ({
-    waiting: registrationTickets.filter((item) => item.status === 'waiting').length,
-    called: registrationTickets.filter((item) => item.status === 'called').length,
-    processing: registrationTickets.filter((item) => item.status === 'processing').length,
-    completed: registrationTickets.filter((item) => item.status === 'completed').length,
-  }), [registrationTickets]);
-
-  const stats = useMemo(() => ({
-    waiting: queueData.waiting.length,
-    inConsultation: queueData.in_consultation.length,
-    done: queueData.done.length,
-    cancelled: queueData.cancelled.length,
-  }), [queueData]);
 
   const displayAllPath = '/queue/display?poli=all';
 
@@ -500,114 +453,51 @@ export default function QueueDashboard() {
   };
 
   return (
-    <div className="flex min-h-0 flex-col gap-3 overflow-visible p-3 md:h-[calc(100vh-var(--app-header-height))] md:flex-1 md:overflow-hidden lg:p-4">
-      <section className="border border-border/70 bg-background">
-        <div className="border-b border-border/70 px-4 py-3">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Antrian Pendaftaran</p>
-              <h1 className="mt-0.5 text-base font-semibold tracking-tight text-foreground">Ambil antrian di sini, panggil di sini, lalu tiket yang dipanggil masuk ke pendaftaran.</h1>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-2 border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-                <Clock3 className="h-4 w-4" />
-                {clockLabel || '--:--:--'}
-              </div>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 md:h-[calc(100vh-var(--app-header-height))] lg:p-4">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden border border-border/70 bg-background">
+        {/* Unified Compact Header */}
+        <div className="border-b border-border/70 px-3 py-2">
+          <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+            {/* Tabs */}
+            <div className="flex items-center gap-1 border border-border/70 bg-muted/40 p-0.5">
               <Button
                 type="button"
-                variant="outline"
-                className="rounded-none shadow-none"
-                onClick={() => {
-                  const defaultPoli = selectedPoli || (polyclinics[0] ? String(polyclinics[0].id) : 'all');
-                  setDisplayTargetPoli(defaultPoli);
-                  setDisplayPickerOpen(true);
-                }}
+                size="sm"
+                variant={activeTab === 'pendaftaran' ? 'default' : 'ghost'}
+                className="h-7 rounded-none px-3 text-xs shadow-none"
+                onClick={() => setActiveTab('pendaftaran')}
               >
-                <Monitor className="mr-2 h-4 w-4" />
-                Display Antrian
+                Antrian Pendaftaran ({waitingRegistrationTickets.length + inServiceRegistrationTickets.length})
               </Button>
-              <Button type="button" className="rounded-none shadow-none" onClick={() => void takeRegistrationTicket()} disabled={takingRegistrationTicket}>
-                {takingRegistrationTicket ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Ticket className="mr-2 h-4 w-4" />}
-                Ambil Antrian
+              <Button
+                type="button"
+                size="sm"
+                variant={activeTab === 'poli' ? 'default' : 'ghost'}
+                className="h-7 rounded-none px-3 text-xs shadow-none"
+                onClick={() => setActiveTab('poli')}
+              >
+                Antrian Poli ({queueData.waiting.length + queueData.in_consultation.length})
               </Button>
-              <Button type="button" variant="outline" className="rounded-none shadow-none" onClick={() => void callNextRegistrationTicket()} disabled={callingRegistrationTicket}>
-                {callingRegistrationTicket ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Users className="mr-2 h-4 w-4" />}
-                Panggil Berikutnya
-              </Button>
-              <Button type="button" variant="outline" className="rounded-none shadow-none" onClick={() => navigate('/registration')}>
-                Buka Pendaftaran
+              <Button
+                type="button"
+                size="sm"
+                variant={activeTab === 'all' ? 'default' : 'ghost'}
+                className="h-7 rounded-none px-3 text-xs shadow-none"
+                onClick={() => setActiveTab('all')}
+              >
+                Semua Antrian
               </Button>
             </div>
-          </div>
-        </div>
 
-        <div className="grid gap-3 px-4 py-3 xl:grid-cols-[minmax(0,1fr)_280px]">
-          <div className="grid min-h-0 gap-3 lg:grid-cols-2">
-            <RegistrationLane title="Menunggu Dipanggil" helper="Tiket baru muncul di sini sampai petugas memanggil nomor berikutnya." count={waitingRegistrationTickets.length}>
-              {waitingRegistrationTickets.length === 0 ? (
-                <p className="py-8 text-center text-sm text-muted-foreground">Belum ada tiket yang menunggu dipanggil.</p>
-              ) : waitingRegistrationTickets.map((item) => (
-                <RegistrationTicketRow
-                  key={item.id}
-                  item={item}
-                  onPrint={printRegistrationTicket}
-                  onDelete={setRegistrationDeleteTarget}
-                  printing={printingRegistrationTicketId === item.id}
-                  deleting={deletingRegistrationTicketId === item.id}
-                />
-              ))}
-            </RegistrationLane>
-
-            <RegistrationLane title="Masuk Ke Pendaftaran" helper="Setelah dipanggil, tiket pindah ke sini dan siap dikerjakan di halaman pendaftaran." count={inServiceRegistrationTickets.length}>
-              {inServiceRegistrationTickets.length === 0 ? (
-                <p className="py-8 text-center text-sm text-muted-foreground">Belum ada tiket yang sedang dipanggil atau diproses.</p>
-              ) : inServiceRegistrationTickets.map((item) => (
-                <div key={item.id} className="space-y-2">
-                  <RegistrationTicketRow
-                    item={item}
-                    onPrint={printRegistrationTicket}
-                    onDelete={setRegistrationDeleteTarget}
-                    printing={printingRegistrationTicketId === item.id}
-                    deleting={deletingRegistrationTicketId === item.id}
-                  />
-                  <Button type="button" variant="outline" className="w-full rounded-none shadow-none" onClick={() => navigate('/registration')}>
-                    Proses Di Halaman Pendaftaran
-                  </Button>
-                </div>
-              ))}
-            </RegistrationLane>
-          </div>
-
-          <div className="space-y-3">
-            <div className="border border-border/70 bg-muted/10 px-3 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Ringkasan Alur</p>
-              <div className="mt-3 space-y-2">
-                <WorkflowStep step="01" label="Ambil Tiket" helper="Pasien ambil nomor antrian pendaftaran." value={String(registrationStats.waiting + registrationStats.called + registrationStats.processing + registrationStats.completed)} />
-                <WorkflowStep step="02" label="Tunggu Dipanggil" helper="Tiket masuk ke lane menunggu dipanggil." value={String(registrationStats.waiting)} />
-                <WorkflowStep step="03" label="Masuk Pendaftaran" helper="Tiket yang dipanggil diproses sebagai pasien lama atau baru." value={String(registrationStats.called + registrationStats.processing)} />
-                <WorkflowStep step="04" label="Lanjut Ke Poli" helper="Setelah selesai, pasien masuk ke antrian poli." value={String(registrationStats.completed)} />
+            {/* Actions / Filters on the EXACT SAME LINE */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5 border border-border/70 bg-muted/20 px-2.5 py-1 text-xs text-muted-foreground">
+                <Clock3 className="h-3.5 w-3.5" />
+                {clockLabel || '--:--:--'}
               </div>
-            </div>
 
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-              <MetricCard label="Tiket Aktif" value={activeRegistrationTicket ? String(activeRegistrationTicket.ticket_number).padStart(3, '0') : '---'} />
-              <MetricCard label="Menunggu Poli" value={String(stats.waiting)} />
-              <MetricCard label="Konsultasi" value={String(stats.inConsultation)} />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="flex min-h-0 flex-1 flex-col overflow-hidden border border-border/70 bg-background">
-        <div className="border-b border-border/70 px-4 py-3">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Antrian Poli</p>
-              <h1 className="mt-0.5 text-base font-semibold tracking-tight text-foreground">Pasien yang selesai di pendaftaran lanjut ke poli yang dipilih di bawah ini.</h1>
-            </div>
-            <div className="grid gap-2 lg:grid-cols-[minmax(220px,280px)_repeat(4,minmax(120px,1fr))]">
-              <div className="space-y-1.5">
-                <LabelledControl label="Poliklinik Aktif">
+              {(activeTab === 'poli' || activeTab === 'all') && (
+                <div className="w-[200px]">
                   <SearchableSelect
                     options={polyclinics.map((polyclinic) => ({ value: String(polyclinic.id), label: polyclinic.name }))}
                     value={selectedPoli}
@@ -616,149 +506,227 @@ export default function QueueDashboard() {
                     searchPlaceholder="Cari poli..."
                     square
                   />
-                </LabelledControl>
+                </div>
+              )}
+
+              {(activeTab === 'poli' || activeTab === 'all') && (
+                <Button type="button" variant="outline" size="sm" className="h-8 rounded-none shadow-none" onClick={() => void fetchQueue()} disabled={loading}>
+                  <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+                  Muat Ulang
+                </Button>
+              )}
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-none shadow-none"
+                onClick={() => {
+                  const defaultPoli = selectedPoli || (polyclinics[0] ? String(polyclinics[0].id) : 'all');
+                  setDisplayTargetPoli(defaultPoli);
+                  setDisplayPickerOpen(true);
+                }}
+              >
+                <Monitor className="mr-1.5 h-3.5 w-3.5" />
+                Display Antrian
+              </Button>
+
+              {(activeTab === 'pendaftaran' || activeTab === 'all') && (
+                <Button type="button" size="sm" className="h-8 rounded-none shadow-none" onClick={() => void takeRegistrationTicket()} disabled={takingRegistrationTicket}>
+                  {takingRegistrationTicket ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Ticket className="mr-1.5 h-3.5 w-3.5" />}
+                  Ambil Antrian
+                </Button>
+              )}
+
+              {(activeTab === 'pendaftaran' || activeTab === 'all') && (
+                <Button type="button" variant="outline" size="sm" className="h-8 rounded-none shadow-none" onClick={() => void callNextRegistrationTicket()} disabled={callingRegistrationTicket}>
+                  {callingRegistrationTicket ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Users className="mr-1.5 h-3.5 w-3.5" />}
+                  Panggil Berikutnya
+                </Button>
+              )}
+
+              {(activeTab === 'poli' || activeTab === 'all') && (
+                <Button type="button" size="sm" className="h-8 rounded-none shadow-none" onClick={() => void callNext()} disabled={callingNext || !selectedPoli}>
+                  {callingNext ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Users className="mr-1.5 h-3.5 w-3.5" />}
+                  Panggil Berikutnya
+                </Button>
+              )}
+
+              {(activeTab === 'pendaftaran' || activeTab === 'all') && (
+                <Button type="button" variant="outline" size="sm" className="h-8 rounded-none shadow-none" onClick={() => navigate('/registration')}>
+                  Buka Pendaftaran
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Content Body */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          {(activeTab === 'pendaftaran' || activeTab === 'all') && (
+            <div className={`grid min-h-0 gap-3 p-3 lg:grid-cols-2 ${activeTab === 'pendaftaran' ? 'flex-1' : ''}`}>
+              <RegistrationLane title="Menunggu Dipanggil" count={waitingRegistrationTickets.length}>
+                {waitingRegistrationTickets.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">Belum ada tiket yang menunggu dipanggil.</p>
+                ) : waitingRegistrationTickets.map((item) => (
+                  <RegistrationTicketRow
+                    key={item.id}
+                    item={item}
+                    onPrint={printRegistrationTicket}
+                    onDelete={setRegistrationDeleteTarget}
+                    printing={printingRegistrationTicketId === item.id}
+                    deleting={deletingRegistrationTicketId === item.id}
+                  />
+                ))}
+              </RegistrationLane>
+
+              <RegistrationLane title="Masuk Ke Pendaftaran" count={inServiceRegistrationTickets.length}>
+                {inServiceRegistrationTickets.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">Belum ada tiket yang sedang dipanggil atau diproses.</p>
+                ) : inServiceRegistrationTickets.map((item) => (
+                  <div key={item.id} className="space-y-2">
+                    <RegistrationTicketRow
+                      item={item}
+                      onPrint={printRegistrationTicket}
+                      onDelete={setRegistrationDeleteTarget}
+                      printing={printingRegistrationTicketId === item.id}
+                      deleting={deletingRegistrationTicketId === item.id}
+                    />
+                    <Button type="button" variant="outline" className="w-full rounded-none shadow-none" onClick={() => navigate('/registration')}>
+                      Proses Di Halaman Pendaftaran
+                    </Button>
+                  </div>
+                ))}
+              </RegistrationLane>
+            </div>
+          )}
+
+          {(activeTab === 'poli' || activeTab === 'all') && (
+            <div className={`flex min-h-0 flex-col overflow-hidden ${activeTab === 'poli' ? 'flex-1' : 'border-t border-border/70'}`}>
+              {polyclinicsLoaded && !hasQueuePolyclinicAccess ? (
+                <div className="border-b border-border/70 px-4 py-6">
+                  <div className="border border-dashed border-border/70 bg-muted/10 px-5 py-6 text-center">
+                    <p className="text-sm font-semibold text-foreground">Belum ada poliklinik yang bisa diakses untuk antrean.</p>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                      Jika Anda login sebagai dokter, tautkan profil dokter ke poliklinik atau jadwal aktif terlebih dahulu agar dashboard antrean bisa menampilkan lane poli yang relevan.
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+
+          {hasQueuePolyclinicAccess && (currentCall || nextWaiting) ? (
+            <div className="grid gap-3 border-b border-border/70 px-4 py-3 lg:grid-cols-2">
+              <div className="border border-border/70 bg-muted/20 px-3 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Sedang Konsultasi</p>
+                    <p className="mt-1 text-4xl font-black leading-none tracking-tight text-foreground">{currentCall ? String(currentCall.queue_number).padStart(3, '0') : '---'}</p>
+                  </div>
+                  {currentCall?.priority === 'urgent' ? (
+                    <Badge variant="outline" className="rounded-none border-orange-300 bg-orange-100 text-orange-700 shadow-none">
+                      <Siren className="mr-1 h-3.5 w-3.5" />
+                      Urgent
+                    </Badge>
+                  ) : null}
+                </div>
+                <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+                  <p className="font-semibold text-foreground">{currentCall?.patient?.full_name || 'Belum ada pasien di ruang konsultasi'}</p>
+                  <p>No. RM: {currentCall?.patient?.medical_record_number || '-'}</p>
+                  <p>Poli: {currentCall?.polyclinic?.name || currentPolyclinic?.name || '-'}</p>
+                  <p>Dokter: {currentCall?.doctor?.full_name || 'Belum ditentukan'}</p>
+                </div>
               </div>
 
-              <MetricCard label="Sedang Konsultasi" value={currentCall ? String(currentCall.queue_number).padStart(3, '0') : '---'} />
-              <MetricCard label="Menunggu" value={String(stats.waiting)} />
-              <MetricCard label="Selesai" value={String(stats.done)} />
-              <MetricCard label="Dibatalkan" value={String(stats.cancelled)} />
-            </div>
-          </div>
-        </div>
-
-        <div className="grid gap-2 border-b border-border/70 px-4 py-3 lg:grid-cols-2">
-          <Button type="button" variant="outline" className="rounded-none shadow-none" onClick={() => void fetchQueue()} disabled={loading}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Muat Ulang
-          </Button>
-          <Button type="button" className="rounded-none shadow-none" onClick={() => void callNext()} disabled={callingNext || !selectedPoli}>
-            {callingNext ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Users className="mr-2 h-4 w-4" />}
-            Panggil Berikutnya
-          </Button>
-        </div>
-
-        {polyclinicsLoaded && !hasQueuePolyclinicAccess ? (
-          <div className="border-b border-border/70 px-4 py-6">
-            <div className="border border-dashed border-border/70 bg-muted/10 px-5 py-6 text-center">
-              <p className="text-sm font-semibold text-foreground">Belum ada poliklinik yang bisa diakses untuk antrean.</p>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Jika Anda login sebagai dokter, tautkan profil dokter ke poliklinik atau jadwal aktif terlebih dahulu agar dashboard antrean bisa menampilkan lane poli yang relevan.
-              </p>
-            </div>
-          </div>
-        ) : null}
-
-        {hasQueuePolyclinicAccess && (currentCall || nextWaiting) ? (
-          <div className="grid gap-3 border-b border-border/70 px-4 py-3 lg:grid-cols-2">
-            <div className="border border-border/70 bg-muted/20 px-3 py-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Sedang Konsultasi</p>
-                  <p className="mt-1 text-4xl font-black leading-none tracking-tight text-foreground">{currentCall ? String(currentCall.queue_number).padStart(3, '0') : '---'}</p>
-                </div>
-                {currentCall?.priority === 'urgent' ? (
-                  <Badge variant="outline" className="rounded-none border-orange-300 bg-orange-100 text-orange-700 shadow-none">
-                    <Siren className="mr-1 h-3.5 w-3.5" />
-                    Urgent
-                  </Badge>
+              <div className="border border-border/70 bg-muted/10 px-3 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Siap Dipanggil Berikutnya</p>
+                <p className="mt-1 text-base font-semibold tracking-tight text-foreground">
+                  {nextWaiting ? `${String(nextWaiting.queue_number).padStart(3, '0')} · ${nextWaiting.patient?.full_name || '-'}` : 'Belum ada pasien yang menunggu'}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">{nextWaiting ? `${nextWaiting.polyclinic?.name || '-'} · ${nextWaiting.doctor?.full_name || 'Dokter belum dipilih'}` : 'Pasien berikutnya akan muncul di sini.'}</p>
+                {nextWaiting ? (
+                  <Button type="button" variant="outline" className="mt-3 rounded-none shadow-none" onClick={() => navigate(`/emr/${nextWaiting.id}`)}>
+                    <ArrowUpRight className="mr-2 h-4 w-4" />
+                    Buka EMR Pasien Berikutnya
+                  </Button>
                 ) : null}
               </div>
-              <div className="mt-2 space-y-1 text-sm text-muted-foreground">
-                <p className="font-semibold text-foreground">{currentCall?.patient?.full_name || 'Belum ada pasien di ruang konsultasi'}</p>
-                <p>No. RM: {currentCall?.patient?.medical_record_number || '-'}</p>
-                <p>Poli: {currentCall?.polyclinic?.name || currentPolyclinic?.name || '-'}</p>
-                <p>Dokter: {currentCall?.doctor?.full_name || 'Belum ditentukan'}</p>
-              </div>
             </div>
+          ) : null}
 
-            <div className="border border-border/70 bg-muted/10 px-3 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Siap Dipanggil Berikutnya</p>
-              <p className="mt-1 text-base font-semibold tracking-tight text-foreground">
-                {nextWaiting ? `${String(nextWaiting.queue_number).padStart(3, '0')} · ${nextWaiting.patient?.full_name || '-'}` : 'Belum ada pasien yang menunggu'}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">{nextWaiting ? `${nextWaiting.polyclinic?.name || '-'} · ${nextWaiting.doctor?.full_name || 'Dokter belum dipilih'}` : 'Pasien berikutnya akan muncul di sini.'}</p>
-              {nextWaiting ? (
-                <Button type="button" variant="outline" className="mt-3 rounded-none shadow-none" onClick={() => navigate(`/emr/${nextWaiting.id}`)}>
-                  <ArrowUpRight className="mr-2 h-4 w-4" />
-                  Buka EMR Pasien Berikutnya
-                </Button>
-              ) : null}
-            </div>
+          <div className="grid min-h-0 flex-1 gap-4 overflow-hidden px-4 py-4 lg:grid-cols-2 2xl:grid-cols-4">
+            <Lane title="Menunggu" count={queueData.waiting.length}>
+              {!hasQueuePolyclinicAccess ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">Belum ada poli yang dapat ditampilkan pada akun ini.</p>
+              ) : queueData.waiting.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">Belum ada pasien yang menunggu.</p>
+              ) : queueData.waiting.map((visit) => (
+                <QueueTicket key={visit.id} visit={visit} />
+              ))}
+            </Lane>
+
+            <Lane title="Konsultasi" count={queueData.in_consultation.length}>
+              {!hasQueuePolyclinicAccess ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">Belum ada poli yang dapat ditampilkan pada akun ini.</p>
+              ) : queueData.in_consultation.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">Belum ada pasien di ruang konsultasi.</p>
+              ) : queueData.in_consultation.map((visit) => (
+                <QueueTicket
+                  key={visit.id}
+                  visit={visit}
+                  actions={
+                    <>
+                      <Button type="button" size="sm" className="rounded-none shadow-none" onClick={() => navigate(`/emr/${visit.id}`)}>
+                        <FileText className="mr-1.5 h-3.5 w-3.5" />
+                        Buka EMR
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="rounded-none shadow-none"
+                        onClick={() => void updateStatus(visit.id, { queue_status: 'done', status: 'completed' })}
+                      >
+                        Selesaikan
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="rounded-none text-destructive shadow-none hover:text-destructive"
+                        onClick={() => void updateStatus(visit.id, { queue_status: 'cancelled', status: 'cancelled' })}
+                      >
+                        Batalkan
+                      </Button>
+                    </>
+                  }
+                />
+              ))}
+            </Lane>
+
+            <Lane title="Selesai" count={queueData.done.length}>
+              {!hasQueuePolyclinicAccess ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">Belum ada poli yang dapat ditampilkan pada akun ini.</p>
+              ) : queueData.done.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">Belum ada antrian yang selesai.</p>
+              ) : queueData.done.map((visit) => (
+                <QueueTicket key={visit.id} visit={visit} />
+              ))}
+            </Lane>
+
+            <Lane title="Dibatalkan" count={queueData.cancelled.length}>
+              {!hasQueuePolyclinicAccess ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">Belum ada poli yang dapat ditampilkan pada akun ini.</p>
+              ) : queueData.cancelled.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">Belum ada antrian yang dibatalkan.</p>
+              ) : queueData.cancelled.map((visit) => (
+                <QueueTicket key={visit.id} visit={visit} />
+              ))}
+            </Lane>
           </div>
-        ) : null}
-
-        <div className="grid min-h-0 flex-1 gap-4 overflow-hidden px-4 py-4 lg:grid-cols-2 2xl:grid-cols-4">
-          <Lane title="Menunggu" helper="Pasien yang siap dipanggil ke ruang dokter." count={queueData.waiting.length}>
-          {!hasQueuePolyclinicAccess ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Belum ada poli yang dapat ditampilkan pada akun ini.</p>
-          ) : queueData.waiting.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Belum ada pasien yang menunggu.</p>
-          ) : queueData.waiting.map((visit) => (
-            <QueueTicket key={visit.id} visit={visit} />
-          ))}
-          </Lane>
-
-          <Lane title="Konsultasi" helper="Pasien aktif yang sedang berada di poli." count={queueData.in_consultation.length}>
-          {!hasQueuePolyclinicAccess ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Belum ada poli yang dapat ditampilkan pada akun ini.</p>
-          ) : queueData.in_consultation.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Belum ada pasien di ruang konsultasi.</p>
-          ) : queueData.in_consultation.map((visit) => (
-            <QueueTicket
-              key={visit.id}
-              visit={visit}
-              actions={
-                <>
-                  <Button type="button" size="sm" className="rounded-none shadow-none" onClick={() => navigate(`/emr/${visit.id}`)}>
-                    <FileText className="mr-1.5 h-3.5 w-3.5" />
-                    Buka EMR
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="rounded-none shadow-none"
-                    onClick={() => void updateStatus(visit.id, { queue_status: 'done', status: 'completed' })}
-                  >
-                    Selesaikan
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="rounded-none text-destructive shadow-none hover:text-destructive"
-                    onClick={() => void updateStatus(visit.id, { queue_status: 'cancelled', status: 'cancelled' })}
-                  >
-                    Batalkan
-                  </Button>
-                </>
-              }
-            />
-          ))}
-          </Lane>
-
-          <Lane title="Selesai" helper="Pasien yang sudah keluar dari alur poli hari ini." count={queueData.done.length}>
-          {!hasQueuePolyclinicAccess ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Belum ada poli yang dapat ditampilkan pada akun ini.</p>
-          ) : queueData.done.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Belum ada antrian yang selesai.</p>
-          ) : queueData.done.map((visit) => (
-            <QueueTicket key={visit.id} visit={visit} />
-          ))}
-          </Lane>
-
-          <Lane title="Dibatalkan" helper="Kunjungan yang dibatalkan." count={queueData.cancelled.length}>
-          {!hasQueuePolyclinicAccess ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Belum ada poli yang dapat ditampilkan pada akun ini.</p>
-          ) : queueData.cancelled.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Belum ada antrian yang dibatalkan.</p>
-          ) : queueData.cancelled.map((visit) => (
-            <QueueTicket key={visit.id} visit={visit} />
-          ))}
-          </Lane>
         </div>
-      </section>
+      )}
+        </div>
+      </div>
 
       <Dialog open={displayPickerOpen} onOpenChange={setDisplayPickerOpen}>
         <DialogContent className="max-w-xl rounded-none border-border/70">

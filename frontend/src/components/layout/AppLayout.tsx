@@ -24,7 +24,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider open={open} onOpenChange={handleOpenChange}>
       <AppSidebar />
-      <SidebarInset className={isConstrainedPage ? 'overflow-hidden' : undefined}>
+      <SidebarInset className="flex h-screen flex-col overflow-hidden">
         <AppHeader />
         {isConstrainedPage ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-auto md:overflow-hidden">

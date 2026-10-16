@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ColumnDef } from '@tanstack/react-table';
-import { CalendarDays, Loader2, MessageCircle, RefreshCw } from 'lucide-react';
+import { CalendarClock, Loader2, MessageCircle, RefreshCw } from 'lucide-react';
 import { ControlScheduleWhatsAppDialog } from '@/components/control-schedule-whatsapp-dialog';
 import { DataTable } from '@/components/ui/data-table';
+import { Input } from '@/components/ui/input';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -80,15 +82,6 @@ function getIndicatorClassName(item: ControlScheduleItem) {
   }
 }
 
-function StatCard({ label, value, helper }: { label: string; value: string; helper: string }) {
-  return (
-    <div className="border border-border/70 bg-background px-3 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{helper}</p>
-    </div>
-  );
-}
 
 export default function ControlSchedulesPage() {
   const navigate = useNavigate();
@@ -122,12 +115,6 @@ export default function ControlSchedulesPage() {
     void loadData();
   }, [loadData]);
 
-  const stats = useMemo(() => ({
-    total: data.length,
-    overdue: data.filter((item) => item.schedule_status === 'overdue').length,
-    today: data.filter((item) => item.schedule_status === 'today').length,
-    soon: data.filter((item) => item.schedule_status === 'soon').length,
-  }), [data]);
 
   const columns = useMemo<ColumnDef<ControlScheduleItem>[]>(() => [
     {
@@ -136,10 +123,11 @@ export default function ControlSchedulesPage() {
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             <p className="font-medium text-foreground">{item.patient_name || '-'}</p>
-            <p className="text-xs text-muted-foreground">RM {item.medical_record_number || '-'}</p>
-            <p className="text-xs text-muted-foreground">WA {item.patient_phone || '-'}</p>
+            <p className="text-xs text-muted-foreground">
+              RM {item.medical_record_number || '-'} · WA {item.patient_phone || '-'}
+            </p>
           </div>
         );
       },
@@ -150,10 +138,11 @@ export default function ControlSchedulesPage() {
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             <p className="font-medium text-foreground">{item.visit_number || '-'}</p>
-            <p className="text-xs text-muted-foreground">{item.polyclinic_name || '-'}</p>
-            <p className="text-xs text-muted-foreground">{item.doctor_name || '-'}</p>
+            <p className="text-xs text-muted-foreground">
+              {item.polyclinic_name || '-'} · {item.doctor_name || '-'}
+            </p>
           </div>
         );
       },
@@ -164,9 +153,9 @@ export default function ControlSchedulesPage() {
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <div className="space-y-1">
+          <div className="space-y-0.5 max-w-[340px]">
             <p className="font-medium text-foreground">{formatDateTime(item.follow_up_at)}</p>
-            <p className="text-xs text-muted-foreground line-clamp-2">{item.follow_up_instruction || 'Belum ada instruksi tambahan.'}</p>
+            <p className="truncate text-xs text-muted-foreground">{item.follow_up_instruction || 'Belum ada instruksi tambahan.'}</p>
           </div>
         );
       },
@@ -177,8 +166,8 @@ export default function ControlSchedulesPage() {
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <div className="space-y-1">
-            <Badge variant="outline" className={cn('rounded-none shadow-none', getIndicatorClassName(item))}>
+          <div className="space-y-0.5">
+            <Badge variant="outline" className={cn('rounded-none shadow-none text-xs', getIndicatorClassName(item))}>
               {item.schedule_status_label}
             </Badge>
             <p className="text-xs font-medium text-muted-foreground">{getIndicatorText(item)}</p>
@@ -186,8 +175,7 @@ export default function ControlSchedulesPage() {
         );
       },
       meta: {
-        headerClassName: 'w-[150px]',
-        cellClassName: 'align-top',
+        headerClassName: 'w-[140px]',
       },
     },
     {
@@ -196,23 +184,25 @@ export default function ControlSchedulesPage() {
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <div className="grid min-w-[190px] gap-2">
+          <div className="flex items-center gap-1.5 whitespace-nowrap">
             <Button
               type="button"
               variant="outline"
-              className="justify-start gap-1.5 rounded-none"
+              size="sm"
+              className="h-7 gap-1 px-2 text-xs rounded-none shadow-none"
               onClick={() => {
                 setSelectedSchedule(item);
                 setWhatsAppOpen(true);
               }}
             >
-              <MessageCircle className="h-4 w-4" />
+              <MessageCircle className="h-3.5 w-3.5" />
               WA
             </Button>
             <Button
               type="button"
               variant="outline"
-              className="justify-start rounded-none"
+              size="sm"
+              className="h-7 px-2 text-xs rounded-none shadow-none"
               onClick={() => navigate(`/registration/create?${buildControlRegistrationQuery(item)}`)}
             >
               Daftarkan Kontrol
@@ -220,7 +210,8 @@ export default function ControlSchedulesPage() {
             <Button
               type="button"
               variant="outline"
-              className="justify-start rounded-none"
+              size="sm"
+              className="h-7 px-2 text-xs rounded-none shadow-none"
               onClick={() => navigate(item.emr_path)}
             >
               EMR
@@ -229,11 +220,29 @@ export default function ControlSchedulesPage() {
         );
       },
       meta: {
-        headerClassName: 'w-[220px]',
-        cellClassName: 'align-top',
+        headerClassName: 'w-[250px]',
       },
     },
   ], [navigate]);
+
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+
+  const filteredData = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return data.filter((item) => {
+      if (statusFilter && item.schedule_status !== statusFilter) return false;
+      if (q) {
+        const matchName = item.patient_name?.toLowerCase().includes(q);
+        const matchRm = item.medical_record_number?.toLowerCase().includes(q);
+        const matchVisit = item.visit_number?.toLowerCase().includes(q);
+        const matchPoli = item.polyclinic_name?.toLowerCase().includes(q);
+        const matchDoc = item.doctor_name?.toLowerCase().includes(q);
+        if (!matchName && !matchRm && !matchVisit && !matchPoli && !matchDoc) return false;
+      }
+      return true;
+    });
+  }, [data, search, statusFilter]);
 
   if (loading) {
     return (
@@ -244,46 +253,71 @@ export default function ControlSchedulesPage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-col gap-3 overflow-visible p-3 md:h-[calc(100vh-var(--app-header-height))] md:flex-1 md:overflow-hidden lg:p-4">
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total Kontrol" value={String(stats.total)} helper="Semua jadwal kontrol yang tercatat dari visit final." />
-        <StatCard label="Terlambat" value={String(stats.overdue)} helper="Pasien yang sudah melewati tanggal kontrol." />
-        <StatCard label="Hari Ini" value={String(stats.today)} helper="Kontrol yang jatuh pada hari ini." />
-        <StatCard label="Mendekati" value={String(stats.soon)} helper="Kontrol dalam tiga hari ke depan." />
-      </section>
-
-      <section className="border border-border/70 bg-background px-4 py-3">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Monitoring Jadwal Kontrol</p>
-            <h1 className="mt-0.5 text-sm font-semibold tracking-tight text-foreground">Semua jadwal kontrol ditampilkan tanpa filter untuk memudahkan follow up front office.</h1>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-              <div className="flex items-center gap-2 text-foreground">
-                <CalendarDays className="h-4 w-4" />
-                Prioritaskan badge merah dan kuning untuk follow up WhatsApp.
-              </div>
+    <div className="p-6">
+      <div className="border border-border bg-card shadow-none">
+        <div className="flex flex-col gap-3 p-4 border-b border-border xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="flex h-9 w-9 items-center justify-center border border-border bg-muted/20">
+              <CalendarClock className="h-5 w-5 text-primary" />
             </div>
-            <Button type="button" variant="outline" className="h-9 rounded-none shadow-none" onClick={() => void loadData()}>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Muat Ulang
+            <div>
+              <h1 className="text-base font-semibold tracking-tight text-foreground">
+                Jadwal Kontrol
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                Monitoring jadwal dan reminder kontrol pasien ({filteredData.length} jadwal)
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari pasien / RM / poli..."
+              className="h-9 w-48 sm:w-56 rounded-none text-xs focus:ring-inset"
+            />
+
+            <SearchableSelect
+              options={[
+                { value: '', label: 'Semua Status' },
+                { value: 'today', label: 'Hari Ini' },
+                { value: 'upcoming', label: 'Akan Datang' },
+                { value: 'overdue', label: 'Terlewat' },
+              ]}
+              value={statusFilter}
+              onValueChange={setStatusFilter}
+              placeholder="Semua Status"
+              noneLabel="Semua Status"
+              className="h-9 w-36 rounded-none text-xs focus:ring-inset shrink-0"
+              square
+            />
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
+              onClick={() => void loadData()}
+            >
+              <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+              Segarkan
             </Button>
           </div>
         </div>
-      </section>
 
-      <section className="flex min-h-0 flex-1 flex-col overflow-hidden border border-border/70 bg-background px-4 py-3">
-        <DataTable
-          columns={columns}
-          data={data}
-          searchPlaceholder="Cari pasien, no kunjungan, poli, dokter, atau nomor RM..."
-          pageSize={10}
-          showSelectionSummary={false}
-          emptyMessage="Belum ada jadwal kontrol yang tercatat."
-          className="min-h-0 flex-1"
-        />
-      </section>
+        <div className="p-0">
+          <DataTable
+            columns={columns}
+            data={filteredData}
+            showSearch={false}
+            showColumnVisibility={false}
+            showSelectionSummary={false}
+            pageSize={10}
+            emptyMessage="Belum ada jadwal kontrol yang tercatat."
+          />
+        </div>
+      </div>
 
       <ControlScheduleWhatsAppDialog
         open={whatsAppOpen}

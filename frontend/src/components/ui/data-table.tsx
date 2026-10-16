@@ -50,6 +50,7 @@ interface DataTableProps<TData, TValue> {
   fixedLayout?: boolean
   emptyMessage?: React.ReactNode
   showSelectionSummary?: boolean
+  borderless?: boolean
 }
 
 export function DataTable<TData, TValue>({
@@ -65,6 +66,7 @@ export function DataTable<TData, TValue>({
   fixedLayout = false,
   emptyMessage = "No results.",
   showSelectionSummary = true,
+  borderless = true,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
@@ -104,7 +106,7 @@ export function DataTable<TData, TValue>({
   return (
     <div className={cn("flex h-auto min-h-0 w-full flex-col overflow-visible sm:h-full sm:overflow-hidden", className)}>
       {hasToolbar && (
-        <div className="flex flex-col gap-3 pb-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-3 pt-1 pb-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             {showSearch && (
               <Input
@@ -149,7 +151,7 @@ export function DataTable<TData, TValue>({
         </div>
       )}
 
-      <div className="flex min-h-0 flex-col overflow-visible rounded-md border sm:flex-1 sm:overflow-hidden">
+      <div className={cn("flex min-h-0 flex-col overflow-visible sm:flex-1 sm:overflow-hidden", borderless ? "border-0 rounded-none" : "rounded-md border")}>
         {/* Table */}
         <div className="overflow-x-auto overflow-y-visible overscroll-contain sm:min-h-0 sm:flex-1 sm:overflow-auto">
           <Table className={cn(fixedLayout ? "table-fixed" : undefined)}>

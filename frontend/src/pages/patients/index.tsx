@@ -1,13 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { DataTable } from '@/components/ui/data-table';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { patientsApi, type Patient } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Loader2, Users } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
+import { Plus, Loader2, Users, RefreshCw } from 'lucide-react';
 import { createColumns } from './columns';
 
 export default function PatientsIndex() {
@@ -15,27 +16,33 @@ export default function PatientsIndex() {
   const { toast } = useToast();
   const [data, setData] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [search, setSearch] = useState('');
   const [genderFilter, setGenderFilter] = useState('');
   const [insuranceFilter, setInsuranceFilter] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const loadData = useCallback(async () => {
-    setLoading(true);
     try {
       const res = await patientsApi.getAll();
       setData(res.data.data || []);
     } catch {
       toast({ variant: 'destructive', title: 'Error!', description: 'Gagal memuat data pasien.' });
-    } finally {
-      setLoading(false);
     }
   }, [toast]);
 
   useEffect(() => {
     setPageTitle('Data Pasien');
-    loadData();
+    setLoading(true);
+    loadData().finally(() => setLoading(false));
   }, [loadData]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
 
   const confirmDelete = () => {
     if (!deleteId) return;
@@ -45,59 +52,108 @@ export default function PatientsIndex() {
       .finally(() => { setDeleteDialogOpen(false); setDeleteId(null); });
   };
 
-  const columns = createColumns((id) => { setDeleteId(id); setDeleteDialogOpen(true); });
+  const columns = useMemo(() => createColumns((id) => { setDeleteId(id); setDeleteDialogOpen(true); }), []);
 
-  const filtered = data.filter(p => {
-    if (genderFilter && p.gender !== genderFilter) return false;
-    if (insuranceFilter && (p.insurance_type || 'umum') !== insuranceFilter) return false;
-    return true;
-  });
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return data.filter(p => {
+      if (genderFilter && p.gender !== genderFilter) return false;
+      if (insuranceFilter && (p.insurance_type || 'umum') !== insuranceFilter) return false;
+      if (q) {
+        const matchName = p.full_name?.toLowerCase().includes(q);
+        const matchRm = p.medical_record_number?.toLowerCase().includes(q);
+        const matchNik = p.nik?.toLowerCase().includes(q);
+        const matchPhone = p.phone?.toLowerCase().includes(q);
+        if (!matchName && !matchRm && !matchNik && !matchPhone) return false;
+      }
+      return true;
+    });
+  }, [data, genderFilter, insuranceFilter, search]);
 
   if (loading) return <div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
   return (
-    <div className="flex flex-1 min-h-0 flex-col gap-4 p-4">
-      <DataTable
-        columns={columns}
-        data={filtered}
-        searchPlaceholder="Cari nama, NIK, atau No. RM..."
-        pageSize={20}
-        toolbarActions={
-          <div className="flex flex-wrap items-center gap-2 md:flex-nowrap">
-            <div className="w-36">
-              <SearchableSelect
-                options={[
-                  { value: 'L', label: 'Laki-laki' },
-                  { value: 'P', label: 'Perempuan' },
-                ]}
-                value={genderFilter}
-                onValueChange={setGenderFilter}
-                placeholder="Semua JK"
-                noneLabel="Semua JK"
-              />
+    <div className="p-6">
+      <div className="border border-border bg-card shadow-none">
+        <div className="flex flex-col gap-3 p-4 border-b border-border xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="flex h-9 w-9 items-center justify-center border border-border bg-muted/20">
+              <Users className="h-5 w-5 text-primary" />
             </div>
-            <div className="w-44">
-              <SearchableSelect
-                options={[
-                  { value: 'umum', label: 'Umum' },
-                  { value: 'bpjs', label: 'BPJS' },
-                  { value: 'asuransi', label: 'Asuransi' },
-                ]}
-                value={insuranceFilter}
-                onValueChange={setInsuranceFilter}
-                placeholder="Semua Asuransi"
-                noneLabel="Semua Asuransi"
-              />
+            <div>
+              <h1 className="text-base font-semibold tracking-tight text-foreground">
+                Data Pasien
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                Kelola master data pasien dan rekam medis ({filtered.length} pasien)
+              </p>
             </div>
-            <Button className="h-10 whitespace-nowrap" onClick={() => navigate('/patients/create')}>
-              <Plus className="h-4 w-4" />Tambah Pasien
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari pasien / RM / NIK..."
+              className="h-9 w-48 sm:w-56 rounded-none text-xs focus:ring-inset"
+            />
+            <SearchableSelect
+              options={[
+                { value: '', label: 'Semua JK' },
+                { value: 'L', label: 'Laki-laki' },
+                { value: 'P', label: 'Perempuan' },
+              ]}
+              value={genderFilter}
+              onValueChange={setGenderFilter}
+              placeholder="Semua JK"
+              className="h-9 w-32 rounded-none text-xs focus:ring-inset shrink-0"
+              square
+            />
+            <SearchableSelect
+              options={[
+                { value: '', label: 'Semua Asuransi' },
+                { value: 'umum', label: 'Umum' },
+                { value: 'bpjs', label: 'BPJS' },
+                { value: 'asuransi', label: 'Asuransi' },
+              ]}
+              value={insuranceFilter}
+              onValueChange={setInsuranceFilter}
+              placeholder="Semua Asuransi"
+              className="h-9 w-36 rounded-none text-xs focus:ring-inset shrink-0"
+              square
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void handleRefresh()}
+              disabled={refreshing}
+              className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
+            >
+              <RefreshCw className={refreshing ? 'mr-1.5 h-3.5 w-3.5 animate-spin' : 'mr-1.5 h-3.5 w-3.5'} />
+              Segarkan
+            </Button>
+            <Button
+              className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
+              onClick={() => navigate('/patients/create')}
+            >
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              Tambah Pasien
             </Button>
           </div>
-        }
-      />
-      <div className="flex items-center gap-2 text-sm text-muted-foreground px-1">
-        <Users className="h-4 w-4" />
-        <span>Total {data.length} pasien terdaftar</span>
+        </div>
+
+        <div className="p-0">
+          <DataTable
+            columns={columns}
+            data={filtered}
+            showSearch={false}
+            showColumnVisibility={false}
+            showSelectionSummary={false}
+            pageSize={10}
+            emptyMessage="Tidak ada data pasien yang sesuai."
+          />
+        </div>
       </div>
 
       <ConfirmDialog

@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, Plus } from 'lucide-react';
+import { Camera, Loader2, Plus, RefreshCw } from 'lucide-react';
 import { DataTable } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { usePermission } from '@/hooks/usePermission';
 import { useToast } from '@/hooks/use-toast';
 import { physicalExamImagesApi, type PhysicalExamImageMaster } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
 import { createPhysicalExamImageColumns } from './columns';
-import { MasterDataListShell } from '@/pages/master-data/shared';
 
 export default function PhysicalExamImagesPage() {
   const navigate = useNavigate();
@@ -17,6 +17,8 @@ export default function PhysicalExamImagesPage() {
   const { hasPermission } = usePermission();
   const [data, setData] = useState<PhysicalExamImageMaster[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [search, setSearch] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<number | null>(null);
 
@@ -24,7 +26,9 @@ export default function PhysicalExamImagesPage() {
     setPageTitle('Template Gambar Pemeriksaan Fisik');
   }, []);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
     try {
       setData((await physicalExamImagesApi.getAll()).data.data || []);
     } catch (error: any) {
@@ -35,6 +39,7 @@ export default function PhysicalExamImagesPage() {
       });
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [toast]);
 
@@ -63,7 +68,7 @@ export default function PhysicalExamImagesPage() {
     }
   };
 
-  const columns = createPhysicalExamImageColumns({
+  const columns = useMemo(() => createPhysicalExamImageColumns({
     onEdit: (id) => navigate(`/physical-exam-images/${id}/edit`),
     onDelete: (id) => {
       setItemToDelete(id);
@@ -71,7 +76,16 @@ export default function PhysicalExamImagesPage() {
     },
     hasEditPermission: hasPermission('physical_exam_images.update'),
     hasDeletePermission: hasPermission('physical_exam_images.delete'),
-  });
+  }), [hasPermission, navigate]);
+
+  const filteredData = useMemo(() => {
+    if (!search.trim()) return data;
+    const q = search.toLowerCase();
+    return data.filter((item) =>
+      item.name?.toLowerCase().includes(q) ||
+      item.description?.toLowerCase().includes(q)
+    );
+  }, [data, search]);
 
   if (loading) {
     return (
@@ -82,26 +96,74 @@ export default function PhysicalExamImagesPage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
-      <MasterDataListShell
-        title="Daftar Template Gambar Pemeriksaan"
-        subtitle="Kelola template gambar pemeriksaan fisik yang dipakai dalam dokumentasi rekam medis."
-        totalCount={data.length}
-      >
-        <DataTable
-          className="h-full"
-          columns={columns}
-          data={data}
-          searchPlaceholder="Cari template gambar..."
-          pageSize={10}
-          toolbarActions={hasPermission('physical_exam_images.create') ? (
-            <Button onClick={() => navigate('/physical-exam-images/create')} className="rounded-none shadow-none">
-              <Plus className="h-4 w-4" />
-              Tambah Template
+    <div className="p-6">
+      <div className="border border-border bg-card shadow-none">
+        <div className="flex flex-col gap-3 p-4 border-b border-border xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="flex h-9 w-9 items-center justify-center border border-border bg-muted/20">
+              <Camera className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-base font-semibold tracking-tight text-foreground">
+                Template Gambar Pemeriksaan Fisik
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                Kelola template gambar anatomi untuk dokumentasi rekam medis ({filteredData.length} template)
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari template gambar..."
+              className="h-9 w-52 sm:w-60 rounded-none text-xs focus:ring-inset"
+            />
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void loadData(true)}
+              disabled={refreshing}
+              className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
+            >
+              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+              Segarkan
             </Button>
-          ) : undefined}
-        />
-      </MasterDataListShell>
+
+            {hasPermission('physical_exam_images.create') && (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => navigate('/physical-exam-images/create')}
+                className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
+              >
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
+                Tambah Template
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div className="p-0">
+          <DataTable
+            columns={columns}
+            data={filteredData}
+            showSearch={false}
+            showColumnVisibility={false}
+            showSelectionSummary={false}
+            pageSize={10}
+            emptyMessage={
+              <div className="flex flex-col items-center justify-center gap-2 py-10 text-center text-muted-foreground">
+                <Camera className="h-8 w-8" />
+                <p>Belum ada template gambar pemeriksaan fisik.</p>
+              </div>
+            }
+          />
+        </div>
+      </div>
 
       <ConfirmDialog
         open={deleteDialogOpen}

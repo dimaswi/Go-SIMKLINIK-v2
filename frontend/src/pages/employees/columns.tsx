@@ -29,7 +29,7 @@ function getPractitionerReadiness(employee: Employee) {
   if (!employee.requires_satusehat) {
     return {
       label: 'Opsional',
-      detail: 'Pegawai ini tidak diwajibkan masuk alur SATUSEHAT.',
+      detail: '',
       readyCount: 0,
       totalCount: 0,
       variant: 'secondary' as const,
@@ -56,7 +56,7 @@ function getPractitionerReadiness(employee: Employee) {
   if (readyCount === checks.length) {
     return {
       label: 'Siap lookup',
-      detail: 'Data inti lengkap untuk pencarian Practitioner.',
+      detail: 'Data lengkap',
       readyCount,
       totalCount: checks.length,
       variant: 'outline' as const,
@@ -65,7 +65,7 @@ function getPractitionerReadiness(employee: Employee) {
 
   return {
     label: 'Data kurang',
-    detail: 'Lengkapi nama, NIK 16 digit, dan profesi.',
+    detail: 'Lengkapi NIK / profesi',
     readyCount,
     totalCount: checks.length,
     variant: 'secondary' as const,
@@ -98,8 +98,8 @@ export function createEmployeeColumns({
       ),
       cell: ({ row }) => (
         <div className="flex flex-col">
-          <span className="font-medium">{row.original.full_name}</span>
-          <span className="text-sm text-muted-foreground">{row.original.employee_code || '-'}</span>
+          <span className="font-medium text-foreground">{row.original.full_name}</span>
+          <span className="text-xs text-muted-foreground">{row.original.employee_code || '-'}</span>
         </div>
       ),
     },
@@ -121,21 +121,22 @@ export function createEmployeeColumns({
         const readiness = getPractitionerReadiness(employee);
 
         return (
-          <div className="flex min-w-[220px] flex-col gap-2">
+          <div className="flex max-w-[200px] flex-col gap-0.5">
             <div className="flex flex-wrap items-center gap-1.5">
-              <Badge variant={readiness.variant} className="rounded-none">
+              <Badge variant={readiness.variant} className="rounded-none text-xs">
                 {readiness.label}
               </Badge>
               {employee.requires_satusehat ? (
-                <Badge variant="outline" className="rounded-none">
+                <Badge variant="outline" className="rounded-none text-xs">
                   {readiness.readyCount}/{readiness.totalCount} siap
                 </Badge>
               ) : null}
             </div>
-
-            <span className="text-xs leading-5 text-muted-foreground">
-              {readiness.detail}
-            </span>
+            {readiness.detail ? (
+              <span className="truncate text-xs text-muted-foreground">
+                {readiness.detail}
+              </span>
+            ) : null}
           </div>
         );
       },
@@ -144,11 +145,11 @@ export function createEmployeeColumns({
       id: 'account',
       header: 'Akun',
       cell: ({ row }) => (
-        <div className="flex flex-col gap-1">
-          <Badge variant={row.original.user ? 'default' : 'secondary'} className="w-fit rounded-none">
+        <div className="flex max-w-[180px] flex-col gap-0.5">
+          <Badge variant={row.original.user ? 'default' : 'secondary'} className="w-fit rounded-none text-xs">
             {row.original.user ? 'Tertaut' : 'Belum tertaut'}
           </Badge>
-          <span className="text-xs text-muted-foreground">{row.original.user?.email || 'Belum ada akun'}</span>
+          <span className="truncate text-xs text-muted-foreground">{row.original.user?.email || 'Belum ada akun'}</span>
         </div>
       ),
     },

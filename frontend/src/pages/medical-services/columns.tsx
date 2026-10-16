@@ -30,13 +30,19 @@ export function createMedicalServiceColumns({ onView, onEdit, onDelete, hasViewP
       accessorKey: "name",
       header: ({ column }) => <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} className="h-8 p-0 hover:bg-transparent">Nama Layanan<ArrowUpDown className="ml-2 h-4 w-4" /></Button>,
       cell: ({ row }) => (
-        <div className="flex flex-col">
-          <span className="font-medium">{row.original.name}</span>
-          <span className="text-sm text-muted-foreground">{row.original.code || '-'}</span>
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            <Badge variant="secondary" className="rounded-none px-1.5 py-0 text-[10px] uppercase tracking-wide">{SERVICE_DOMAIN_LABELS[row.original.service_domain || 'general'] || row.original.service_domain || 'Umum'}</Badge>
-            <Badge variant="outline" className="rounded-none px-1.5 py-0 text-[10px] uppercase tracking-wide">{TARGET_SCOPE_LABELS[row.original.target_scope || 'none'] || row.original.target_scope || 'Tanpa target'}</Badge>
-            {row.original.requires_consent && <Badge className="rounded-none border-0 bg-amber-600 px-1.5 py-0 text-[10px] uppercase tracking-wide text-white">Consent</Badge>}
+        <div className="flex max-w-[280px] flex-col gap-0.5">
+          <div className="flex items-center gap-1.5">
+            <span className="truncate font-medium text-foreground">{row.original.name}</span>
+            {row.original.requires_consent && (
+              <Badge className="shrink-0 rounded-none border-0 bg-amber-600 px-1 py-0 text-[9px] uppercase tracking-wide text-white">Consent</Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+            <span className="font-mono">{row.original.code || '-'}</span>
+            <span>·</span>
+            <span>{SERVICE_DOMAIN_LABELS[row.original.service_domain || 'general'] || 'Umum'}</span>
+            <span>·</span>
+            <span>{TARGET_SCOPE_LABELS[row.original.target_scope || 'none'] || 'Tanpa target'}</span>
           </div>
         </div>
       ),

@@ -1,15 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { DataTable } from '@/components/ui/data-table';
+import { Input } from '@/components/ui/input';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { useToast } from '@/hooks/use-toast';
 import { setPageTitle } from '@/lib/page-title';
 import { visitsApi, type Visit } from '@/lib/api';
-import { Eye, FilePenLine, FileText, Loader2, XCircle } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Eye, FilePenLine, Loader2, RefreshCw, Stethoscope, XCircle } from 'lucide-react';
 
 const VISIT_STATUS_LABEL: Record<Visit['status'], string> = {
   registered: 'Terdaftar',
@@ -25,143 +27,212 @@ const VISIT_STATUS_CLASS: Record<Visit['status'], string> = {
   cancelled: 'border-rose-300 bg-rose-50 text-rose-700',
 };
 
-function createColumns(onCancelVisit: (visit: Visit) => void, cancelingVisitId: number | null): ColumnDef<Visit>[] {
+function createColumns(
+  onCancelVisit: (visit: Visit) => void,
+  cancelingVisitId: number | null,
+): ColumnDef<Visit>[] {
   return [
-  {
-    accessorKey: 'visit_date',
-    header: 'Tanggal',
-    cell: ({ row }) => (
-      <span className="whitespace-nowrap text-sm text-muted-foreground">
-        {new Date(row.original.visit_date).toLocaleDateString('id-ID', {
-          day: '2-digit',
-          month: 'short',
-          year: 'numeric',
-        })}
-      </span>
-    ),
-  },
-  {
-    id: 'patient',
-    header: 'Pasien',
-    cell: ({ row }) => (
-      <div>
-        <p className="text-sm font-medium">{row.original.patient?.full_name || '-'}</p>
-        <p className="font-mono text-xs text-muted-foreground">{row.original.patient?.medical_record_number || '-'}</p>
-      </div>
-    ),
-  },
-  {
-    id: 'visit',
-    header: 'Kunjungan',
-    cell: ({ row }) => (
-      <div>
-        <p className="font-mono text-xs text-muted-foreground">{row.original.visit_number}</p>
-        <p className="text-xs text-muted-foreground">Antrian {String(row.original.queue_number).padStart(3, '0')}</p>
-      </div>
-    ),
-  },
-  {
-    id: 'doctor',
-    header: 'Dokter / Poli',
-    cell: ({ row }) => (
-      <div>
-        <p className="text-sm">{row.original.doctor?.full_name || '-'}</p>
-        <p className="text-xs text-muted-foreground">{row.original.polyclinic?.name || '-'}</p>
-      </div>
-    ),
-  },
-  {
-    accessorKey: 'complaint',
-    header: 'Keluhan Awal',
-    cell: ({ row }) => (
-      <p className="max-w-md line-clamp-2 text-sm text-muted-foreground">{row.original.complaint || '-'}</p>
-    ),
-  },
-  {
-    id: 'status',
-    header: 'Status Workspace',
-    cell: ({ row }) => (
-      <Badge variant="outline" className={VISIT_STATUS_CLASS[row.original.status]}>
-        {VISIT_STATUS_LABEL[row.original.status]}
-      </Badge>
-    ),
-  },
-  {
-    id: 'actions',
-    header: 'Aksi',
-    cell: ({ row }) => {
-      const visit = row.original;
+    {
+      id: 'visit_date',
+      header: 'Tanggal Kunjungan',
+      cell: ({ row }) => (
+        <div className="space-y-0.5 text-xs">
+          <p className="font-medium text-foreground">
+            {new Date(row.original.visit_date).toLocaleDateString('id-ID', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
+            })}
+          </p>
+          <p className="text-muted-foreground">Kunjungan #{row.original.visit_number}</p>
+        </div>
+      ),
+    },
+    {
+      id: 'patient',
+      header: 'Pasien',
+      cell: ({ row }) => (
+        <div className="space-y-0.5">
+          <p className="font-medium text-foreground truncate">{row.original.patient?.full_name || '-'}</p>
+          <p className="font-mono text-xs text-muted-foreground truncate">
+            RM {row.original.patient?.medical_record_number || '-'} · Antrean #{String(row.original.queue_number).padStart(3, '0')}
+          </p>
+        </div>
+      ),
+    },
+    {
+      id: 'doctor',
+      header: 'Dokter / Poli',
+      cell: ({ row }) => (
+        <div className="space-y-0.5">
+          <p className="font-medium text-foreground truncate">{row.original.doctor?.full_name || '-'}</p>
+          <p className="text-xs text-muted-foreground truncate">{row.original.polyclinic?.name || '-'}</p>
+        </div>
+      ),
+    },
+    {
+      id: 'complaint',
+      header: 'Keluhan Awal',
+      cell: ({ row }) => (
+        <p className="max-w-[280px] line-clamp-2 text-xs text-muted-foreground" title={row.original.complaint || '-'}>
+          {row.original.complaint || '-'}
+        </p>
+      ),
+    },
+    {
+      id: 'status',
+      header: 'Status Workspace',
+      cell: ({ row }) => (
+        <Badge
+          variant="outline"
+          className={cn(
+            'rounded-none px-2 py-0.5 text-[10px] uppercase tracking-[0.14em]',
+            VISIT_STATUS_CLASS[row.original.status] || 'border-slate-300 bg-slate-50 text-slate-700',
+          )}
+        >
+          {VISIT_STATUS_LABEL[row.original.status] || row.original.status}
+        </Badge>
+      ),
+    },
+    {
+      id: 'actions',
+      header: 'Aksi',
+      cell: ({ row }) => {
+        const visit = row.original;
+        const isCanceling = cancelingVisitId === visit.id;
 
-      return (
-        <div className="flex items-center gap-2">
-          <Button asChild type="button" variant="outline" size="sm" className="h-8 px-2">
-            <Link to={`/emr/${visit.id}`}>
-              {visit.status === 'completed' ? <Eye className="mr-1 h-4 w-4" /> : <FilePenLine className="mr-1 h-4 w-4" />}
-              {visit.status === 'completed' ? 'Lihat' : 'Buka'}
-            </Link>
-          </Button>
-
-          {visit.status === 'registered' || visit.status === 'in_progress' ? (
+        return (
+          <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
             <Button
+              asChild
               type="button"
               variant="outline"
               size="sm"
-              className="h-8 border-destructive/30 px-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              disabled={cancelingVisitId === visit.id}
-              onClick={() => onCancelVisit(visit)}
+              className="h-7 px-2.5 text-xs rounded-none shadow-none"
             >
-              {cancelingVisitId === visit.id ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <XCircle className="mr-1 h-3.5 w-3.5" />}
-              Batal
+              <Link to={`/emr/${visit.id}`}>
+                {visit.status === 'completed' ? (
+                  <Eye className="mr-1 h-3.5 w-3.5" />
+                ) : (
+                  <FilePenLine className="mr-1 h-3.5 w-3.5" />
+                )}
+                {visit.status === 'completed' ? 'Lihat EMR' : 'Buka EMR'}
+              </Link>
             </Button>
-          ) : null}
-        </div>
-      )
+
+            {visit.status === 'registered' || visit.status === 'in_progress' ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs rounded-none shadow-none text-destructive hover:bg-destructive/10"
+                disabled={isCanceling}
+                onClick={() => onCancelVisit(visit)}
+                title="Batalkan kunjungan"
+              >
+                {isCanceling ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <XCircle className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            ) : null}
+          </div>
+        );
+      },
     },
-  },
-]
+  ];
 }
 
 export default function MedicalRecordsIndex() {
   const { toast } = useToast();
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('active');
+  const [polyclinicFilter, setPolyclinicFilter] = useState('');
   const [cancelTarget, setCancelTarget] = useState<Visit | null>(null);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelingVisitId, setCancelingVisitId] = useState<number | null>(null);
 
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      try {
-        const response = await visitsApi.getAll('per_page=100');
-        setVisits((response.data.data || []).filter((visit: Visit) => visit.status !== 'cancelled'));
-      } catch {
-        toast({ variant: 'destructive', title: 'Gagal memuat workspace rekam medis' });
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    setPageTitle('Rekam Medis');
-    void loadData();
+  const loadData = useCallback(async () => {
+    try {
+      const response = await visitsApi.getAll('per_page=200');
+      setVisits((response.data.data || []).filter((visit: Visit) => visit.status !== 'cancelled'));
+    } catch {
+      toast({ variant: 'destructive', title: 'Gagal memuat workspace rekam medis' });
+    }
   }, [toast]);
 
-  const filteredVisits = visits.filter((visit) => {
-    if (statusFilter === 'active') {
-      return visit.status === 'registered' || visit.status === 'in_progress';
-    }
+  useEffect(() => {
+    setPageTitle('Rekam Medis');
+    const run = async () => {
+      setLoading(true);
+      await loadData();
+      setLoading(false);
+    };
+    void run();
+  }, [loadData]);
 
-    if (statusFilter && visit.status !== statusFilter) return false;
-    return true;
-  });
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
 
-  const columns = createColumns(
-    (visit) => {
-      setCancelTarget(visit);
-      setCancelDialogOpen(true);
-    },
-    cancelingVisitId,
+  const polyclinicOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    visits.forEach((v) => {
+      if (v.polyclinic?.id && v.polyclinic.name) {
+        seen.set(String(v.polyclinic.id), v.polyclinic.name);
+      }
+    });
+    return Array.from(seen.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'id-ID'));
+  }, [visits]);
+
+  const filteredVisits = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return visits.filter((visit) => {
+      // Status filter
+      if (statusFilter === 'active') {
+        if (visit.status !== 'registered' && visit.status !== 'in_progress') return false;
+      } else if (statusFilter !== 'all' && statusFilter !== '') {
+        if (visit.status !== statusFilter) return false;
+      }
+
+      // Polyclinic filter
+      if (polyclinicFilter && String(visit.polyclinic_id) !== polyclinicFilter) {
+        return false;
+      }
+
+      // Search query
+      if (!query) return true;
+      const haystack = [
+        visit.patient?.full_name,
+        visit.patient?.medical_record_number,
+        visit.visit_number,
+        visit.doctor?.full_name,
+        visit.polyclinic?.name,
+        visit.complaint,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return haystack.includes(query);
+    });
+  }, [polyclinicFilter, search, statusFilter, visits]);
+
+  const columns = useMemo(
+    () =>
+      createColumns((visit) => {
+        setCancelTarget(visit);
+        setCancelDialogOpen(true);
+      }, cancelingVisitId),
+    [cancelingVisitId],
   );
 
   const confirmCancelVisit = async () => {
@@ -198,17 +269,35 @@ export default function MedicalRecordsIndex() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
-      <DataTable
-        columns={columns}
-        data={filteredVisits}
-        searchPlaceholder="Cari pasien, no. RM, no. kunjungan, atau dokter..."
-        pageSize={20}
-        toolbarActions={(
-          <div className="w-44">
+    <div className="p-6">
+      <div className="border border-border bg-card shadow-none">
+        <div className="flex flex-col gap-3 p-4 border-b border-border xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="flex h-9 w-9 items-center justify-center border border-border bg-muted/20">
+              <Stethoscope className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-base font-semibold tracking-tight text-foreground">
+                Rekam Medis (EMR)
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                Workspace rekam medis dan riwayat kunjungan pasien ({filteredVisits.length} kunjungan)
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              placeholder="Cari pasien / RM / kunjungan..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-9 w-48 sm:w-56 rounded-none text-xs focus:ring-inset"
+            />
+
             <SearchableSelect
               options={[
                 { value: 'active', label: 'Workspace Aktif' },
+                { value: 'all', label: 'Semua Status' },
                 { value: 'registered', label: 'Terdaftar' },
                 { value: 'in_progress', label: 'Aktif' },
                 { value: 'completed', label: 'Final' },
@@ -216,18 +305,46 @@ export default function MedicalRecordsIndex() {
               value={statusFilter}
               onValueChange={setStatusFilter}
               placeholder="Status Workspace"
-              noneLabel="Semua Status"
+              className="h-9 w-40 rounded-none text-xs focus:ring-inset shrink-0"
+              square
             />
+
+            {polyclinicOptions.length > 0 && (
+              <SearchableSelect
+                options={[{ value: '', label: 'Semua Poli' }, ...polyclinicOptions]}
+                value={polyclinicFilter}
+                onValueChange={setPolyclinicFilter}
+                placeholder="Semua Poli"
+                className="h-9 w-36 rounded-none text-xs focus:ring-inset shrink-0"
+                square
+              />
+            )}
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void handleRefresh()}
+              disabled={refreshing}
+              className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
+            >
+              <RefreshCw className={cn('mr-1.5 h-3.5 w-3.5', refreshing && 'animate-spin')} />
+              Segarkan
+            </Button>
           </div>
-        )}
-      />
-      <div className="flex items-center gap-2 px-1 text-sm text-muted-foreground">
-        <FileText className="h-4 w-4" />
-        <span>
-          {statusFilter === 'active'
-            ? `${filteredVisits.length} workspace aktif ditampilkan. Data final disembunyikan secara default.`
-            : `Total ${filteredVisits.length} kunjungan EMR`}
-        </span>
+        </div>
+
+        <div className="p-0">
+          <DataTable
+            columns={columns}
+            data={filteredVisits}
+            showSearch={false}
+            showColumnVisibility={false}
+            showSelectionSummary={false}
+            pageSize={10}
+            emptyMessage="Tidak ada data kunjungan rekam medis yang sesuai."
+          />
+        </div>
       </div>
 
       <ConfirmDialog
@@ -236,7 +353,7 @@ export default function MedicalRecordsIndex() {
         title="Batalkan Workspace Rekam Medis"
         description={`Kunjungan ${cancelTarget?.visit_number || ''} untuk ${cancelTarget?.patient?.full_name || 'pasien ini'} akan dibatalkan dari daftar rekam medis. Jika belum ada entri, data kunjungan akan dihapus; jika sudah ada draft, workspace akan ditandai batal dan dilepas dari pendaftaran yang terhubung.`}
         onConfirm={confirmCancelVisit}
-        confirmText="Ya, batalkan"
+        confirmText="Ya, Batalkan"
         cancelText="Tutup"
         variant="destructive"
       />

@@ -17,14 +17,7 @@ const STATUS_OPTIONS = [
   { value: 'completed', label: 'Selesai' },
 ];
 
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="border border-border/70 bg-background px-3 py-2">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
-      <p className="mt-1 text-xl font-semibold tracking-tight text-foreground">{value}</p>
-    </div>
-  );
-}
+
 
 export default function RegistrationIndex() {
   const navigate = useNavigate();
@@ -82,11 +75,6 @@ export default function RegistrationIndex() {
       });
   }, [cancelId, loadData, toast]);
 
-  const queueStats = useMemo(() => ({
-    called: data.filter((item) => item.status === 'called').length,
-    processing: data.filter((item) => item.status === 'processing').length,
-    completed: data.filter((item) => item.status === 'completed').length,
-  }), [data]);
 
   const visibleData = useMemo(
     () => data.filter((item) => item.status === 'called' || item.status === 'processing' || item.status === 'completed'),
@@ -106,33 +94,6 @@ export default function RegistrationIndex() {
     },
   }), [startProcessing]);
 
-  const tableToolbarActions = useMemo(() => (
-    <div className="flex flex-nowrap items-center gap-2 overflow-x-auto lg:overflow-visible">
-      <div className="relative shrink-0">
-        <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          type="date"
-          value={dateFilter}
-          onChange={(event) => setDateFilter(event.target.value)}
-          className="h-9 w-[150px] border border-border/70 bg-background pl-10 pr-3 text-sm outline-none"
-        />
-      </div>
-      <SearchableSelect
-        options={STATUS_OPTIONS}
-        value={statusFilter}
-        onValueChange={setStatusFilter}
-        placeholder="Status Tiket"
-        noneLabel="Semua Status"
-        className="w-[150px] shrink-0"
-        square
-      />
-      <Button type="button" variant="outline" className="h-9 shrink-0 rounded-none shadow-none" onClick={() => void loadData()}>
-        <RefreshCw className="mr-2 h-4 w-4" />
-        Muat Ulang
-      </Button>
-    </div>
-  ), [dateFilter, loadData, statusFilter]);
-
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -142,54 +103,74 @@ export default function RegistrationIndex() {
   }
 
   return (
-    <div className="flex min-h-0 flex-col gap-3 overflow-visible p-3 md:h-[calc(100vh-var(--app-header-height))] md:flex-1 md:overflow-hidden lg:p-4">
-      <section className="grid gap-3 sm:grid-cols-3 xl:grid-cols-3">
-        <StatCard label="Siap Diproses" value={String(queueStats.called)} />
-        <StatCard label="Sedang Diproses" value={String(queueStats.processing)} />
-        <StatCard label="Selesai" value={String(queueStats.completed)} />
-      </section>
-
-      <section className="border border-border/70 bg-background px-4 py-3">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Proses Pendaftaran</p>
-            <h1 className="mt-0.5 text-sm font-semibold tracking-tight text-foreground">Tiket yang sudah dipanggil dari halaman antrian diproses di sini.</h1>
-          </div>
-          <div className="flex flex-wrap items-stretch gap-2">
-            <div className="min-w-[120px] border border-border/70 bg-muted/20 px-3 py-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Tiket Aktif</p>
-              <p className="mt-1 text-3xl font-black leading-none tracking-tight text-foreground">
-                {activeTicket ? String(activeTicket.ticket_number).padStart(3, '0') : '---'}
+    <div className="p-6">
+      <div className="border border-border bg-card shadow-none">
+        <div className="flex flex-col gap-3 p-4 border-b border-border xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="flex h-9 w-9 items-center justify-center border border-border bg-muted/20">
+              <CalendarDays className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-base font-semibold tracking-tight text-foreground">
+                Pendaftaran Pasien
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                Antrean pendaftaran dan front office ({visibleData.length} tiket)
               </p>
             </div>
-            <div className="min-w-[180px] border border-border/70 bg-muted/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
-              <p>Status: {activeTicket ? STATUS_OPTIONS.find((item) => item.value === activeTicket.status)?.label || activeTicket.status : '-'}</p>
-              <p>Dipanggil: {activeTicket?.called_at ? new Date(activeTicket.called_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-'}</p>
-              <p className="text-foreground">Yang muncul di sini hanya tiket yang sudah dipanggil dari halaman Antrian.</p>
-            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {activeTicket ? (
+              <div className="flex items-center gap-1.5 border border-border bg-muted/30 px-2.5 py-1 text-xs">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Aktif:</span>
+                <span className="font-bold text-foreground">#{String(activeTicket.ticket_number).padStart(3, '0')}</span>
+                <span className="text-[11px] text-muted-foreground">({STATUS_OPTIONS.find((item) => item.value === activeTicket.status)?.label || activeTicket.status})</span>
+              </div>
+            ) : null}
+
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(event) => setDateFilter(event.target.value)}
+              className="h-9 w-36 border border-border bg-background px-2.5 text-xs outline-none focus:ring-1 focus:ring-ring"
+            />
+
+            <SearchableSelect
+              options={STATUS_OPTIONS}
+              value={statusFilter}
+              onValueChange={setStatusFilter}
+              placeholder="Status Tiket"
+              noneLabel="Semua Status"
+              className="h-9 w-36 rounded-none text-xs focus:ring-inset shrink-0"
+              square
+            />
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
+              onClick={() => void loadData()}
+            >
+              <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+              Segarkan
+            </Button>
           </div>
         </div>
-      </section>
 
-      <section className="flex min-h-0 flex-1 flex-col overflow-hidden border border-border/70 bg-background px-4 py-3">
-        <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Daftar Tiket Pendaftaran</p>
-            <h2 className="mt-0.5 text-base font-semibold tracking-tight">Tiket yang sudah masuk ke tahap pendaftaran</h2>
-          </div>
-          {tableToolbarActions}
+        <div className="p-0">
+          <DataTable
+            columns={columns}
+            data={visibleData}
+            showSearch={false}
+            showColumnVisibility={false}
+            showSelectionSummary={false}
+            pageSize={10}
+            emptyMessage="Belum ada tiket yang dipanggil dari halaman antrian."
+          />
         </div>
-
-        <DataTable
-          columns={columns}
-          data={visibleData}
-          showSearch={false}
-          pageSize={10}
-          showSelectionSummary={false}
-          emptyMessage="Belum ada tiket yang dipanggil dari halaman antrian."
-          className="min-h-0 flex-1"
-        />
-      </section>
+      </div>
 
       <ConfirmDialog
         open={deleteDialogOpen}
