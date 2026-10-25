@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"image"
 	_ "image/jpeg"
@@ -433,6 +434,29 @@ func buildSuratPrintViewData(c *gin.Context, visit models.Visit, entryGroupKey s
 		physicalExamRecord = &exam
 	}
 
+	// Jika assessmentRecord sendiri memiliki tanda vital spesifik yang diinput untuk surat, gunakan/gabungkan
+	if assessmentRecord != nil && (assessmentRecord.BPSystolic > 0 || assessmentRecord.Weight > 0 || assessmentRecord.Height > 0) {
+		if physicalExamRecord == nil {
+			physicalExamRecord = assessmentRecord
+		} else {
+			merged := *physicalExamRecord
+			if assessmentRecord.BPSystolic > 0 {
+				merged.BPSystolic = assessmentRecord.BPSystolic
+				merged.BPDiastolic = assessmentRecord.BPDiastolic
+			}
+			if assessmentRecord.HeartRate > 0 {
+				merged.HeartRate = assessmentRecord.HeartRate
+			}
+			if assessmentRecord.Weight > 0 {
+				merged.Weight = assessmentRecord.Weight
+			}
+			if assessmentRecord.Height > 0 {
+				merged.Height = assessmentRecord.Height
+			}
+			physicalExamRecord = &merged
+		}
+	}
+
 	officialNumber := generateOfficialSuratNumber(hospitalInfo, suratType, visit, visit.ID)
 	generatedAt := time.Now()
 	printedBy := resolvePrintedByLabel(c)
@@ -516,6 +540,15 @@ func buildSuratPrintFieldLabels(suratType string) suratPrintFieldLabels {
 			outcomeSummaryLabel:    "Kalimat Hasil Skrining",
 			validityLabel:          "Masa Berlaku Surat",
 			outcomeNoteLabel:       "Catatan Administratif",
+		}
+	case medicalRecordEntryGroupPrefixSuratRujukan:
+		return suratPrintFieldLabels{
+			assessmentSummaryLabel: "Diagnosis / Temuan Klinis",
+			purposeLabel:           "Rumah Sakit / Faskes Tujuan",
+			assessmentNoteLabel:    "Terapi / Tindakan Diberikan",
+			outcomeSummaryLabel:    "Alasan / Permohonan Rujukan",
+			validityLabel:          "Poli / Spesialis Tujuan",
+			outcomeNoteLabel:       "Catatan Tambahan Rujukan",
 		}
 	default:
 		return suratPrintFieldLabels{
@@ -627,6 +660,8 @@ func buildSuratStatementTemplate(visit models.Visit, suratType string) string {
 		return "Dokumen ini merupakan ringkasan surat MCU pasien atas nama " + patientName + " pada kunjungan " + visitNumber + ". Detail pemeriksaan mengikuti hasil penilaian klinis dokter."
 	case medicalRecordEntryGroupPrefixSuratButaWarna:
 		return "Dokumen ini merupakan surat hasil skrining buta warna pasien atas nama " + patientName + " pada kunjungan " + visitNumber + ". Hasil akhir mengikuti pemeriksaan dokter."
+	case medicalRecordEntryGroupPrefixSuratRujukan:
+		return "Bersama ini kami hadapkan pasien atas nama " + patientName + " pada kunjungan " + visitNumber + " untuk mendapatkan pemeriksaan dan penanganan spesialis lebih lanjut."
 	default:
 		return "Dokumen ini merupakan surat keterangan medis pasien atas nama " + patientName + " pada kunjungan " + visitNumber + "."
 	}
@@ -669,6 +704,13 @@ func buildSuratPDFSectionMeta(suratType string) suratPDFSectionMeta {
 			outcomeTitle:    "HASIL SKRINING BUTA WARNA",
 			outcomeEmpty:    "Hasil skrining buta warna belum diisi.",
 		}
+	case medicalRecordEntryGroupPrefixSuratRujukan:
+		return suratPDFSectionMeta{
+			assessmentTitle: "PERTIMBANGAN SURAT RUJUKAN",
+			assessmentEmpty: "Pertimbangan surat rujukan belum diisi.",
+			outcomeTitle:    "KETERANGAN SURAT RUJUKAN",
+			outcomeEmpty:    "Keterangan surat rujukan belum diisi.",
+		}
 	default:
 		return suratPDFSectionMeta{
 			assessmentTitle: "PERTIMBANGAN SURAT",
@@ -689,6 +731,8 @@ func getSuratClassificationCode(suratType string) string {
 		return "MCU"
 	case medicalRecordEntryGroupPrefixSuratButaWarna:
 		return "SKBW"
+	case medicalRecordEntryGroupPrefixSuratRujukan:
+		return "SRK"
 	case "kontrol", "surat-kontrol":
 		return "SKK"
 	default:
@@ -734,6 +778,8 @@ func getOfficialSuratTitle(suratType string) string {
 		return "SURAT KETERANGAN DOKTER (MCU)"
 	case medicalRecordEntryGroupPrefixSuratButaWarna:
 		return "SURAT KETERANGAN BUTA WARNA"
+	case medicalRecordEntryGroupPrefixSuratRujukan:
+		return "SURAT RUJUKAN PASIEN"
 	default:
 		return "SURAT KETERANGAN DOKTER"
 	}
@@ -899,29 +945,23 @@ func formatDoctorOfficialName(name string) string {
 func drawOfficialSuratKop(pdf *gofpdf.Fpdf, info initialAssessmentHospitalInfo) float64 {
 	left, top, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
-	contentWidth := pageWidth - left - right
 	currentY := top + 1.5
 	hasLogo := info.LogoPath != "" && info.LogoType != ""
-	logoSlotWidth := 0.0
-	logoGap := 0.0
-	logoMaxHeight := 22.0
-	logoMaxWidth := 24.0
+	logoMaxHeight := 20.0
+	logoMaxWidth := 22.0
+	logoGap := 3.5
+
+	logoWidth := 0.0
+	logoHeight := 0.0
 	if hasLogo {
-		logoSlotWidth = 28.0
-		logoGap = 4.0
+		logoWidth, logoHeight = measureInitialAssessmentHeaderLogo(info.LogoPath, logoMaxHeight, logoMaxWidth)
 	}
 
 	textStartX := left
-	textWidth := contentWidth
-	if hasLogo {
-		symmetricReserve := logoSlotWidth + logoGap
-		textStartX = left + symmetricReserve
-		textWidth = contentWidth - (2 * symmetricReserve)
-		if textWidth < 110 {
-			textStartX = left + logoSlotWidth + logoGap
-			textWidth = contentWidth - logoSlotWidth - logoGap
-		}
+	if hasLogo && logoWidth > 0 {
+		textStartX = left + logoWidth + logoGap
 	}
+	textWidth := (pageWidth - right) - textStartX
 
 	type headerLine struct {
 		text       string
@@ -933,7 +973,7 @@ func drawOfficialSuratKop(pdf *gofpdf.Fpdf, info initialAssessmentHospitalInfo) 
 	lines := []headerLine{{
 		text:       strings.ToUpper(fallbackText(info.Name)),
 		fontStyle:  "B",
-		fontSize:   15,
+		fontSize:   14.5,
 		lineHeight: 5.5,
 	}}
 
@@ -996,27 +1036,20 @@ func drawOfficialSuratKop(pdf *gofpdf.Fpdf, info initialAssessmentHospitalInfo) 
 		textBlockHeight += float64(lineCount) * line.lineHeight
 	}
 
-	logoWidth := 0.0
-	logoHeight := 0.0
-	if hasLogo {
-		logoWidth, logoHeight = measureInitialAssessmentHeaderLogo(info.LogoPath, logoMaxHeight, logoMaxWidth)
-	}
-
 	headerBlockHeight := maxFloat64(textBlockHeight, logoHeight)
-	if !hasLogo {
-		headerBlockHeight = textBlockHeight
-	}
 
-	if hasLogo {
-		logoX := left + ((logoSlotWidth - logoWidth) / 2)
-		logoY := currentY + ((textBlockHeight - logoHeight) / 2) - 0.8
+	if hasLogo && logoWidth > 0 {
+		logoX := left
+		logoY := currentY + ((headerBlockHeight - logoHeight) / 2)
 		if logoY < top {
 			logoY = top
 		}
 		drawInitialAssessmentHeaderLogo(pdf, info.LogoPath, info.LogoType, logoX, logoY, logoMaxHeight, logoMaxWidth)
 	}
 
-	pdf.SetXY(textStartX, currentY)
+	textY := currentY + ((headerBlockHeight - textBlockHeight) / 2)
+	pdf.SetXY(textStartX, textY)
+	pdf.SetTextColor(0, 0, 0)
 	for _, line := range lines {
 		trimmedText := strings.TrimSpace(sanitizePDFText(line.text))
 		if trimmedText == "" {
@@ -1024,15 +1057,13 @@ func drawOfficialSuratKop(pdf *gofpdf.Fpdf, info initialAssessmentHospitalInfo) 
 		}
 		pdf.SetX(textStartX)
 		pdf.SetFont("Arial", line.fontStyle, line.fontSize)
-		pdf.MultiCell(textWidth, line.lineHeight, trimmedText, "", "C", false)
+		pdf.MultiCell(textWidth, line.lineHeight, trimmedText, "", "L", false)
 	}
 
-	lineY := currentY + headerBlockHeight + 1.5
+	lineY := currentY + headerBlockHeight + 2.0
 	pdf.SetDrawColor(0, 0, 0)
-	pdf.SetLineWidth(0.7)
+	pdf.SetLineWidth(0.6)
 	pdf.Line(left, lineY, pageWidth-right, lineY)
-	pdf.SetLineWidth(0.2)
-	pdf.Line(left, lineY+0.8, pageWidth-right, lineY+0.8)
 
 	return lineY + 3.0
 }
@@ -1135,11 +1166,78 @@ func renderSuratEntryPDF(hospitalInfo initialAssessmentHospitalInfo, data suratP
 	pdf.SetFont("Arial", "", 10)
 	pdf.CellFormat(contentWidth, 5.0, "Nomor : "+data.OfficialNumber, "", 1, "C", false, 0, "")
 
+	suratTypeVal := normalizeSuratTypeValue(data.SuratType)
+	isSuratRujukan := suratTypeVal == medicalRecordEntryGroupPrefixSuratRujukan
+	isSuratSakit := suratTypeVal == medicalRecordEntryGroupPrefixSuratSakit
+	isSuratButaWarna := suratTypeVal == medicalRecordEntryGroupPrefixSuratButaWarna
+
+	destHospital := ""
+	specialistPoli := ""
+	if data.OutcomeRecord != nil && strings.TrimSpace(data.OutcomeRecord.ReferralDestination) != "" {
+		destHospital = strings.TrimSpace(data.OutcomeRecord.ReferralDestination)
+	} else if data.AssessmentRecord != nil && strings.TrimSpace(data.AssessmentRecord.Plan) != "" {
+		destHospital = strings.TrimSpace(data.AssessmentRecord.Plan)
+	}
+
+	if data.OutcomeRecord != nil && strings.TrimSpace(data.OutcomeRecord.FollowUpInstruction) != "" {
+		specialistPoli = strings.TrimSpace(data.OutcomeRecord.FollowUpInstruction)
+	} else if data.OutcomeRecord != nil && strings.TrimSpace(data.OutcomeRecord.ReferralReason) != "" {
+		specialistPoli = strings.TrimSpace(data.OutcomeRecord.ReferralReason)
+	}
+
+	diagnosis := "-"
+	if data.AssessmentRecord != nil && strings.TrimSpace(data.AssessmentRecord.Assessment) != "" {
+		diagnosis = strings.TrimSpace(data.AssessmentRecord.Assessment)
+	}
+
+	alasanRujukan := "-"
+	if data.OutcomeRecord != nil && strings.TrimSpace(data.OutcomeRecord.DischargeCondition) != "" {
+		alasanRujukan = strings.TrimSpace(data.OutcomeRecord.DischargeCondition)
+	} else if data.OutcomeRecord != nil && strings.TrimSpace(data.OutcomeRecord.ReferralReason) != "" {
+		alasanRujukan = strings.TrimSpace(data.OutcomeRecord.ReferralReason)
+	}
+
+	terapiDiberikan := "-"
+	if data.AssessmentRecord != nil && strings.TrimSpace(data.AssessmentRecord.Notes) != "" {
+		terapiDiberikan = strings.TrimSpace(data.AssessmentRecord.Notes)
+	} else if data.OutcomeRecord != nil && strings.TrimSpace(data.OutcomeRecord.Notes) != "" {
+		terapiDiberikan = strings.TrimSpace(data.OutcomeRecord.Notes)
+	}
+
 	pdf.SetY(pdf.GetY() + 4.0)
 	pdf.SetFont("Arial", "", 9.5)
-	instName := fallbackText(hospitalInfo.Name)
-	openingText := fmt.Sprintf("Kami yang bertanda tangan dibawah ini Dokter %s, dengan ini menerangkan bahwa :", instName)
-	pdf.MultiCell(contentWidth, 5.0, openingText, "", "L", false)
+	if isSuratRujukan {
+		ythTarget := "Dokter Pemeriksa"
+		if specialistPoli != "" {
+			trimmedLower := strings.ToLower(strings.TrimSpace(specialistPoli))
+			if strings.Contains(trimmedLower, "ugd") || strings.Contains(trimmedLower, "igd") {
+				ythTarget = "Dokter Jaga " + strings.ToUpper(specialistPoli)
+			} else if strings.HasPrefix(trimmedLower, "dr.") || strings.HasPrefix(trimmedLower, "dr ") || strings.HasPrefix(trimmedLower, "dokter") {
+				ythTarget = specialistPoli
+			} else if strings.HasPrefix(trimmedLower, "spesialis") || strings.HasPrefix(trimmedLower, "sp.") {
+				ythTarget = "Dokter " + specialistPoli
+			} else if strings.HasPrefix(trimmedLower, "poli") {
+				ythTarget = "Dokter " + specialistPoli
+			} else {
+				ythTarget = "Dokter Spesialis / " + specialistPoli
+			}
+		}
+		pdf.CellFormat(contentWidth, 4.6, "Kepada Yth.", "", 1, "L", false, 0, "")
+		pdf.SetFont("Arial", "B", 9.5)
+		pdf.CellFormat(contentWidth, 4.6, ythTarget, "", 1, "L", false, 0, "")
+		if destHospital != "" {
+			pdf.SetFont("Arial", "", 9.5)
+			pdf.CellFormat(contentWidth, 4.6, destHospital, "", 1, "L", false, 0, "")
+		}
+		pdf.SetFont("Arial", "", 9.5)
+		pdf.CellFormat(contentWidth, 4.6, "di Tempat", "", 1, "L", false, 0, "")
+		pdf.SetY(pdf.GetY() + 2.5)
+		pdf.MultiCell(contentWidth, 4.8, "Dengan hormat,\nBersama ini kami hadapkan pasien dengan identitas sebagai berikut :", "", "L", false)
+	} else {
+		instName := fallbackText(hospitalInfo.Name)
+		openingText := fmt.Sprintf("Kami yang bertanda tangan dibawah ini Dokter %s, dengan ini menerangkan bahwa :", instName)
+		pdf.MultiCell(contentWidth, 5.0, openingText, "", "L", false)
+	}
 
 	pdf.SetY(pdf.GetY() + 2.5)
 	indentX := startX + 6.0
@@ -1163,6 +1261,7 @@ func renderSuratEntryPDF(hospitalInfo initialAssessmentHospitalInfo, data suratP
 		isBold bool
 	}{
 		{"Nama", strings.ToUpper(fallbackText(patient.FullName)), true},
+		{"No. Rekam Medis", fallbackText(patient.MedicalRecordNumber), false},
 		{"Jenis Kelamin", formatGenderIndonesian(patient.Gender), false},
 		{"Tempat, Tgl Lahir", birthPlaceDate, false},
 		{"Warga Negara", "Indonesia", false},
@@ -1195,20 +1294,11 @@ func renderSuratEntryPDF(hospitalInfo initialAssessmentHospitalInfo, data suratP
 	pdf.SetX(indentX)
 	pdf.CellFormat(contentWidth-6.0, 5.0, "Data Pemeriksaan :", "", 1, "L", false, 0, "")
 
-	boxX := indentX
-	boxWidth := endX - boxX - 4.0
-	boxY := pdf.GetY() + 1.2
-	boxHeight := 24.0
-
-	pdf.SetDrawColor(0, 0, 0)
-	pdf.SetLineWidth(0.3)
-	pdf.Rect(boxX, boxY, boxWidth, boxHeight, "D")
-
-	halfWidth := boxWidth / 2.0
-	pdf.Line(boxX+halfWidth, boxY, boxX+halfWidth, boxY+boxHeight)
-
 	bpStr := "-"
 	hrStr := "-"
+	tempStr := "-"
+	rrStr := "-"
+	consciousnessStr := "Compos Mentis"
 	weightStr := "-"
 	heightStr := "-"
 	if data.PhysicalExamRecord != nil {
@@ -1218,6 +1308,15 @@ func renderSuratEntryPDF(hospitalInfo initialAssessmentHospitalInfo, data suratP
 		if data.PhysicalExamRecord.HeartRate > 0 {
 			hrStr = fmt.Sprintf("%d x/menit", data.PhysicalExamRecord.HeartRate)
 		}
+		if data.PhysicalExamRecord.Temperature > 0 {
+			tempStr = fmt.Sprintf("%.1f C", data.PhysicalExamRecord.Temperature)
+		}
+		if data.PhysicalExamRecord.RespiratoryRate > 0 {
+			rrStr = fmt.Sprintf("%d x/menit", data.PhysicalExamRecord.RespiratoryRate)
+		}
+		if strings.TrimSpace(data.PhysicalExamRecord.Consciousness) != "" {
+			consciousnessStr = formatTitleCase(strings.TrimSpace(data.PhysicalExamRecord.Consciousness))
+		}
 		if data.PhysicalExamRecord.Weight > 0 {
 			weightStr = fmt.Sprintf("%.0f Kg", data.PhysicalExamRecord.Weight)
 		}
@@ -1226,38 +1325,186 @@ func renderSuratEntryPDF(hospitalInfo initialAssessmentHospitalInfo, data suratP
 		}
 	}
 
-	colorBlindStr := "Tidak"
-	if normalizeSuratTypeValue(data.SuratType) == medicalRecordEntryGroupPrefixSuratButaWarna {
-		if data.OutcomeRecord != nil && strings.TrimSpace(data.OutcomeRecord.DischargeCondition) != "" {
-			colorBlindStr = strings.TrimSpace(data.OutcomeRecord.DischargeCondition)
-		} else if data.AssessmentRecord != nil && strings.TrimSpace(data.AssessmentRecord.Assessment) != "" {
-			colorBlindStr = strings.TrimSpace(data.AssessmentRecord.Assessment)
+	mataStr := "Baik"
+	telingaStr := "Baik"
+	butaWarnaStr := "Tidak"
+	keteranganLainStr := "Dalam batas normal"
+
+	// Parse JSON atau teks pemeriksaan fisik dari berbagai sumber (AssessmentRecord, PhysicalExamRecord, Notes)
+	type SuratSehatExamPayload struct {
+		Mata           string `json:"mata"`
+		Telinga        string `json:"telinga"`
+		ButaWarna      string `json:"buta_warna"`
+		KeteranganLain string `json:"keterangan_lain"`
+	}
+
+	var examCandidates []string
+	if data.AssessmentRecord != nil {
+		if s := strings.TrimSpace(data.AssessmentRecord.PhysicalExamination); s != "" {
+			examCandidates = append(examCandidates, s)
+		}
+		if s := strings.TrimSpace(data.AssessmentRecord.Notes); s != "" {
+			examCandidates = append(examCandidates, s)
+		}
+	}
+	if data.PhysicalExamRecord != nil {
+		if s := strings.TrimSpace(data.PhysicalExamRecord.PhysicalExamination); s != "" {
+			examCandidates = append(examCandidates, s)
+		}
+		if s := strings.TrimSpace(data.PhysicalExamRecord.Notes); s != "" {
+			examCandidates = append(examCandidates, s)
 		}
 	}
 
-	leftColItems := []struct {
-		label string
-		val   string
-	}{
-		{"Tensi", bpStr},
-		{"Nadi", hrStr},
-		{"Berat Badan", weightStr},
-		{"Tinggi Badan", heightStr},
+	foundSpecificKeterangan := false
+	for _, raw := range examCandidates {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		// Cek jika candidate berupa JSON string
+		if strings.HasPrefix(raw, "{") {
+			var payload SuratSehatExamPayload
+			if err := json.Unmarshal([]byte(raw), &payload); err == nil {
+				if strings.TrimSpace(payload.Mata) != "" {
+					mataStr = strings.TrimSpace(payload.Mata)
+				}
+				if strings.TrimSpace(payload.Telinga) != "" {
+					telingaStr = strings.TrimSpace(payload.Telinga)
+				}
+				if strings.TrimSpace(payload.ButaWarna) != "" {
+					butaWarnaStr = strings.TrimSpace(payload.ButaWarna)
+				}
+				if strings.TrimSpace(payload.KeteranganLain) != "" {
+					keteranganLainStr = strings.TrimSpace(payload.KeteranganLain)
+					foundSpecificKeterangan = true
+				}
+				continue
+			}
+		}
+
+		// Jika teks biasa (bukan JSON)
+		if !strings.HasPrefix(raw, "{") && !foundSpecificKeterangan {
+			keteranganLainStr = raw
+			foundSpecificKeterangan = true
+		}
 	}
 
-	rightColItems := []struct {
-		label string
-		val   string
-	}{
-		{"Mata Ka/Ki", "Baik"},
-		{"Telinga Ka/Ki", "Baik"},
-		{"Buta Warna", colorBlindStr},
-		{"Keterangan Lain", "Baik"},
+	// Proteksi mutlak: keteranganLainStr TIDAK BOLEH berupa JSON mentah
+	if strings.Contains(keteranganLainStr, "{") {
+		var payload SuratSehatExamPayload
+		if err := json.Unmarshal([]byte(keteranganLainStr), &payload); err == nil && strings.TrimSpace(payload.KeteranganLain) != "" {
+			keteranganLainStr = strings.TrimSpace(payload.KeteranganLain)
+		} else {
+			keteranganLainStr = "Dalam batas normal"
+		}
+	}
+	if strings.Contains(keteranganLainStr, "{") || strings.Contains(keteranganLainStr, "}") {
+		keteranganLainStr = "Dalam batas normal"
 	}
 
-	rowH := 5.4
+	if isSuratButaWarna {
+		if data.OutcomeRecord != nil && strings.TrimSpace(data.OutcomeRecord.DischargeCondition) != "" {
+			butaWarnaStr = strings.TrimSpace(data.OutcomeRecord.DischargeCondition)
+		} else if data.AssessmentRecord != nil && strings.TrimSpace(data.AssessmentRecord.Assessment) != "" {
+			butaWarnaStr = strings.TrimSpace(data.AssessmentRecord.Assessment)
+		}
+	}
+
+	type examItem struct {
+		label string
+		val   string
+	}
+
+	var leftColItems []examItem
+	var rightColItems []examItem
+	bottomLabel := "Keterangan Lain"
+
+	if isSuratSakit {
+		// Pada Surat Keterangan Sakit: fokus pada tanda vital klinis (Tensi, Nadi, Suhu, Respirasi, BB, TB)
+		bottomLabel = "Catatan Pemeriksaan"
+		leftColItems = []examItem{
+			{"Tekanan Darah", bpStr},
+			{"Frekuensi Nadi", hrStr},
+			{"Suhu Tubuh", tempStr},
+		}
+		rightColItems = []examItem{
+			{"Pernapasan", rrStr},
+			{"Berat Badan", weightStr},
+			{"Tinggi Badan", heightStr},
+		}
+	} else if isSuratRujukan {
+		bottomLabel = "Pemeriksaan Fisik"
+		leftColItems = []examItem{
+			{"Tekanan Darah", bpStr},
+			{"Frekuensi Nadi", hrStr},
+			{"Suhu Tubuh", tempStr},
+			{"Berat Badan", weightStr},
+		}
+		rightColItems = []examItem{
+			{"Kesadaran", consciousnessStr},
+			{"Pernapasan", rrStr},
+			{"Tinggi Badan", heightStr},
+		}
+	} else if isSuratButaWarna {
+		bottomLabel = "Keterangan Lain"
+		leftColItems = []examItem{
+			{"Tensi", bpStr},
+			{"Nadi", hrStr},
+			{"Berat Badan", weightStr},
+			{"Tinggi Badan", heightStr},
+		}
+		rightColItems = []examItem{
+			{"Mata Ka/Ki", mataStr},
+			{"Tes Buta Warna", butaWarnaStr},
+			{"Suhu Tubuh", tempStr},
+		}
+	} else {
+		// Surat Sehat / MCU
+		bottomLabel = "Keterangan Lain"
+		leftColItems = []examItem{
+			{"Tensi", bpStr},
+			{"Nadi", hrStr},
+			{"Berat Badan", weightStr},
+			{"Tinggi Badan", heightStr},
+		}
+		rightColItems = []examItem{
+			{"Mata Ka/Ki", mataStr},
+			{"Telinga Ka/Ki", telingaStr},
+			{"Buta Warna", butaWarnaStr},
+		}
+	}
+
+	boxX := indentX
+	boxWidth := endX - boxX - 4.0
+	boxY := pdf.GetY() + 1.2
+	halfWidth := boxWidth / 2.0
 	colLabelW := 28.0
 	colSepW := 3.0
+	rowH := 5.2
+
+	maxRows := len(leftColItems)
+	if len(rightColItems) > maxRows {
+		maxRows = len(rightColItems)
+	}
+	gridHeight := (float64(maxRows) * rowH) + 2.0
+
+	ketValW := boxWidth - colLabelW - colSepW - 8.0
+	pdf.SetFont("Arial", "", 9.0)
+	ketLines := pdf.SplitLines([]byte(keteranganLainStr), ketValW)
+	ketLineCount := len(ketLines)
+	if ketLineCount < 1 {
+		ketLineCount = 1
+	}
+	ketLineH := 4.4
+	ketBlockH := float64(ketLineCount)*ketLineH + 3.0
+	boxHeight := gridHeight + ketBlockH
+
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.3)
+	pdf.Rect(boxX, boxY, boxWidth, boxHeight, "D")
+	pdf.Line(boxX+halfWidth, boxY, boxX+halfWidth, boxY+gridHeight)
+	pdf.Line(boxX, boxY+gridHeight, boxX+boxWidth, boxY+gridHeight)
 
 	for i, item := range leftColItems {
 		rY := boxY + 1.2 + (float64(i) * rowH)
@@ -1265,7 +1512,7 @@ func renderSuratEntryPDF(hospitalInfo initialAssessmentHospitalInfo, data suratP
 		pdf.SetFont("Arial", "", 9.0)
 		pdf.CellFormat(colLabelW, rowH, item.label, "", 0, "L", false, 0, "")
 		pdf.CellFormat(colSepW, rowH, ":", "", 0, "C", false, 0, "")
-		pdf.CellFormat(halfWidth-colLabelW-colSepW-6.0, rowH, item.val, "", 0, "L", false, 0, "")
+		pdf.CellFormat(halfWidth-colLabelW-colSepW-6.0, rowH, fitTextToWidth(pdf, item.val, halfWidth-colLabelW-colSepW-6.0), "", 0, "L", false, 0, "")
 	}
 
 	for i, item := range rightColItems {
@@ -1274,8 +1521,16 @@ func renderSuratEntryPDF(hospitalInfo initialAssessmentHospitalInfo, data suratP
 		pdf.SetFont("Arial", "", 9.0)
 		pdf.CellFormat(colLabelW+4.0, rowH, item.label, "", 0, "L", false, 0, "")
 		pdf.CellFormat(colSepW, rowH, ":", "", 0, "C", false, 0, "")
-		pdf.CellFormat(halfWidth-colLabelW-colSepW-10.0, rowH, item.val, "", 0, "L", false, 0, "")
+		pdf.CellFormat(halfWidth-colLabelW-colSepW-10.0, rowH, fitTextToWidth(pdf, item.val, halfWidth-colLabelW-colSepW-10.0), "", 0, "L", false, 0, "")
 	}
+
+	ketY := boxY + gridHeight + 1.6
+	pdf.SetXY(boxX+3.0, ketY)
+	pdf.SetFont("Arial", "", 9.0)
+	pdf.CellFormat(colLabelW, ketLineH, bottomLabel, "", 0, "L", false, 0, "")
+	pdf.CellFormat(colSepW, ketLineH, ":", "", 0, "C", false, 0, "")
+	pdf.MultiCell(ketValW, ketLineH, keteranganLainStr, "", "L", false)
+
 
 	pdf.SetY(boxY + boxHeight + 4.5)
 
@@ -1290,6 +1545,34 @@ func renderSuratEntryPDF(hospitalInfo initialAssessmentHospitalInfo, data suratP
 	}
 
 	switch normalizeSuratTypeValue(data.SuratType) {
+	case medicalRecordEntryGroupPrefixSuratRujukan:
+		pdf.SetFont("Arial", "B", 9.5)
+		pdf.CellFormat(contentWidth, 5.0, "Keterangan Klinis & Rujukan :", "", 1, "L", false, 0, "")
+
+		rujukanDetails := []struct {
+			label string
+			val   string
+		}{
+			{"Diagnosis Kerja", diagnosis},
+			{"Alasan Rujukan", alasanRujukan},
+			{"Terapi / Tindakan Diberikan", terapiDiberikan},
+			{"RS / Faskes Rujukan", destHospital},
+			{"Poli / Unit Tujuan", specialistPoli},
+		}
+
+		rLabelW := 46.0
+		rSepW := 4.0
+		rValW := endX - indentX - rLabelW - rSepW
+		for _, rd := range rujukanDetails {
+			cY := pdf.GetY()
+			pdf.SetXY(indentX, cY)
+			pdf.SetFont("Arial", "B", 9.0)
+			pdf.CellFormat(rLabelW, 4.8, rd.label, "", 0, "L", false, 0, "")
+			pdf.CellFormat(rSepW, 4.8, ":", "", 0, "C", false, 0, "")
+			pdf.SetFont("Arial", "", 9.0)
+			pdf.MultiCell(rValW, 4.8, rd.val, "", "L", false)
+		}
+
 	case medicalRecordEntryGroupPrefixSuratSakit:
 		sickDays := "beberapa hari"
 		if data.OutcomeRecord != nil && strings.TrimSpace(data.OutcomeRecord.FollowUpInstruction) != "" {
@@ -1314,8 +1597,8 @@ func renderSuratEntryPDF(hospitalInfo initialAssessmentHospitalInfo, data suratP
 		pdf.SetY(pdf.GetY() + 1.0)
 		pdf.SetFont("Arial", "B", 10.5)
 		resultStr := "TIDAK BUTA WARNA"
-		if colorBlindStr != "Tidak" && colorBlindStr != "" {
-			resultStr = strings.ToUpper(colorBlindStr)
+		if butaWarnaStr != "Tidak" && butaWarnaStr != "" {
+			resultStr = strings.ToUpper(butaWarnaStr)
 		}
 		pdf.CellFormat(contentWidth, 5.5, resultStr, "", 1, "L", false, 0, "")
 
@@ -1328,7 +1611,7 @@ func renderSuratEntryPDF(hospitalInfo initialAssessmentHospitalInfo, data suratP
 		if data.OutcomeRecord != nil && strings.TrimSpace(data.OutcomeRecord.DischargeCondition) != "" {
 			mcuResult = strings.ToUpper(strings.TrimSpace(data.OutcomeRecord.DischargeCondition))
 		}
-		pdf.CellFormat(contentWidth, 5.5, mcuResult, "", 1, "L", false, 0, "")
+		pdf.MultiCell(contentWidth, 5.2, mcuResult, "", "L", false)
 
 	default:
 		pdf.SetFont("Arial", "", 9.5)
@@ -1339,24 +1622,35 @@ func renderSuratEntryPDF(hospitalInfo initialAssessmentHospitalInfo, data suratP
 		if data.OutcomeRecord != nil && strings.TrimSpace(data.OutcomeRecord.DischargeCondition) != "" {
 			sehatResult = strings.TrimSpace(data.OutcomeRecord.DischargeCondition)
 		}
-		pdf.CellFormat(contentWidth, 5.5, sehatResult, "", 1, "L", false, 0, "")
+		pdf.MultiCell(contentWidth, 5.2, sehatResult, "", "L", false)
 	}
 
 	pdf.SetY(pdf.GetY() + 4.5)
 	pdf.SetFont("Arial", "", 9.5)
-	pdf.MultiCell(contentWidth, 5.0, "Surat Keterangan ini digunakan untuk : "+purposeText, "", "L", false)
-
-	pdf.SetY(pdf.GetY() + 4.5)
-	pdf.MultiCell(contentWidth, 5.0, "Demikian surat keterangan ini kami buat dengan sebenarnya untuk dapat dipergunakan sebagaimana mestinya.", "", "L", false)
+	if isSuratRujukan {
+		pdf.MultiCell(contentWidth, 5.0, "Demikian surat rujukan ini kami buat untuk mendapatkan penanganan lebih lanjut. Atas bantuan dan kerja sama teman sejawat, kami ucapkan terima kasih.", "", "L", false)
+	} else {
+		pdf.MultiCell(contentWidth, 5.0, "Surat Keterangan ini digunakan untuk : "+purposeText, "", "L", false)
+		pdf.SetY(pdf.GetY() + 4.5)
+		pdf.MultiCell(contentWidth, 5.0, "Demikian surat keterangan ini kami buat dengan sebenarnya untuk dapat dipergunakan sebagaimana mestinya.", "", "L", false)
+	}
 
 	sigWidth := 75.0
 	sigX := endX - sigWidth
-	sigY := pdf.GetY() + 8.0
-	if sigY < 170.0 {
-		sigY = 170.0
+	hasTTE := tteSignature != nil && hasTTEQRCode(tteSignature)
+
+	// Posisikan TTD dokter lebih ke bawah agar rapi dan proporsional di bagian bawah halaman
+	targetSigY := 232.0
+	if hasTTE {
+		targetSigY = 224.0
 	}
-	if sigY > 215.0 {
-		sigY = 215.0
+	sigY := maxFloat64(pdf.GetY()+10.0, targetSigY)
+	maxSigY := 242.0
+	if hasTTE {
+		maxSigY = 232.0
+	}
+	if sigY > maxSigY {
+		sigY = maxSigY
 	}
 	drawOfficialDoctorSignature(pdf, sigX, sigY, sigWidth, hospitalInfo.City, data.GeneratedAt, data.Visit.Doctor, tteSignature)
 
@@ -1514,28 +1808,23 @@ func addInitialAssessmentPDFHeader(pdf *gofpdf.Fpdf, info initialAssessmentHospi
 	left, top, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
 	contentWidth := pageWidth - left - right
-	currentY := top + 2.5
+	currentY := top + 1.5
 	hasLogo := info.LogoPath != "" && info.LogoType != ""
-	logoSlotWidth := 0.0
-	logoGap := 0.0
-	logoMaxHeight := 22.0
-	logoMaxWidth := 24.0
+	logoMaxHeight := 20.0
+	logoMaxWidth := 22.0
+	logoGap := 3.5
+
+	logoWidth := 0.0
+	logoHeight := 0.0
 	if hasLogo {
-		logoSlotWidth = 28.0
-		logoGap = 4.0
+		logoWidth, logoHeight = measureInitialAssessmentHeaderLogo(info.LogoPath, logoMaxHeight, logoMaxWidth)
 	}
 
 	textStartX := left
-	textWidth := contentWidth
-	if hasLogo {
-		symmetricReserve := logoSlotWidth + logoGap
-		textStartX = left + symmetricReserve
-		textWidth = contentWidth - (2 * symmetricReserve)
-		if textWidth < 110 {
-			textStartX = left + logoSlotWidth + logoGap
-			textWidth = contentWidth - logoSlotWidth - logoGap
-		}
+	if hasLogo && logoWidth > 0 {
+		textStartX = left + logoWidth + logoGap
 	}
+	textWidth := (pageWidth - right) - textStartX
 
 	type headerLine struct {
 		text       string
@@ -1547,8 +1836,8 @@ func addInitialAssessmentPDFHeader(pdf *gofpdf.Fpdf, info initialAssessmentHospi
 	lines := []headerLine{{
 		text:       strings.ToUpper(fallbackText(info.Name)),
 		fontStyle:  "B",
-		fontSize:   16,
-		lineHeight: 6,
+		fontSize:   14.5,
+		lineHeight: 5.5,
 	}}
 
 	addressParts := make([]string, 0, 2)
@@ -1610,27 +1899,20 @@ func addInitialAssessmentPDFHeader(pdf *gofpdf.Fpdf, info initialAssessmentHospi
 		textBlockHeight += float64(lineCount) * line.lineHeight
 	}
 
-	logoWidth := 0.0
-	logoHeight := 0.0
-	if hasLogo {
-		logoWidth, logoHeight = measureInitialAssessmentHeaderLogo(info.LogoPath, logoMaxHeight, logoMaxWidth)
-	}
-
 	headerBlockHeight := maxFloat64(textBlockHeight, logoHeight)
-	if !hasLogo {
-		headerBlockHeight = textBlockHeight
-	}
 
-	if hasLogo {
-		logoX := left + ((logoSlotWidth - logoWidth) / 2)
-		logoY := currentY + ((textBlockHeight - logoHeight) / 2) - 0.8
+	if hasLogo && logoWidth > 0 {
+		logoX := left
+		logoY := currentY + ((headerBlockHeight - logoHeight) / 2)
 		if logoY < top {
 			logoY = top
 		}
 		drawInitialAssessmentHeaderLogo(pdf, info.LogoPath, info.LogoType, logoX, logoY, logoMaxHeight, logoMaxWidth)
 	}
 
-	pdf.SetXY(textStartX, currentY)
+	textY := currentY + ((headerBlockHeight - textBlockHeight) / 2)
+	pdf.SetXY(textStartX, textY)
+	pdf.SetTextColor(0, 0, 0)
 	for _, line := range lines {
 		trimmedText := strings.TrimSpace(sanitizePDFText(line.text))
 		if trimmedText == "" {
@@ -1638,20 +1920,19 @@ func addInitialAssessmentPDFHeader(pdf *gofpdf.Fpdf, info initialAssessmentHospi
 		}
 		pdf.SetX(textStartX)
 		pdf.SetFont("Arial", line.fontStyle, line.fontSize)
-		pdf.MultiCell(textWidth, line.lineHeight, trimmedText, "", "C", false)
+		pdf.MultiCell(textWidth, line.lineHeight, trimmedText, "", "L", false)
 	}
 
-	lineY := currentY + headerBlockHeight
-	pdf.SetLineWidth(0.7)
+	lineY := currentY + headerBlockHeight + 2.0
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.6)
 	pdf.Line(left, lineY, pageWidth-right, lineY)
-	pdf.SetLineWidth(0.2)
-	pdf.Line(left, lineY+0.8, pageWidth-right, lineY+0.8)
 
-	pdf.SetY(lineY + 2.8)
-	pdf.SetFont("Arial", "B", 14)
-	pdf.CellFormat(contentWidth, 6, firstNonEmpty(sanitizePDFText(title), "-"), "", 1, "C", false, 0, "")
-	pdf.SetFont("Arial", "", 10)
-	pdf.CellFormat(contentWidth, 4.5, firstNonEmpty(sanitizePDFText(subtitle), "-"), "", 1, "C", false, 0, "")
+	pdf.SetY(lineY + 3.0)
+	pdf.SetFont("Arial", "B", 13)
+	pdf.CellFormat(contentWidth, 5.5, firstNonEmpty(sanitizePDFText(title), "-"), "", 1, "C", false, 0, "")
+	pdf.SetFont("Arial", "", 9.5)
+	pdf.CellFormat(contentWidth, 4.2, firstNonEmpty(sanitizePDFText(subtitle), "-"), "", 1, "C", false, 0, "")
 
 	contentStartY := maxFloat64(initialAssessmentPDFContentStart, pdf.GetY()+2)
 	setInitialAssessmentPDFPageContentStartOverride(pdf, pdf.PageNo(), contentStartY)

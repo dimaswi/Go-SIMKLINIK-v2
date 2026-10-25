@@ -579,30 +579,24 @@ func formatPrescriptionSigna(signa string) string {
 func drawPrescriptionA5Header(pdf *gofpdf.Fpdf, info initialAssessmentHospitalInfo) float64 {
 	left, top, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
-	contentWidth := pageWidth - left - right
 	currentY := top + 0.5
 
 	hasLogo := info.LogoPath != "" && info.LogoType != ""
-	logoSlotWidth := 0.0
-	logoGap := 0.0
 	logoMaxHeight := 15.0
 	logoMaxWidth := 18.0
+	logoGap := 2.5
+
+	logoWidth := 0.0
+	logoHeight := 0.0
 	if hasLogo {
-		logoSlotWidth = 20.0
-		logoGap = 2.5
+		logoWidth, logoHeight = measureInitialAssessmentHeaderLogo(info.LogoPath, logoMaxHeight, logoMaxWidth)
 	}
 
 	textStartX := left
-	textWidth := contentWidth
-	if hasLogo {
-		symmetricReserve := logoSlotWidth + logoGap
-		textStartX = left + symmetricReserve
-		textWidth = contentWidth - (2 * symmetricReserve)
-		if textWidth < 80 {
-			textStartX = left + logoSlotWidth + logoGap
-			textWidth = contentWidth - logoSlotWidth - logoGap
-		}
+	if hasLogo && logoWidth > 0 {
+		textStartX = left + logoWidth + logoGap
 	}
+	textWidth := (pageWidth - right) - textStartX
 
 	type headerLine struct {
 		text       string
@@ -641,12 +635,18 @@ func drawPrescriptionA5Header(pdf *gofpdf.Fpdf, info initialAssessmentHospitalIn
 	if trimmed := strings.TrimSpace(sanitizePDFText(info.Email)); trimmed != "" {
 		contactParts = append(contactParts, trimmed)
 	}
-	if trimmed := strings.TrimSpace(sanitizePDFText(info.Website)); trimmed != "" {
-		contactParts = append(contactParts, trimmed)
-	}
 	if len(contactParts) > 0 {
 		lines = append(lines, headerLine{
 			text:       strings.Join(contactParts, " | "),
+			fontStyle:  "",
+			fontSize:   6.8,
+			lineHeight: 3.0,
+		})
+	}
+
+	if trimmed := strings.TrimSpace(sanitizePDFText(info.Website)); trimmed != "" {
+		lines = append(lines, headerLine{
+			text:       trimmed,
 			fontStyle:  "",
 			fontSize:   6.8,
 			lineHeight: 3.0,
@@ -668,21 +668,20 @@ func drawPrescriptionA5Header(pdf *gofpdf.Fpdf, info initialAssessmentHospitalIn
 		textBlockHeight += float64(lineCount) * line.lineHeight
 	}
 
-	logoWidth := 0.0
-	logoHeight := 0.0
-	if hasLogo {
-		logoWidth, logoHeight = measureInitialAssessmentHeaderLogo(info.LogoPath, logoMaxHeight, logoMaxWidth)
-		logoX := left + ((logoSlotWidth - logoWidth) / 2)
-		logoY := currentY + ((textBlockHeight - logoHeight) / 2)
+	headerBlockHeight := maxFloat64(textBlockHeight, logoHeight)
+
+	if hasLogo && logoWidth > 0 {
+		logoX := left
+		logoY := currentY + ((headerBlockHeight - logoHeight) / 2)
 		if logoY < top {
 			logoY = top
 		}
 		drawInitialAssessmentHeaderLogo(pdf, info.LogoPath, info.LogoType, logoX, logoY, logoMaxHeight, logoMaxWidth)
 	}
 
-	headerBlockHeight := maxFloat64(textBlockHeight, logoHeight)
-
-	pdf.SetXY(textStartX, currentY)
+	textY := currentY + ((headerBlockHeight - textBlockHeight) / 2)
+	pdf.SetXY(textStartX, textY)
+	pdf.SetTextColor(0, 0, 0)
 	for _, line := range lines {
 		trimmedText := strings.TrimSpace(sanitizePDFText(line.text))
 		if trimmedText == "" {
@@ -690,14 +689,13 @@ func drawPrescriptionA5Header(pdf *gofpdf.Fpdf, info initialAssessmentHospitalIn
 		}
 		pdf.SetX(textStartX)
 		pdf.SetFont("Arial", line.fontStyle, line.fontSize)
-		pdf.MultiCell(textWidth, line.lineHeight, trimmedText, "", "C", false)
+		pdf.MultiCell(textWidth, line.lineHeight, trimmedText, "", "L", false)
 	}
 
-	lineY := currentY + headerBlockHeight + 1.0
+	lineY := currentY + headerBlockHeight + 1.2
+	pdf.SetDrawColor(0, 0, 0)
 	pdf.SetLineWidth(0.6)
 	pdf.Line(left, lineY, pageWidth-right, lineY)
-	pdf.SetLineWidth(0.2)
-	pdf.Line(left, lineY+0.6, pageWidth-right, lineY+0.6)
 
 	return lineY + 1.8
 }

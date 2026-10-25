@@ -1,5 +1,9 @@
+import { useMemo } from 'react';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import { useToast } from '@/hooks/use-toast';
+import { Download } from 'lucide-react';
 import type {
   ICD10,
   MedicalActionMutationPayload,
@@ -90,6 +94,7 @@ type SectionEditorBodyProps = {
   onAddAction: (payload: MedicalActionMutationPayload) => Promise<boolean | void> | boolean | void;
   onUpdateAction?: (actionId: number, payload: MedicalActionMutationPayload) => Promise<boolean | void> | boolean | void;
   onDeleteAction: (actionId: number) => Promise<boolean | void> | boolean | void;
+  allRecords?: MedicalRecord[];
   readOnly: boolean;
 };
 
@@ -99,7 +104,7 @@ const SURAT_STATUS_OPTIONS = [
   { value: 'surat_tidak_diterbitkan', label: 'Surat Tidak Diterbitkan' },
 ];
 
-type SuratTypeValue = 'surat-sakit' | 'surat-sehat' | 'surat-mcu' | 'surat-buta-warna' | 'surat-keterangan';
+type SuratTypeValue = 'surat-sakit' | 'surat-sehat' | 'surat-mcu' | 'surat-buta-warna' | 'surat-rujukan' | 'surat-keterangan';
 
 type SuratFieldProfile = {
   assessmentPlaceholder: string;
@@ -133,6 +138,12 @@ const SURAT_FIELD_PROFILES: Record<SuratTypeValue, SuratFieldProfile> = {
     summaryPlaceholder: 'Contoh: Dinyatakan TIDAK BUTA WARNA.',
     validityPlaceholder: 'Contoh: Berlaku untuk keperluan administrasi institusi terkait.',
   },
+  'surat-rujukan': {
+    assessmentPlaceholder: 'Tuliskan diagnosis kerja / temuan klinis / anamnesis yang mendasari rujukan.',
+    purposePlaceholder: 'Tuliskan Rumah Sakit / Faskes Tujuan Rujukan (contoh: RSUD Dr. Soetomo).',
+    summaryPlaceholder: 'Tuliskan alasan / permohonan rujukan (contoh: Mohon penanganan lanjutan spesialis penyakit dalam).',
+    validityPlaceholder: 'Tuliskan Poli / Dokter Spesialis Tujuan (contoh: Poli Penyakit Dalam / dr. Spesialis Jantung).',
+  },
   'surat-keterangan': {
     assessmentPlaceholder: 'Tuliskan dasar pertimbangan klinis dokter untuk penerbitan surat.',
     purposePlaceholder: 'Contoh: Keperluan administrasi kerja, sekolah, atau instansi.',
@@ -148,6 +159,7 @@ function inferSuratTypeFromEntryGroupKey(entryGroupKey?: string) {
   if (normalized === 'surat-sehat' || normalized.startsWith('surat-sehat-')) return 'surat-sehat' as SuratTypeValue;
   if (normalized === 'surat-mcu' || normalized.startsWith('surat-mcu-')) return 'surat-mcu' as SuratTypeValue;
   if (normalized === 'surat-buta-warna' || normalized.startsWith('surat-buta-warna-')) return 'surat-buta-warna' as SuratTypeValue;
+  if (normalized === 'surat-rujukan' || normalized.startsWith('surat-rujukan-')) return 'surat-rujukan' as SuratTypeValue;
   return 'surat-keterangan' as SuratTypeValue;
 }
 
@@ -588,55 +600,385 @@ function renderDentalAssessment(
   );
 }
 
+const BUTA_WARNA_OPTIONS = [
+  { value: 'Tidak', label: 'Tidak Buta Warna' },
+  { value: 'Parsial', label: 'Buta Warna Sebagian (Parsial)' },
+  { value: 'Total', label: 'Buta Warna Total' },
+];
+
 function renderSuratAssessment(
   draft: MedicalRecordDraft,
   setDraft: React.Dispatch<React.SetStateAction<MedicalRecordDraft>>,
   record: MedicalRecord | null,
-  readOnly: boolean
+  readOnly: boolean,
+  allRecords?: MedicalRecord[]
 ) {
+  const { toast } = useToast();
   const profile = getSuratFieldProfile(record);
+  const suratType = inferSuratTypeFromEntryGroupKey(record?.entry_group_key);
+  const isSuratSehat = suratType === 'surat-sehat' || suratType === 'surat-mcu';
+  const isSuratRujukan = suratType === 'surat-rujukan';
+
+  // Parse structured physical examination for Surat Sehat / MCU / Rujukan
+  let parsedExam = {
+    mata: 'Baik',
+    telinga: 'Baik',
+    buta_warna: 'Tidak',
+    keterangan_lain: 'Baik / Dalam batas normal',
+  };
+
+  try {
+    if (draft.physical_examination && draft.physical_examination.trim().startsWith('{')) {
+      const json = JSON.parse(draft.physical_examination);
+      parsedExam = {
+        mata: json.mata || parsedExam.mata,
+        telinga: json.telinga || parsedExam.telinga,
+        buta_warna: json.buta_warna || parsedExam.buta_warna,
+        keterangan_lain: json.keterangan_lain || parsedExam.keterangan_lain,
+      };
+    } else if (draft.physical_examination && draft.physical_examination.trim()) {
+      parsedExam.keterangan_lain = draft.physical_examination.trim();
+    }
+  } catch {
+    // fallback
+  }
+
+  const updateExamField = (key: 'mata' | 'telinga' | 'buta_warna' | 'keterangan_lain', value: string) => {
+    const updated = {
+      ...parsedExam,
+      [key]: value,
+    };
+    setDraft((prev) => ({
+      ...prev,
+      physical_examination: JSON.stringify(updated),
+    }));
+  };
+
+  // Cari data pemeriksaan fisik dari pengkajian awal kunjungan ini
+  const initialAssessmentExam = useMemo(() => {
+    if (!allRecords || allRecords.length === 0) return null;
+
+    // 1. Cek physical_exam dari sheet pengkajian-awal-medis
+    const paExam = allRecords.find(
+      (r) =>
+        r.section_type === 'physical_exam' &&
+        (r as any).status !== 'cancelled' &&
+        (r.sheet_key === 'pengkajian-awal-medis' ||
+          (r.entry_group_key && r.entry_group_key.startsWith('pengkajian-awal')))
+    );
+    if (paExam) return paExam;
+
+    // 2. Cek record pengkajian awal lain yang memiliki tanda vital
+    const paWithVitals = allRecords.find(
+      (r) =>
+        (r as any).status !== 'cancelled' &&
+        (r.sheet_key === 'pengkajian-awal-medis' ||
+          (r.entry_group_key && r.entry_group_key.startsWith('pengkajian-awal'))) &&
+        (r.bp_systolic > 0 || r.weight > 0 || r.height > 0 || r.heart_rate > 0 || r.temperature > 0)
+    );
+    if (paWithVitals) return paWithVitals;
+
+    // 3. Cek sembarang physical_exam aktif pada kunjungan ini
+    const anyPhysicalExam = allRecords.find(
+      (r) =>
+        r.section_type === 'physical_exam' &&
+        (r as any).status !== 'cancelled' &&
+        (r.bp_systolic > 0 || r.weight > 0 || r.height > 0 || r.heart_rate > 0 || r.temperature > 0)
+    );
+    if (anyPhysicalExam) return anyPhysicalExam;
+
+    // 4. Fallback sembarang record aktif dengan tanda vital
+    return (
+      allRecords.find(
+        (r) =>
+          (r as any).status !== 'cancelled' &&
+          (r.bp_systolic > 0 || r.weight > 0 || r.height > 0 || r.heart_rate > 0 || r.temperature > 0)
+      ) || null
+    );
+  }, [allRecords]);
+
+  const handleLoadFromPengkajianAwal = () => {
+    if (!initialAssessmentExam) {
+      toast({
+        variant: 'destructive',
+        title: 'Data Pengkajian Awal Tidak Ditemukan',
+        description: 'Belum ada data pemeriksaan fisik atau tanda vital yang tersimpan di pengkajian awal kunjungan ini.',
+      });
+      return;
+    }
+
+    let updatedMata = parsedExam.mata;
+    let updatedTelinga = parsedExam.telinga;
+    let updatedButaWarna = parsedExam.buta_warna;
+    let updatedKeterangan = parsedExam.keterangan_lain;
+
+    if (initialAssessmentExam.physical_examination && initialAssessmentExam.physical_examination.trim()) {
+      const rawExam = initialAssessmentExam.physical_examination.trim();
+      if (rawExam.startsWith('{')) {
+        try {
+          const json = JSON.parse(rawExam);
+          if (json.mata) updatedMata = json.mata;
+          if (json.telinga) updatedTelinga = json.telinga;
+          if (json.buta_warna) updatedButaWarna = json.buta_warna;
+          if (json.keterangan_lain) updatedKeterangan = json.keterangan_lain;
+        } catch {
+          updatedKeterangan = rawExam;
+        }
+      } else {
+        updatedKeterangan = rawExam;
+      }
+    }
+
+    const updatedExamJSON = JSON.stringify({
+      mata: updatedMata,
+      telinga: updatedTelinga,
+      buta_warna: updatedButaWarna,
+      keterangan_lain: updatedKeterangan,
+    });
+
+    setDraft((prev) => ({
+      ...prev,
+      bp_systolic: initialAssessmentExam.bp_systolic > 0 ? initialAssessmentExam.bp_systolic : prev.bp_systolic,
+      bp_diastolic: initialAssessmentExam.bp_diastolic > 0 ? initialAssessmentExam.bp_diastolic : prev.bp_diastolic,
+      heart_rate: initialAssessmentExam.heart_rate > 0 ? initialAssessmentExam.heart_rate : prev.heart_rate,
+      temperature: initialAssessmentExam.temperature > 0 ? initialAssessmentExam.temperature : prev.temperature,
+      height: initialAssessmentExam.height > 0 ? initialAssessmentExam.height : prev.height,
+      weight: initialAssessmentExam.weight > 0 ? initialAssessmentExam.weight : prev.weight,
+      physical_examination: updatedExamJSON,
+    }));
+
+    const vitalDetails: string[] = [];
+    if (initialAssessmentExam.bp_systolic > 0) {
+      vitalDetails.push(`TD: ${initialAssessmentExam.bp_systolic}/${initialAssessmentExam.bp_diastolic} mmHg`);
+    }
+    if (initialAssessmentExam.heart_rate > 0) {
+      vitalDetails.push(`Nadi: ${initialAssessmentExam.heart_rate} x/m`);
+    }
+    if (initialAssessmentExam.temperature > 0) {
+      vitalDetails.push(`Suhu: ${initialAssessmentExam.temperature} °C`);
+    }
+    if (initialAssessmentExam.weight > 0) {
+      vitalDetails.push(`BB: ${initialAssessmentExam.weight} kg`);
+    }
+    if (initialAssessmentExam.height > 0) {
+      vitalDetails.push(`TB: ${initialAssessmentExam.height} cm`);
+    }
+
+    toast({
+      title: 'Data Berhasil Dimuat dari Pengkajian Awal',
+      description: vitalDetails.length > 0 ? vitalDetails.join(', ') : 'Pemeriksaan fisik dan tanda vital telah disalin.',
+    });
+  };
 
   return (
     <div className="space-y-0">
-      <TableSection>
-        <TableRow>
-          <TableCell label="Dasar Pertimbangan Klinis" colSpan={4}>
-            <TextEditor
-              label="Dasar Pertimbangan Klinis"
-              hideLabel
-              value={draft.assessment}
-              onChange={(value) => setDraft((prev) => ({ ...prev, assessment: value }))}
+      {(isSuratSehat || isSuratRujukan) && (
+        <TableSection
+          title={
+            isSuratRujukan
+              ? "Data Pemeriksaan Fisik & Tanda Vital (Surat Rujukan)"
+              : `Data Pemeriksaan Fisik & Tanda Vital (${suratType === 'surat-mcu' ? 'Surat MCU' : 'Surat Sehat'})`
+          }
+          action={
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleLoadFromPengkajianAwal}
               disabled={readOnly}
-              rows={3}
-              placeholder={profile.assessmentPlaceholder}
-            />
-          </TableCell>
-        </TableRow>
-        <TableRow>
-          <TableCell label="Peruntukan / Keperluan Surat" colSpan={2}>
-            <TextEditor
-              label="Peruntukan / Keperluan Surat"
-              hideLabel
-              value={draft.plan}
-              onChange={(value) => setDraft((prev) => ({ ...prev, plan: value }))}
-              disabled={readOnly}
-              rows={2}
-              placeholder={profile.purposePlaceholder}
-            />
-          </TableCell>
-          <TableCell label="Catatan Tambahan (Opsional)" colSpan={2}>
-            <TextEditor
-              label="Catatan Tambahan (Opsional)"
-              hideLabel
-              value={draft.notes}
-              onChange={(value) => setDraft((prev) => ({ ...prev, notes: value }))}
-              disabled={readOnly}
-              rows={2}
-              placeholder="Catatan tambahan bila diperlukan."
-            />
-          </TableCell>
-        </TableRow>
-      </TableSection>
+              className="h-7 gap-1.5 rounded-none border-primary/30 bg-primary/5 px-2.5 text-xs font-medium text-primary hover:bg-primary/10 hover:text-primary shadow-none"
+              title="Salin tanda vital dan pemeriksaan fisik dari Pengkajian Awal kunjungan ini"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Tarik dari Pengkajian Awal
+            </Button>
+          }
+        >
+          <TableRow>
+            <TableCell label="TD Sistolik">
+              <NumberInput
+                label="TD Sistolik"
+                hideLabel
+                value={draft.bp_systolic}
+                onChange={(value) => setDraft((prev) => ({ ...prev, bp_systolic: value }))}
+                disabled={readOnly}
+              />
+            </TableCell>
+            <TableCell label="TD Diastolik">
+              <NumberInput
+                label="TD Diastolik"
+                hideLabel
+                value={draft.bp_diastolic}
+                onChange={(value) => setDraft((prev) => ({ ...prev, bp_diastolic: value }))}
+                disabled={readOnly}
+              />
+            </TableCell>
+            <TableCell label="Nadi (x/mnt)">
+              <NumberInput
+                label="Nadi"
+                hideLabel
+                value={draft.heart_rate}
+                onChange={(value) => setDraft((prev) => ({ ...prev, heart_rate: value }))}
+                disabled={readOnly}
+              />
+            </TableCell>
+            <TableCell label="Suhu (°C)">
+              <NumberInput
+                label="Suhu"
+                hideLabel
+                value={draft.temperature}
+                onChange={(value) => setDraft((prev) => ({ ...prev, temperature: value }))}
+                disabled={readOnly}
+                step={0.1}
+              />
+            </TableCell>
+          </TableRow>
+          <TableRow>
+            <TableCell label="Tinggi Badan (cm)" colSpan={2}>
+              <NumberInput
+                label="Tinggi Badan (cm)"
+                hideLabel
+                value={draft.height}
+                onChange={(value) => setDraft((prev) => ({ ...prev, height: value }))}
+                disabled={readOnly}
+                step={0.1}
+              />
+            </TableCell>
+            <TableCell label="Berat Badan (kg)" colSpan={2}>
+              <NumberInput
+                label="Berat Badan (kg)"
+                hideLabel
+                value={draft.weight}
+                onChange={(value) => setDraft((prev) => ({ ...prev, weight: value }))}
+                disabled={readOnly}
+                step={0.1}
+              />
+            </TableCell>
+          </TableRow>
+          <TableRow>
+            <TableCell label="Mata Ka/Ki">
+              <Input
+                value={parsedExam.mata}
+                onChange={(e) => updateExamField('mata', e.target.value)}
+                disabled={readOnly}
+                placeholder="Contoh: Baik / Visus 6/6"
+                className={PAPER_INPUT_CLASSNAME}
+              />
+            </TableCell>
+            <TableCell label="Telinga Ka/Ki">
+              <Input
+                value={parsedExam.telinga}
+                onChange={(e) => updateExamField('telinga', e.target.value)}
+                disabled={readOnly}
+                placeholder="Contoh: Baik / Normal"
+                className={PAPER_INPUT_CLASSNAME}
+              />
+            </TableCell>
+            <TableCell label="Buta Warna">
+              <SearchableSelect
+                options={BUTA_WARNA_OPTIONS}
+                value={parsedExam.buta_warna}
+                onValueChange={(val) => updateExamField('buta_warna', val)}
+                placeholder="Pilih hasil buta warna"
+                disabled={readOnly}
+                square
+                className={PAPER_SELECT_TRIGGER_CLASSNAME}
+              />
+            </TableCell>
+            <TableCell label="Keterangan Fisik Lain">
+              <Input
+                value={parsedExam.keterangan_lain}
+                onChange={(e) => updateExamField('keterangan_lain', e.target.value)}
+                disabled={readOnly}
+                placeholder="Contoh: Baik / Tidak ada kelainan"
+                className={PAPER_INPUT_CLASSNAME}
+              />
+            </TableCell>
+          </TableRow>
+        </TableSection>
+      )}
+
+      {suratType === 'surat-rujukan' ? (
+        <TableSection title="Data Pertimbangan Rujukan Pasien">
+          <TableRow>
+            <TableCell label="Diagnosis Kerja / Temuan Klinis" colSpan={4}>
+              <TextEditor
+                label="Diagnosis Kerja / Temuan Klinis"
+                hideLabel
+                value={draft.assessment}
+                onChange={(value) => setDraft((prev) => ({ ...prev, assessment: value }))}
+                disabled={readOnly}
+                rows={3}
+                placeholder={profile.assessmentPlaceholder}
+              />
+            </TableCell>
+          </TableRow>
+          <TableRow>
+            <TableCell label="Rumah Sakit / Faskes Tujuan Rujukan" colSpan={2}>
+              <TextEditor
+                label="Rumah Sakit / Faskes Tujuan Rujukan"
+                hideLabel
+                value={draft.plan}
+                onChange={(value) => setDraft((prev) => ({ ...prev, plan: value, referral_destination: value }))}
+                disabled={readOnly}
+                rows={2}
+                placeholder={profile.purposePlaceholder}
+              />
+            </TableCell>
+            <TableCell label="Terapi / Tindakan yang Telah Diberikan" colSpan={2}>
+              <TextEditor
+                label="Terapi / Tindakan yang Telah Diberikan"
+                hideLabel
+                value={draft.notes}
+                onChange={(value) => setDraft((prev) => ({ ...prev, notes: value }))}
+                disabled={readOnly}
+                rows={2}
+                placeholder="Tuliskan terapi obat atau tindakan yang telah diberikan."
+              />
+            </TableCell>
+          </TableRow>
+        </TableSection>
+      ) : (
+        <TableSection title={isSuratSehat ? "Pertimbangan & Peruntukan Surat" : undefined}>
+          <TableRow>
+            <TableCell label="Dasar Pertimbangan Klinis" colSpan={4}>
+              <TextEditor
+                label="Dasar Pertimbangan Klinis"
+                hideLabel
+                value={draft.assessment}
+                onChange={(value) => setDraft((prev) => ({ ...prev, assessment: value }))}
+                disabled={readOnly}
+                rows={3}
+                placeholder={profile.assessmentPlaceholder}
+              />
+            </TableCell>
+          </TableRow>
+          <TableRow>
+            <TableCell label="Peruntukan / Keperluan Surat" colSpan={2}>
+              <TextEditor
+                label="Peruntukan / Keperluan Surat"
+                hideLabel
+                value={draft.plan}
+                onChange={(value) => setDraft((prev) => ({ ...prev, plan: value }))}
+                disabled={readOnly}
+                rows={2}
+                placeholder={profile.purposePlaceholder}
+              />
+            </TableCell>
+            <TableCell label="Catatan Tambahan (Opsional)" colSpan={2}>
+              <TextEditor
+                label="Catatan Tambahan (Opsional)"
+                hideLabel
+                value={draft.notes}
+                onChange={(value) => setDraft((prev) => ({ ...prev, notes: value }))}
+                disabled={readOnly}
+                rows={2}
+                placeholder="Catatan tambahan bila diperlukan."
+              />
+            </TableCell>
+          </TableRow>
+        </TableSection>
+      )}
     </div>
   );
 }
@@ -650,6 +992,73 @@ function renderSuratOutcome(
   const profile = getSuratFieldProfile(record);
   const suratType = inferSuratTypeFromEntryGroupKey(record?.entry_group_key);
   const isSuratSakit = suratType === 'surat-sakit';
+  const isSuratRujukan = suratType === 'surat-rujukan';
+
+  if (isSuratRujukan) {
+    return (
+      <div className="space-y-0">
+        <TableSection title="Kelengkapan Surat Rujukan Pasien">
+          <TableRow>
+            <TableCell label="Status Surat" colSpan={1}>
+              <SearchableSelect
+                options={SURAT_STATUS_OPTIONS}
+                value={draft.disposition}
+                onValueChange={(value) => setDraft((prev) => ({ ...prev, disposition: value }))}
+                placeholder="Pilih status surat"
+                disabled={readOnly}
+                square
+                className={PAPER_SELECT_TRIGGER_CLASSNAME}
+              />
+            </TableCell>
+            <TableCell label="Alasan / Permohonan Rujukan" colSpan={3}>
+              <TextEditor
+                label="Alasan / Permohonan Rujukan"
+                hideLabel
+                value={draft.discharge_condition}
+                onChange={(value) => setDraft((prev) => ({ ...prev, discharge_condition: value, referral_reason: value }))}
+                disabled={readOnly}
+                rows={2}
+                placeholder={profile.summaryPlaceholder}
+              />
+            </TableCell>
+          </TableRow>
+          <TableRow>
+            <TableCell label="Rumah Sakit / Faskes Tujuan Rujukan" colSpan={2}>
+              <Input
+                value={draft.referral_destination}
+                onChange={(e) => setDraft((prev) => ({ ...prev, referral_destination: e.target.value, plan: prev.plan || e.target.value }))}
+                disabled={readOnly}
+                placeholder="Contoh: RSUD Dr. Soetomo / RS Siloam"
+                className={PAPER_INPUT_CLASSNAME}
+              />
+            </TableCell>
+            <TableCell label="Poli / Dokter Spesialis Tujuan" colSpan={2}>
+              <Input
+                value={draft.follow_up_instruction}
+                onChange={(e) => setDraft((prev) => ({ ...prev, follow_up_instruction: e.target.value }))}
+                disabled={readOnly}
+                placeholder="Contoh: Poli Penyakit Dalam / Spesialis Anak"
+                className={PAPER_INPUT_CLASSNAME}
+              />
+            </TableCell>
+          </TableRow>
+          <TableRow>
+            <TableCell label="Catatan Tambahan Rujukan (Opsional)" colSpan={4}>
+              <TextEditor
+                label="Catatan Tambahan Rujukan (Opsional)"
+                hideLabel
+                value={draft.notes}
+                onChange={(value) => setDraft((prev) => ({ ...prev, notes: value }))}
+                disabled={readOnly}
+                rows={2}
+                placeholder="Instruksi transportasi, kondisi pasien saat dirujuk, atau catatan khusus lainnya."
+              />
+            </TableCell>
+          </TableRow>
+        </TableSection>
+      </div>
+    );
+  }
 
   const validityStartDate = (draft.referral_destination || '').slice(0, 10);
   const validityEndDate = (draft.referral_reason || '').slice(0, 10);
@@ -753,6 +1162,7 @@ export function SectionEditorBody({
   draft,
   setDraft,
   record,
+  allRecords,
   icd10List,
   medicineList,
   serviceList,
@@ -923,7 +1333,7 @@ export function SectionEditorBody({
       }
 
       if (variant === 'surat') {
-        return renderSuratAssessment(draft, setDraft, record, readOnly);
+        return renderSuratAssessment(draft, setDraft, record, readOnly, allRecords);
       }
 
       return (

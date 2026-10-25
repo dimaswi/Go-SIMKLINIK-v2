@@ -180,6 +180,7 @@ const SURAT_TYPE_LABELS: Record<string, string> = {
   "surat-sehat": "Surat Sehat",
   "surat-mcu": "Surat MCU",
   "surat-buta-warna": "Surat Buta Warna",
+  "surat-rujukan": "Surat Rujukan",
   "surat-keterangan": "Surat Keterangan",
 };
 
@@ -305,6 +306,11 @@ export default function PatientSearchDetail() {
       normalized.startsWith("surat-buta-warna-")
     )
       return "surat-buta-warna";
+    if (
+      normalized === "surat-rujukan" ||
+      normalized.startsWith("surat-rujukan-")
+    )
+      return "surat-rujukan";
     return "surat-keterangan";
   };
 

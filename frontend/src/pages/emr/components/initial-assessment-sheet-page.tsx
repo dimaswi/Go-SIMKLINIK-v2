@@ -635,6 +635,7 @@ export function InitialAssessmentSheetPage({
                           draft={getSectionDraft(section)}
                           setDraft={(updater) => setSectionDraft(section, updater)}
                           record={record}
+                          allRecords={records}
                           icd10List={icd10List}
                           medicineList={medicineList}
                           serviceList={serviceList}

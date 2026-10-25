@@ -279,6 +279,14 @@ export const SURAT_TYPE_OPTIONS = [
     supportHint: 'Idealnya didukung catatan metode tes dan hasil interpretasi klinis.',
     accentClassName: 'border-violet-300 bg-violet-50 text-violet-800',
   },
+  {
+    value: 'surat-rujukan',
+    label: 'Surat Rujukan',
+    shortLabel: 'Rujukan',
+    description: 'Dipakai untuk rujukan eksternal pasien ke rumah sakit atau faskes lanjutan.',
+    supportHint: 'Didukung diagnosis kerja, alasan rujukan, faskes tujuan, dan terapi yang telah diberikan.',
+    accentClassName: 'border-rose-300 bg-rose-50 text-rose-800',
+  },
 ] as const;
 
 export type SuratTypeOptionValue = (typeof SURAT_TYPE_OPTIONS)[number]['value'];

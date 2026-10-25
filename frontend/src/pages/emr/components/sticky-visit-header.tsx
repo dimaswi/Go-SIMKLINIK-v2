@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { usePermission } from '@/hooks/usePermission';
 import { useToast } from '@/hooks/use-toast';
 import { satusehatApi, type SatusehatVisitAutoSyncResult, type Visit } from '@/lib/api';
-import { ArrowLeft, Eye, FileText, Loader2, RefreshCw, User } from 'lucide-react';
+import { ArrowLeft, Eye, FileText, History, Loader2, RefreshCw, User } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -10,6 +10,7 @@ import { CORE_COMPLETION_TOTAL } from '../constants';
 import { formatDateTime } from '../utils';
 import { SatusehatAutoSyncMonitorDialog } from './satusehat-auto-sync-monitor-dialog';
 import { PatientDetailDialog } from './patient-detail-dialog';
+import { PatientMedicalHistoryDrawer } from './patient-medical-history-drawer';
 
 type EncounterRequirement = {
   label: string;
@@ -111,6 +112,7 @@ export function StickyVisitHeader({
   const { toast } = useToast();
   const { hasAnyPermission } = usePermission();
   const [patientModalOpen, setPatientModalOpen] = useState(false);
+  const [medicalHistoryDrawerOpen, setMedicalHistoryDrawerOpen] = useState(false);
   const [runningAutoSync, setRunningAutoSync] = useState(false);
   const [monitorDialogOpen, setMonitorDialogOpen] = useState(false);
   const [monitorAutoRefreshEnabled, setMonitorAutoRefreshEnabled] = useState(false);
@@ -310,6 +312,12 @@ export function StickyVisitHeader({
         encounterRequirements={encounterRequirements}
       />
 
+      <PatientMedicalHistoryDrawer
+        open={medicalHistoryDrawerOpen}
+        onOpenChange={setMedicalHistoryDrawerOpen}
+        visit={visit}
+      />
+
       <div
         className={cn(
           'border-b border-border bg-card shadow-none',
@@ -329,15 +337,25 @@ export function StickyVisitHeader({
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <div className="flex h-9 w-9 items-center justify-center border border-border bg-muted/20 shrink-0">
+            <button
+              type="button"
+              onClick={() => setMedicalHistoryDrawerOpen(true)}
+              className="flex h-9 w-9 items-center justify-center border border-border bg-muted/20 shrink-0 hover:bg-primary/10 hover:border-primary/40 transition-colors cursor-pointer"
+              title="Buka Riwayat Rekam Medis Pasien (Drawer 80%)"
+            >
               <FileText className="h-5 w-5 text-primary" />
-            </div>
+            </button>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-base font-bold text-foreground truncate">
                   {visit.patient?.full_name || '-'}
                 </h1>
-                <Badge variant="outline" className="rounded-none font-mono text-xs shadow-none">
+                <Badge
+                  variant="outline"
+                  className="rounded-none font-mono text-xs shadow-none cursor-pointer hover:bg-primary/10 hover:border-primary/40 transition-colors"
+                  onClick={() => setMedicalHistoryDrawerOpen(true)}
+                  title="Klik untuk membuka Riwayat Rekam Medis"
+                >
                   RM: {visit.patient?.medical_record_number || '-'}
                 </Badge>
                 <Badge variant="outline" className="rounded-none text-xs shadow-none">
@@ -385,6 +403,18 @@ export function StickyVisitHeader({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 rounded-none border-primary/30 bg-primary/5 px-2.5 text-xs font-semibold text-primary hover:bg-primary/10 hover:text-primary shadow-none shrink-0"
+              onClick={() => setMedicalHistoryDrawerOpen(true)}
+              title="Buka Riwayat Rekam Medis Pasien (Drawer 80%)"
+            >
+              <History className="h-4 w-4" />
+              <span className="hidden sm:inline">Riwayat RM</span>
+            </Button>
+
             <Button
               type="button"
               variant="outline"

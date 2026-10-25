@@ -41,6 +41,7 @@ const (
 	medicalRecordEntryGroupPrefixSuratSehat       = "surat-sehat"
 	medicalRecordEntryGroupPrefixSuratMCU         = "surat-mcu"
 	medicalRecordEntryGroupPrefixSuratButaWarna   = "surat-buta-warna"
+	medicalRecordEntryGroupPrefixSuratRujukan     = "surat-rujukan"
 )
 
 var medicalRecordInitialAssessmentSectionTypes = map[string]struct{}{
@@ -60,6 +61,7 @@ var medicalRecordSuratTypeOrder = []string{
 	medicalRecordEntryGroupPrefixSuratSehat,
 	medicalRecordEntryGroupPrefixSuratMCU,
 	medicalRecordEntryGroupPrefixSuratButaWarna,
+	medicalRecordEntryGroupPrefixSuratRujukan,
 }
 
 var medicalRecordSuratTypeLabels = map[string]string{
@@ -67,6 +69,7 @@ var medicalRecordSuratTypeLabels = map[string]string{
 	medicalRecordEntryGroupPrefixSuratSehat:     "Surat Sehat",
 	medicalRecordEntryGroupPrefixSuratMCU:       "Surat MCU",
 	medicalRecordEntryGroupPrefixSuratButaWarna: "Surat Buta Warna",
+	medicalRecordEntryGroupPrefixSuratRujukan:   "Surat Rujukan",
 }
 
 var medicalRecordSuratTypeFileSlugs = map[string]string{
@@ -74,6 +77,7 @@ var medicalRecordSuratTypeFileSlugs = map[string]string{
 	medicalRecordEntryGroupPrefixSuratSehat:     "surat-sehat",
 	medicalRecordEntryGroupPrefixSuratMCU:       "surat-mcu",
 	medicalRecordEntryGroupPrefixSuratButaWarna: "surat-buta-warna",
+	medicalRecordEntryGroupPrefixSuratRujukan:   "surat-rujukan",
 }
 
 func normalizeSuratTypeValue(value string) string {
@@ -2458,8 +2462,14 @@ func GetPatientMedicalRecords(c *gin.Context) {
 		Preload("Visit").
 		Preload("Diagnoses").
 		Preload("Diagnoses.ICD10").
-		Where("patient_id = ?", patientID).
+		Preload("Prescriptions").
+		Preload("Prescriptions.Medicine").
+		Preload("PrescriptionCompounds").
+		Preload("PrescriptionCompounds.Items").
+		Preload("PrescriptionCompounds.Items.Medicine").
+		Where("patient_id = ? OR visit_id IN (SELECT id FROM visits WHERE patient_id = ?)", patientID, patientID).
 		Order("record_date DESC").
+		Order("created_at DESC").
 		Find(&records).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

@@ -639,6 +639,7 @@ export default function EMRFormPage() {
                   draft={draft}
                   setDraft={setDraft}
                   record={selectedRecord}
+                  allRecords={records}
                   icd10List={icd10List}
                   medicineList={medicineList}
                   serviceList={serviceList}

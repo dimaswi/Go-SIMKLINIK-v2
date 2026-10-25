@@ -35,6 +35,10 @@ import {
   STATUS_FILTER_OPTIONS,
   WORKFLOW_BADGE_CLASSNAME,
 } from './utils';
+import {
+  InitialReviewModal,
+  type InitialReviewData,
+} from './components/prescription-review-modal';
 
 export default function PharmacyIndex() {
   const navigate = useNavigate();
@@ -55,6 +59,8 @@ export default function PharmacyIndex() {
   const [dateFilter, setDateFilter] = useState(getLocalISODate());
   const [preparingRecordId, setPreparingRecordId] = useState<number | null>(null);
   const [downloadingRecordId, setDownloadingRecordId] = useState<number | null>(null);
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [reviewingRecord, setReviewingRecord] = useState<MedicalRecord | null>(null);
 
   const loadOrders = useCallback(async () => {
     const response = await pharmacyApi.getPrescriptionOrders('per_page=200');
@@ -105,16 +111,20 @@ export default function PharmacyIndex() {
     }
   };
 
-  const handlePrepare = async (record: MedicalRecord) => {
-    if (!canManage) return;
+  const handleConfirmInitialReview = async (reviewData: InitialReviewData) => {
+    if (!reviewingRecord || !canManage) return;
 
-    setPreparingRecordId(record.id);
+    setPreparingRecordId(reviewingRecord.id);
     try {
-      await medicalRecordsApi.preparePrescriptionOrder(record.id);
-      toast({
-        title: 'Resep berhasil diterima',
-        description: `Resep untuk pasien ${record.patient?.full_name || ''} telah dipindahkan ke tahap proses.`,
+      await medicalRecordsApi.preparePrescriptionOrder(reviewingRecord.id, {
+        prescription_review_initial: JSON.stringify(reviewData),
       });
+      toast({
+        title: 'Resep berhasil diterima & ditelaah',
+        description: `Resep untuk pasien ${reviewingRecord.patient?.full_name || ''} telah dipindahkan ke tahap proses.`,
+      });
+      setReviewModalOpen(false);
+      setReviewingRecord(null);
       await loadOrders();
     } catch (error) {
       const requestError = error as AxiosError<{ error?: string }>;
@@ -280,33 +290,59 @@ export default function PharmacyIndex() {
 
           return (
             <div className="flex items-center justify-end gap-1 whitespace-nowrap">
-              {status === 'ordered' && canManage ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
-                  onClick={() => void handlePrepare(record)}
-                  disabled={isPreparing}
-                  title="Terima Resep"
-                >
-                  {isPreparing ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="h-4 w-4" />
-                  )}
-                </Button>
-              ) : null}
+              {status === 'ordered' ? (
+                canManage ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 px-2.5 rounded-none shadow-none text-xs gap-1.5 bg-primary text-primary-foreground font-medium shrink-0"
+                    onClick={() => {
+                      setReviewingRecord(record);
+                      setReviewModalOpen(true);
+                    }}
+                    disabled={isPreparing}
+                    title="Telaah Resep & Terima Order"
+                  >
+                    {isPreparing ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                    )}
+                    <span>Terima Resep</span>
+                  </Button>
+                ) : null
+              ) : (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+                    onClick={() => navigate(`/pharmacy/${record.id}`)}
+                    title={status === 'dispensed' ? 'Lihat Resep' : 'Detail / Proses Resep'}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Button>
 
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
-                onClick={() => navigate(`/pharmacy/${record.id}`)}
-                title={status === 'dispensed' ? 'Lihat Resep' : 'Detail / Proses Resep'}
-              >
-                <ExternalLink className="h-4 w-4" />
-              </Button>
+                  {status === 'dispensed' ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+                      onClick={() => void handleDownloadPrescription(record)}
+                      disabled={isDownloading}
+                      title="Cetak Resep PDF"
+                    >
+                      {isDownloading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
+                    </Button>
+                  ) : null}
+                </>
+              )}
 
               {record.visit_id && (
                 <Button
@@ -322,24 +358,6 @@ export default function PharmacyIndex() {
                   </Link>
                 </Button>
               )}
-
-              {status === 'dispensed' ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
-                  onClick={() => void handleDownloadPrescription(record)}
-                  disabled={isDownloading}
-                  title="Cetak Resep PDF"
-                >
-                  {isDownloading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Download className="h-4 w-4" />
-                  )}
-                </Button>
-              ) : null}
             </div>
           );
         },
@@ -435,6 +453,26 @@ export default function PharmacyIndex() {
           />
         </div>
       </div>
+
+      {reviewingRecord && (
+        <InitialReviewModal
+          open={reviewModalOpen}
+          onOpenChange={(open) => {
+            setReviewModalOpen(open);
+            if (!open) setReviewingRecord(null);
+          }}
+          savedDataString={reviewingRecord.prescription_review_initial}
+          patientName={reviewingRecord.patient?.full_name}
+          medicalRecordNumber={reviewingRecord.patient?.medical_record_number}
+          doctorName={reviewingRecord.doctor?.full_name}
+          polyclinicName={reviewingRecord.polyclinic?.name}
+          orderNumber={reviewingRecord.id}
+          items={buildOrderLines(reviewingRecord)}
+          isOrderStep={true}
+          onConfirm={handleConfirmInitialReview}
+          loading={preparingRecordId === reviewingRecord.id}
+        />
+      )}
     </div>
   );
 }

@@ -1237,6 +1237,7 @@ export default function EMRSheetPage() {
                       draft={draft}
                       setDraft={setDraft}
                       record={selectedRecord}
+                      allRecords={records}
                       icd10List={icd10List}
                       medicineList={medicineList}
                       serviceList={serviceList}
@@ -1348,6 +1349,7 @@ export default function EMRSheetPage() {
                               draft={isActiveSection ? draft : buildDraft(sectionRecord, visit)}
                               setDraft={isActiveSection ? setDraft : readOnlySetDraft}
                               record={sectionRecord}
+                              allRecords={records}
                               icd10List={icd10List}
                               medicineList={medicineList}
                               serviceList={serviceList}

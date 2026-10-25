@@ -88,6 +88,7 @@ func buildRegistrationQueueTicketContent(pdf *gofpdf.Fpdf, hospitalInfo initialA
 	hospitalName := strings.TrimSpace(hospitalInfo.Name)
 	addressLine := strings.Trim(strings.Join([]string{strings.TrimSpace(hospitalInfo.Address), strings.TrimSpace(hospitalInfo.City)}, ", "), ", ")
 	contactLine := strings.Trim(strings.Join([]string{strings.TrimSpace(hospitalInfo.Phone), strings.TrimSpace(hospitalInfo.Email)}, " | "), " |")
+	websiteLine := strings.TrimSpace(hospitalInfo.Website)
 	hasLogo := hospitalInfo.LogoPath != "" && hospitalInfo.LogoType != ""
 	textStartX := left
 	textWidth := contentWidth
@@ -128,6 +129,10 @@ func buildRegistrationQueueTicketContent(pdf *gofpdf.Fpdf, hospitalInfo initialA
 		pdf.SetX(textStartX)
 		pdf.MultiCell(textWidth, 3.0, contactLine, "", textAlign, false)
 	}
+	if websiteLine != "" {
+		pdf.SetX(textStartX)
+		pdf.MultiCell(textWidth, 3.0, websiteLine, "", textAlign, false)
+	}
 
 	headerBottom := pdf.GetY()
 	if hasLogo && logoHeight > 0 {
@@ -139,8 +144,8 @@ func buildRegistrationQueueTicketContent(pdf *gofpdf.Fpdf, hospitalInfo initialA
 	pdf.SetY(headerBottom + 1.5)
 
 	// Garis pembatas kop
-	pdf.SetDrawColor(160, 160, 160)
-	pdf.SetLineWidth(0.3)
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.4)
 	pdf.Line(left, pdf.GetY(), pageWidth-right, pdf.GetY())
 	pdf.SetY(pdf.GetY() + 2.0)
 

@@ -71,7 +71,7 @@ export function SheetWorkspaceTable({
         : 'Belum memakai data klinis';
 
       const summaryText = isSuratSheet
-        ? 'Pilih: Surat Sakit, Surat Sehat, Surat MCU, atau Surat Buta Warna.'
+        ? 'Pilih: Surat Sakit, Surat Sehat, Surat MCU, Surat Buta Warna, atau Surat Rujukan.'
         : isOdontogramSheet
           ? getOdontogramEntrySummary(odontogramEntries[0])
           : getSheetSummary(sheet, recordsBySection as Record<MedicalRecordSectionType, any[]>);

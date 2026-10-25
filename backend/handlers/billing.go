@@ -1337,45 +1337,37 @@ func renderInvoiceSheetPDF(invoice models.Invoice, hospitalInfo initialAssessmen
 }
 
 func drawInvoiceKop(pdf *gofpdf.Fpdf, info initialAssessmentHospitalInfo, contentWidth float64, isA5 bool) {
-	left, top, _, _ := pdf.GetMargins()
+	left, top, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
 
 	hasLogo := info.LogoPath != "" && info.LogoType != ""
-	logoSlotWidth := 0.0
-	logoGap := 0.0
 	logoMaxHeight := 20.0
 	logoMaxWidth := 22.0
+	logoGap := 3.5
 	if isA5 {
-		logoMaxHeight = 16.0
+		logoMaxHeight = 15.0
 		logoMaxWidth = 18.0
+		logoGap = 2.5
 	}
+
+	logoWidth := 0.0
+	logoHeight := 0.0
 	if hasLogo {
-		logoSlotWidth = 26.0
-		logoGap = 3.5
-		if isA5 {
-			logoSlotWidth = 20.0
-			logoGap = 2.5
-		}
+		logoWidth, logoHeight = measureInitialAssessmentHeaderLogo(info.LogoPath, logoMaxHeight, logoMaxWidth)
 	}
 
 	textStartX := left
-	textWidth := contentWidth
-	if hasLogo {
-		symmetricReserve := logoSlotWidth + logoGap
-		textStartX = left + symmetricReserve
-		textWidth = contentWidth - (2 * symmetricReserve)
-		if textWidth < 100 {
-			textStartX = left + logoSlotWidth + logoGap
-			textWidth = contentWidth - logoSlotWidth - logoGap
-		}
+	if hasLogo && logoWidth > 0 {
+		textStartX = left + logoWidth + logoGap
 	}
+	textWidth := (pageWidth - right) - textStartX
 
 	nameSize := 14.0
-	addrSize := 8.0
+	addrSize := 8.2
 	lineHeight := 3.8
 	if isA5 {
 		nameSize = 11.5
-		addrSize = 7.0
+		addrSize = 7.2
 		lineHeight = 3.2
 	}
 
@@ -1439,47 +1431,54 @@ func drawInvoiceKop(pdf *gofpdf.Fpdf, info initialAssessmentHospitalInfo, conten
 
 	textBlockHeight := 0.0
 	for _, l := range lines {
-		textBlockHeight += l.lineHeight
-	}
-
-	logoWidth := 0.0
-	logoHeight := 0.0
-	if hasLogo {
-		logoWidth, logoHeight = measureInitialAssessmentHeaderLogo(info.LogoPath, logoMaxHeight, logoMaxWidth)
+		trimmedText := strings.TrimSpace(sanitizePDFText(l.text))
+		if trimmedText == "" {
+			continue
+		}
+		pdf.SetFont("Arial", l.fontStyle, l.fontSize)
+		lineParts := pdf.SplitLines([]byte(trimmedText), textWidth)
+		lineCount := len(lineParts)
+		if lineCount < 1 {
+			lineCount = 1
+		}
+		textBlockHeight += float64(lineCount) * l.lineHeight
 	}
 
 	headerBlockHeight := maxFloat64(textBlockHeight, logoHeight)
 
 	// Gambar logo klinik di sisi kiri kop
-	if hasLogo {
-		logoX := left + ((logoSlotWidth - logoWidth) / 2)
+	if hasLogo && logoWidth > 0 {
+		logoX := left
 		logoY := top + ((headerBlockHeight - logoHeight) / 2)
 		drawInitialAssessmentHeaderLogo(pdf, info.LogoPath, info.LogoType, logoX, logoY, logoMaxHeight, logoMaxWidth)
 	}
 
-	// Teks kop klinik di tengah
-	curY := top
+	// Teks kop klinik di samping logo (Left Aligned)
+	textY := top + ((headerBlockHeight - textBlockHeight) / 2)
 	pdf.SetTextColor(0, 0, 0)
 	for _, l := range lines {
-		pdf.SetXY(textStartX, curY)
+		trimmedText := strings.TrimSpace(sanitizePDFText(l.text))
+		if trimmedText == "" {
+			continue
+		}
+		pdf.SetXY(textStartX, textY)
 		pdf.SetFont("Arial", l.fontStyle, l.fontSize)
-		pdf.CellFormat(textWidth, l.lineHeight, l.text, "", 1, "C", false, 0, "")
-		curY += l.lineHeight
+		pdf.MultiCell(textWidth, l.lineHeight, trimmedText, "", "L", false)
+		textY = pdf.GetY()
 	}
 
-	// Garis ganda pembatas kop resmi
-	lineY := top + headerBlockHeight + 1.5
-	pdf.SetLineWidth(0.7)
-	pdf.Line(left, lineY, pageWidth-left, lineY)
-	pdf.SetLineWidth(0.2)
-	pdf.Line(left, lineY+0.8, pageWidth-left, lineY+0.8)
+	// Garis pembatas kop resmi
+	lineY := top + headerBlockHeight + 1.8
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.6)
+	pdf.Line(left, lineY, pageWidth-right, lineY)
 
-	// Jarak rapat langsung ke konten (3.5 mm untuk A4, 2.5 mm untuk A5)
+	// Jarak rapat langsung ke konten
 	gap := 3.5
 	if isA5 {
 		gap = 2.5
 	}
-	pdf.SetY(lineY + 0.8 + gap)
+	pdf.SetY(lineY + gap)
 }
 
 func drawInvoiceStatusWatermark(pdf *gofpdf.Fpdf, status string, isA5 bool) {

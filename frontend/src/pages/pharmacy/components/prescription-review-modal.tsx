@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, ClipboardCheck, Loader2, ShieldCheck, User } from 'lucide-react';
+import { CheckCircle2, ClipboardCheck, Loader2, PillBottle, ShieldCheck, User } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -76,6 +76,16 @@ export const FINAL_PIO_ITEMS = [
   { key: 'pio_lain_lain', label: 'Lain-lain' },
 ] as const;
 
+export interface ReviewMedicineItem {
+  key?: string;
+  name: string;
+  quantityLabel?: string;
+  ruleLabel?: string;
+  kind?: 'non-racikan' | 'racikan';
+  notes?: string;
+  instructions?: string;
+}
+
 // ============================================================================
 // Modal 1: TELAAH RESEP (Telaah Awal)
 // ============================================================================
@@ -86,6 +96,9 @@ interface InitialReviewModalProps {
   patientName?: string;
   medicalRecordNumber?: string;
   doctorName?: string;
+  polyclinicName?: string;
+  orderNumber?: string | number;
+  items?: ReviewMedicineItem[];
   isOrderStep?: boolean;
   onConfirm: (data: InitialReviewData) => Promise<void>;
   loading?: boolean;
@@ -98,6 +111,9 @@ export function InitialReviewModal({
   patientName,
   medicalRecordNumber,
   doctorName,
+  polyclinicName,
+  orderNumber,
+  items = [],
   isOrderStep = false,
   onConfirm,
   loading = false,
@@ -161,9 +177,9 @@ export function InitialReviewModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[540px] w-full p-0 rounded-none shadow-2xl border border-border bg-card overflow-hidden">
+      <DialogContent className="sm:max-w-[680px] w-full p-0 rounded-none shadow-2xl border border-border bg-card overflow-hidden max-h-[90vh] flex flex-col">
         {/* Header */}
-        <DialogHeader className="p-4 pb-3 border-b border-border bg-card">
+        <DialogHeader className="p-4 pb-3 border-b border-border bg-card shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center border border-border bg-primary/10 text-primary shrink-0">
               <ClipboardCheck className="h-4 w-4" />
@@ -174,7 +190,7 @@ export function InitialReviewModal({
                   Telaah Resep (Awal)
                 </DialogTitle>
                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-none bg-muted/40 font-mono">
-                  10 Item
+                  10 Parameter
                 </Badge>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5 truncate">
@@ -184,8 +200,8 @@ export function InitialReviewModal({
           </div>
         </DialogHeader>
 
-        {/* Patient Info Strip & Checklist Toolbar */}
-        <div className="bg-muted/30 border-b border-border px-4 py-2.5 flex items-center justify-between gap-2">
+        {/* Patient Info Strip */}
+        <div className="bg-muted/30 border-b border-border px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-2 min-w-0 text-xs">
             <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             <div className="truncate">
@@ -194,22 +210,21 @@ export function InitialReviewModal({
               {doctorName && (
                 <span className="text-muted-foreground ml-1.5">· dr. {doctorName}</span>
               )}
+              {polyclinicName && (
+                <span className="text-muted-foreground ml-1">({polyclinicName})</span>
+              )}
             </div>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-6 text-[11px] px-2 rounded-none shrink-0 bg-background shadow-none"
-            onClick={() => handleCheckAll(!allChecked)}
-          >
-            {allChecked ? 'Batal Semua' : 'Centang Semua'}
-          </Button>
+          {orderNumber ? (
+            <Badge variant="outline" className="rounded-none text-[10px] font-mono border-border/80 bg-background">
+              Order #{orderNumber}
+            </Badge>
+          ) : null}
         </div>
 
         {/* Info if already reviewed */}
         {data.reviewed_at && (
-          <div className="bg-primary/5 border-b border-primary/20 px-4 py-1.5 text-[11px] text-muted-foreground flex items-center justify-between">
+          <div className="bg-primary/5 border-b border-primary/20 px-4 py-1.5 text-[11px] text-muted-foreground flex items-center justify-between shrink-0">
             <span>
               Ditelusuri: <strong className="text-foreground">{data.reviewed_by || 'Petugas'}</strong>
             </span>
@@ -217,44 +232,119 @@ export function InitialReviewModal({
           </div>
         )}
 
-        {/* Checklist Body (1 Column Clean Medical Form) */}
-        <div className="p-4 max-h-[55vh] overflow-y-auto">
-          <div className="border border-border divide-y divide-border/60 bg-background">
-            {INITIAL_CHECKLIST_ITEMS.map((item) => {
-              const checked = Boolean(data[item.key as keyof InitialReviewData]);
-              return (
-                <label
-                  key={item.key}
-                  className={cn(
-                    'flex items-center gap-3 px-3.5 py-2.5 cursor-pointer select-none transition-colors text-xs',
-                    checked ? 'bg-primary/[0.02] hover:bg-muted/40' : 'hover:bg-muted/20'
-                  )}
-                >
-                  <Checkbox
-                    checked={checked}
-                    onCheckedChange={(val) => handleToggle(item.key, Boolean(val))}
-                    className="h-4 w-4 rounded-none border-primary/60 data-[state=checked]:bg-primary shrink-0"
-                  />
-                  <span className={cn('leading-tight flex-1 select-none', checked ? 'text-foreground font-medium' : 'text-muted-foreground')}>
-                    {item.label}
-                  </span>
-                  {checked ? (
-                    <span className="text-[10px] text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 font-medium border border-emerald-200 dark:border-emerald-800 shrink-0">
-                      Sesuai
+        {/* Modal Scrollable Body */}
+        <div className="p-4 space-y-4 overflow-y-auto flex-1">
+          {/* Section 1: Daftar Obat Yang Diresepkan Dokter */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5">
+              <PillBottle className="h-3.5 w-3.5 text-primary" />
+              <span className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                Daftar Obat Yang Diresepkan ({items.length} Item)
+              </span>
+            </div>
+
+            {items.length > 0 ? (
+              <div className="border border-border/80 divide-y divide-border/60 bg-background">
+                {items.map((item, idx) => (
+                  <div key={item.key || idx} className="p-2.5 flex items-start justify-between gap-3 text-xs">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-foreground">{item.name}</span>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            'rounded-none px-1.5 py-0 text-[9px] uppercase tracking-wider',
+                            item.kind === 'racikan'
+                              ? 'border-violet-300 bg-violet-50 text-violet-700'
+                              : 'border-slate-300 bg-slate-50 text-slate-700'
+                          )}
+                        >
+                          {item.kind === 'racikan' ? 'Racikan' : 'Non-Racikan'}
+                        </Badge>
+                      </div>
+                      <p className="text-muted-foreground mt-0.5 font-mono text-[11px]">
+                        Aturan: <span className="text-foreground">{item.ruleLabel || '-'}</span>
+                      </p>
+                      {(item.notes || item.instructions) && (
+                        <p className="text-[11px] text-muted-foreground italic mt-0.5">
+                          Ket: {[item.instructions, item.notes].filter(Boolean).join(' · ')}
+                        </p>
+                      )}
+                    </div>
+                    {item.quantityLabel && (
+                      <div className="shrink-0 text-right">
+                        <span className="font-mono font-semibold text-foreground bg-muted/40 px-2 py-0.5 border border-border/60">
+                          {item.quantityLabel}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="border border-dashed border-border/80 p-3 text-center text-xs text-muted-foreground">
+                Tidak ada data rincian obat pada resep ini.
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: Checklist Telaah Resep (Awal) */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+                <span className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                  Checklist Telaah Resep (10 Parameter Permenkes)
+                </span>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 text-[11px] px-2 rounded-none shrink-0 bg-background shadow-none"
+                onClick={() => handleCheckAll(!allChecked)}
+              >
+                {allChecked ? 'Batal Semua' : 'Centang Semua'}
+              </Button>
+            </div>
+
+            <div className="border border-border divide-y divide-border/60 bg-background">
+              {INITIAL_CHECKLIST_ITEMS.map((item) => {
+                const checked = Boolean(data[item.key as keyof InitialReviewData]);
+                return (
+                  <label
+                    key={item.key}
+                    className={cn(
+                      'flex items-center gap-3 px-3.5 py-2 cursor-pointer select-none transition-colors text-xs',
+                      checked ? 'bg-primary/[0.02] hover:bg-muted/40' : 'hover:bg-muted/20'
+                    )}
+                  >
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={(val) => handleToggle(item.key, Boolean(val))}
+                      className="h-4 w-4 rounded-none border-primary/60 data-[state=checked]:bg-primary shrink-0"
+                    />
+                    <span className={cn('leading-tight flex-1 select-none', checked ? 'text-foreground font-medium' : 'text-muted-foreground')}>
+                      {item.label}
                     </span>
-                  ) : (
-                    <span className="text-[10px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 font-medium border border-amber-200 dark:border-amber-800 shrink-0">
-                      Belum
-                    </span>
-                  )}
-                </label>
-              );
-            })}
+                    {checked ? (
+                      <span className="text-[10px] text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 font-medium border border-emerald-200 dark:border-emerald-800 shrink-0">
+                        Sesuai
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 font-medium border border-amber-200 dark:border-amber-800 shrink-0">
+                        Belum
+                      </span>
+                    )}
+                  </label>
+                );
+              })}
+            </div>
           </div>
         </div>
 
         {/* Footer */}
-        <DialogFooter className="p-3.5 border-t border-border bg-muted/15 flex flex-row items-center justify-between gap-2 sm:gap-0">
+        <DialogFooter className="p-3.5 border-t border-border bg-muted/15 flex flex-row items-center justify-between gap-2 sm:gap-0 shrink-0">
           <div className="text-xs text-muted-foreground">
             <span className="font-semibold text-foreground">{checkedCount}</span> dari {INITIAL_CHECKLIST_ITEMS.length} terverifikasi
           </div>

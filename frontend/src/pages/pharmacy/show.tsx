@@ -70,6 +70,7 @@ import {
 } from '@/pages/emr/constants';
 import {
   buildCompoundPrice,
+  buildOrderLines,
   buildPrescriptionPrice,
   formatCurrency,
   formatDateTime,
@@ -1688,6 +1689,9 @@ export default function PharmacyShow() {
         patientName={order?.patient?.full_name}
         medicalRecordNumber={order?.patient?.medical_record_number}
         doctorName={order?.doctor?.full_name}
+        polyclinicName={order?.polyclinic?.name}
+        orderNumber={order?.id}
+        items={order ? buildOrderLines(order) : []}
         isOrderStep={status === 'ordered'}
         onConfirm={handleConfirmInitialReview}
         loading={receiving}

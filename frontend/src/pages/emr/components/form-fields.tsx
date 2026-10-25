@@ -21,18 +21,23 @@ type NumberInputIndicator = {
 type TableSectionProps = {
   title?: string;
   helper?: string;
+  action?: ReactNode;
   children: ReactNode;
   tableClassName?: string;
 };
 
-export function TableSection({ title, children, tableClassName }: TableSectionProps) {
-  const hasHeading = Boolean(title);
+export function TableSection({ title, helper, action, children, tableClassName }: TableSectionProps) {
+  const hasHeading = Boolean(title || action);
 
   return (
     <section className={hasHeading ? 'space-y-1.5' : undefined}>
       {hasHeading && (
-        <div className="px-0.5">
-          {title ? <h3 className="text-[13px] font-semibold tracking-tight">{title}</h3> : null}
+        <div className="flex items-center justify-between gap-2 px-0.5">
+          <div>
+            {title ? <h3 className="text-[13px] font-semibold tracking-tight">{title}</h3> : null}
+            {helper ? <p className="text-[11px] text-muted-foreground">{helper}</p> : null}
+          </div>
+          {action ? <div className="shrink-0">{action}</div> : null}
         </div>
       )}
       <div className="overflow-x-auto">
