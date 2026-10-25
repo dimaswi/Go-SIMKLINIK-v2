@@ -146,6 +146,42 @@ func GetVisit(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": visit})
 }
 
+func FindActiveVisitForPatient(db *gorm.DB, patientID uint) (*models.Visit, error) {
+	var visit models.Visit
+	err := db.
+		Preload("Polyclinic").
+		Preload("Doctor").
+		Preload("Patient").
+		Where("patient_id = ? AND status != 'cancelled' AND (status != 'completed' OR id IN (SELECT visit_id FROM invoices WHERE patient_id = ? AND status NOT IN ('lunas', 'batal')))", patientID, patientID).
+		Order("created_at DESC").
+		First(&visit).Error
+	if err != nil {
+		return nil, err
+	}
+	return &visit, nil
+}
+
+func GetActiveVisitByPatient(c *gin.Context) {
+	patientIDStr := c.Param("patientId")
+	patientID, err := strconv.ParseUint(patientIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID Pasien tidak valid"})
+		return
+	}
+
+	activeVisit, err := FindActiveVisitForPatient(database.DB, uint(patientID))
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusOK, gin.H{"data": nil})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": activeVisit})
+}
+
 type CreateVisitRequest struct {
 	PatientID       uint   `json:"patient_id" binding:"required"`
 	VisitDate       string `json:"visit_date" binding:"required"`
@@ -175,6 +211,19 @@ func CreateVisit(c *gin.Context) {
 	var patient models.Patient
 	if err := database.DB.First(&patient, req.PatientID).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Pasien tidak ditemukan"})
+		return
+	}
+
+	// Validate patient doesn't have an active visit not finished until billing
+	activeVisit, err := FindActiveVisitForPatient(database.DB, req.PatientID)
+	if err == nil && activeVisit != nil {
+		poliName := "Poli"
+		if activeVisit.Polyclinic.Name != "" {
+			poliName = activeVisit.Polyclinic.Name
+		}
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Pasien %s masih memiliki pendaftaran/kunjungan aktif di %s (%s) yang belum selesai sampai billing. Selesaikan pelayanan dan pembayaran billing terlebih dahulu.", patient.FullName, poliName, activeVisit.VisitNumber),
+		})
 		return
 	}
 

@@ -27,11 +27,11 @@ type Config struct {
 }
 
 func Load() *Config {
-	databaseHost := getEnv("DATABASE_HOST", "localhost")
-	databasePort := getEnv("DATABASE_PORT", "5434")
-	databaseUser := getEnv("DATABASE_USER", "simklinik")
-	databasePassword := getEnv("DATABASE_PASSWORD", "simklinik123")
-	databaseName := getEnv("DATABASE_NAME", "simklinik")
+	databaseHost := getEnv("DATABASE_HOST", getEnv("POSTGRES_HOST", "localhost"))
+	databasePort := getEnv("DATABASE_PORT", getEnv("POSTGRES_PORT", "5434"))
+	databaseUser := getEnv("DATABASE_USER", getEnv("POSTGRES_USER", "simklinik"))
+	databasePassword := getEnv("DATABASE_PASSWORD", getEnv("POSTGRES_PASSWORD", "simklinik123"))
+	databaseName := getEnv("DATABASE_NAME", getEnv("POSTGRES_DB", "simklinik"))
 	databaseSSLMode := getEnv("DATABASE_SSLMODE", "disable")
 	databaseTimeZone := getEnv("DATABASE_TIMEZONE", "Asia/Jakarta")
 	databaseDSN := strings.TrimSpace(getEnv("DATABASE_DSN", ""))

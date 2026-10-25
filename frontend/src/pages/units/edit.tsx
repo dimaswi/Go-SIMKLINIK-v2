@@ -7,7 +7,7 @@ import { unitsApi } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
-import { MasterDataAsideSection, MasterDataAsideStack, MasterDataLegacySections, MasterDataPageShell } from '@/pages/master-data/shared';
+import { MasterDataPageShell } from '@/pages/master-data/shared';
 
 export default function UnitEdit() {
   const navigate = useNavigate();
@@ -28,41 +28,50 @@ export default function UnitEdit() {
     try {
       await unitsApi.update(Number(id), { name });
       toast({ variant: "success", title: "Berhasil!", description: "Satuan berhasil diperbarui." });
-      setTimeout(() => navigate('/units'), 500);
+      setTimeout(() => navigate('/units'), 400);
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error!", description: error.response?.data?.error || "Gagal memperbarui." });
-    } finally { setLoading(false); }
+      toast({ variant: "destructive", title: "Error!", description: error.response?.data?.error || "Gagal memperbarui satuan." });
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (fetching) return <div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
   return (
-    <form id="unit-edit-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <form id="unit-edit-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <MasterDataPageShell
         title="Edit Satuan"
-        subtitle="Perbarui satuan referensi yang dipakai pada item master lain tanpa mengubah struktur datanya."
+        subtitle="Perbarui nama satuan ukuran obat / alkes."
         onBack={() => navigate('/units')}
-        actions={<Button type="submit" form="unit-edit-form" disabled={loading} className="rounded-none shadow-none">{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Update</Button>}
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Ringkasan" helper="Nilai terbaru yang akan disimpan.">
-                <p className="truncate font-medium">{name || '-'}</p>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
+        actions={
+          <Button type="submit" form="unit-edit-form" disabled={loading} size="sm" className="h-8 px-4 text-xs rounded-none shadow-none">
+            {loading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            Update Satuan
+          </Button>
         }
       >
-        <MasterDataLegacySections>
-          <div className="space-y-6">
-            <section className="space-y-4 rounded-lg border border-border/80 p-5">
-              <div className="space-y-2">
-                <Label htmlFor="name" className="text-xs font-medium">Nama Satuan</Label>
-                <Input id="name" required value={name} onChange={e => setName(e.target.value)} className="h-10 text-sm" />
+        <div className="space-y-4">
+          <div className="space-y-2.5">
+            <div className="border-b border-border/60 pb-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Informasi Satuan</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="name" className="text-xs font-medium">Nama Satuan *</Label>
+                <Input
+                  id="name"
+                  required
+                  placeholder="Nama satuan"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  className="h-9 text-xs rounded-none"
+                />
               </div>
-            </section>
+            </div>
           </div>
-        </MasterDataLegacySections>
+        </div>
       </MasterDataPageShell>
     </form>
   );

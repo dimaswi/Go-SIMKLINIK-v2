@@ -12,7 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { type ControlScheduleItem, visitsApi } from '@/lib/api';
 import { createControlScheduleWhatsAppPayloadFromScheduleItem } from '@/lib/control-schedule-whatsapp';
 import { setPageTitle } from '@/lib/page-title';
-import { cn } from '@/lib/utils';
+import { cn, getLocalISODate } from '@/lib/utils';
 
 function buildControlRegistrationQuery(item: ControlScheduleItem) {
   const params = new URLSearchParams();
@@ -180,11 +180,11 @@ export default function ControlSchedulesPage() {
     },
     {
       id: 'actions',
-      header: 'Aksi',
+      header: () => <div className="text-right pr-2">Aksi</div>,
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <div className="flex items-center gap-1.5 whitespace-nowrap">
+          <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
             <Button
               type="button"
               variant="outline"
@@ -220,18 +220,24 @@ export default function ControlSchedulesPage() {
         );
       },
       meta: {
-        headerClassName: 'w-[250px]',
+        headerClassName: 'w-[260px] text-right pr-4 whitespace-nowrap',
+        cellClassName: 'text-right pr-4 whitespace-nowrap',
       },
     },
   ], [navigate]);
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState(getLocalISODate());
 
   const filteredData = useMemo(() => {
     const q = search.trim().toLowerCase();
     return data.filter((item) => {
       if (statusFilter && item.schedule_status !== statusFilter) return false;
+      if (dateFilter) {
+        const itemDate = item.follow_up_at?.slice(0, 10);
+        if (itemDate !== dateFilter) return false;
+      }
       if (q) {
         const matchName = item.patient_name?.toLowerCase().includes(q);
         const matchRm = item.medical_record_number?.toLowerCase().includes(q);
@@ -242,7 +248,7 @@ export default function ControlSchedulesPage() {
       }
       return true;
     });
-  }, [data, search, statusFilter]);
+  }, [data, dateFilter, search, statusFilter]);
 
   if (loading) {
     return (
@@ -264,9 +270,6 @@ export default function ControlSchedulesPage() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 Jadwal Kontrol
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Monitoring jadwal dan reminder kontrol pasien ({filteredData.length} jadwal)
-              </p>
             </div>
           </div>
 
@@ -278,9 +281,16 @@ export default function ControlSchedulesPage() {
               className="h-9 w-48 sm:w-56 rounded-none text-xs focus:ring-inset"
             />
 
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="h-9 w-36 border border-border bg-background px-2.5 text-xs outline-none focus:ring-1 focus:ring-ring shrink-0"
+              title="Filter tanggal kontrol"
+            />
+
             <SearchableSelect
               options={[
-                { value: '', label: 'Semua Status' },
                 { value: 'today', label: 'Hari Ini' },
                 { value: 'upcoming', label: 'Akan Datang' },
                 { value: 'overdue', label: 'Terlewat' },

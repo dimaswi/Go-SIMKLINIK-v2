@@ -12,7 +12,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { usePermission } from '@/hooks/usePermission';
-import { MasterDataAsideSection, MasterDataAsideStack, MasterDataDetailItem, MasterDataPageShell, MasterDataSection, formatMasterDataDateTime } from '@/pages/master-data/shared';
+import { MasterDataDetailItem, MasterDataPageShell, MasterDataSection, formatMasterDataDateTime } from '@/pages/master-data/shared';
 
 export default function PermissionShow() {
   const navigate = useNavigate();
@@ -157,28 +157,6 @@ export default function PermissionShow() {
             {canPerform('role_management', 'delete') && <Button variant="destructive" className="rounded-none shadow-none" onClick={handleDelete} disabled={deleting}>{deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}Hapus Permission</Button>}
           </>
         }
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Ringkasan" helper="Interpretasi cepat struktur permission yang sedang dilihat.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Module: <span className="font-medium text-foreground">{permissionModule}</span></p>
-                  <p>Category: <span className="font-medium text-foreground">{permissionCategory}</span></p>
-                  <p>Action: <span className="font-medium text-foreground">{permissionAction}</span></p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-            <div>
-              <MasterDataAsideSection title="Metadata" helper="Riwayat pencatatan permission.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Tipe: <span className="font-medium text-foreground">System Permission</span></p>
-                  <p>Dibuat: <span className="font-medium text-foreground">{formatMasterDataDateTime(permission.created_at)}</span></p>
-                  <p>Terakhir diubah: <span className="font-medium text-foreground">{formatMasterDataDateTime(permission.updated_at)}</span></p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
-        }
       >
         <div className="divide-y divide-border/70">
           <MasterDataSection title="Detail Permission" helper="Identifier dan atribut utama permission untuk role management.">
@@ -188,7 +166,11 @@ export default function PermissionShow() {
               <MasterDataDetailItem label="Category" value={permissionCategory} />
               <MasterDataDetailItem label="Action" value={permissionAction} />
               <MasterDataDetailItem label="Semua Actions" value={parsedActions.length > 0 ? parsedActions.join(', ') : permissionAction} />
-              <MasterDataDetailItem label="Description" value={permission.description || 'Permission ini belum memiliki deskripsi teknis.'} />
+              <MasterDataDetailItem label="Waktu Dibuat" value={formatMasterDataDateTime(permission.created_at)} />
+              <MasterDataDetailItem label="Terakhir Diubah" value={formatMasterDataDateTime(permission.updated_at)} />
+              <div className="md:col-span-2 xl:col-span-3">
+                <MasterDataDetailItem label="Description" value={permission.description || 'Permission ini belum memiliki deskripsi teknis.'} />
+              </div>
             </div>
           </MasterDataSection>
         </div>

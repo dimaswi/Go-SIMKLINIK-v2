@@ -86,9 +86,6 @@ export default function SpecimenTemplatesPage() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 Template Specimen
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Kelola template specimen lab dan kode SNOMED ({filteredData.length} template)
-              </p>
             </div>
           </div>
 

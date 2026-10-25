@@ -129,6 +129,7 @@ const PatientSearchDetail = lazy(() => import('./pages/patient-search/detail'));
 // Registration & Queue
 const RegistrationIndex = lazy(() => import('./pages/registration/index'));
 const RegistrationCreate = lazy(() => import('./pages/registration/create'));
+const RegistrationShow = lazy(() => import('./pages/registration/show'));
 const ControlSchedulesPage = lazy(() => import('./pages/control-schedules/index'));
 const QueueDashboard = lazy(() => import('./pages/queue/index'));
 const QueueDisplay = lazy(() => import('./pages/queue/display'));
@@ -138,6 +139,7 @@ const EMRIndex = lazy(() => import('./pages/emr/index'));
 const EMRForm = lazy(() => import('./pages/emr/form'));
 const EMRSheet = lazy(() => import('./pages/emr/sheet'));
 const EMRWorkspace = lazy(() => import('./pages/emr/workspace'));
+const PublicQueuePage = lazy(() => import('./pages/queue/public-queue'));
 
 function LoadingFallback() {
   return (
@@ -183,6 +185,7 @@ function App() {
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/antrian" element={<PublicQueuePage />} />
           <Route path="/tte/verify" element={<PublicTteVerifyPage />} />
           <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/reports" element={<ProtectedRoute><PermissionGuard permission="reports.view"><ReportsPage /></PermissionGuard></ProtectedRoute>} />
@@ -333,6 +336,7 @@ function App() {
           {/* Registration */}
           <Route path="/registration" element={<ProtectedRoute><RegistrationIndex /></ProtectedRoute>} />
           <Route path="/registration/create" element={<ProtectedRoute><PermissionGuard permission="visits.create"><RegistrationCreate /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/registration/:id" element={<ProtectedRoute><RegistrationShow /></ProtectedRoute>} />
           <Route path="/control-schedules" element={<ProtectedRoute><PermissionGuard permission="visits.view"><ControlSchedulesPage /></PermissionGuard></ProtectedRoute>} />
 
           {/* Queue Dashboard */}

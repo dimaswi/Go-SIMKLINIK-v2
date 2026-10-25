@@ -1027,7 +1027,7 @@ export function SectionEditorBody({
             printing={procedureActionState?.printing}
             readOnly={readOnly}
           />
-          <TableSection title="Catatan Entri Tindakan" helper="Catatan umum untuk satu entri tindakan, misalnya ringkasan tindakan atau addendum klinis.">
+          <TableSection title="Catatan Entri Tindakan">
             <TableRow>
               <TableCell label="Catatan Tindakan" colSpan={4}>
                 <TextEditor label="Catatan Tindakan" hideLabel value={draft.notes} onChange={(value) => setDraft((prev) => ({ ...prev, notes: value }))} disabled={readOnly} rows={3} />

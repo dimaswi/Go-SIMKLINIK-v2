@@ -119,9 +119,6 @@ export default function RolesPage() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 Peran Pengguna (Roles)
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Kelola wewenang hak akses peran sistem ({filteredRoles.length} role)
-              </p>
             </div>
           </div>
 

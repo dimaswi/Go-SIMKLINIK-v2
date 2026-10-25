@@ -73,25 +73,35 @@ export function createColumns({ onOpenProcess, onRequestReturnToOrder, returning
     },
     {
       id: 'actions',
-      header: 'Aksi',
+      header: () => <div className="text-right pr-2">Aksi</div>,
       cell: ({ row }) => (
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-1">
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="rounded-none"
+            className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
             onClick={() => onRequestReturnToOrder(row.original)}
             disabled={returningRecordId === row.original.id}
+            title="Kembalikan ke antrian resep"
           >
-            {returningRecordId === row.original.id ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-1 h-4 w-4" />}
-            Kembalikan
+            {returningRecordId === row.original.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
           </Button>
-          <Button type="button" size="sm" className="rounded-none" onClick={() => onOpenProcess(row.original)}>
-            <FlaskConical className="mr-1 h-4 w-4" /> Proses Resep
+          <Button
+            type="button"
+            size="sm"
+            className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+            onClick={() => onOpenProcess(row.original)}
+            title="Proses Resep"
+          >
+            <FlaskConical className="h-4 w-4" />
           </Button>
         </div>
       ),
+      meta: {
+        headerClassName: 'text-right pr-4 whitespace-nowrap',
+        cellClassName: 'text-right pr-4 whitespace-nowrap',
+      },
     },
   ];
 }

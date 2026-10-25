@@ -14,19 +14,38 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { useToast } from '@/hooks/use-toast';
 import { billingApi, paymentMethodsApi } from '@/lib/api';
 import type { Invoice, PaymentMethod } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
 import { formatCurrency, formatDateTime } from './utils';
-import { MasterDataPageShell, MasterDataAsideSection, MasterDataAsideStack, MasterDataSection } from '@/pages/master-data/shared';
+import { MasterDataPageShell, MasterDataDetailItem, MasterDataSection } from '@/pages/master-data/shared';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  AlertTriangle,
+  ChevronDown,
   CreditCard,
+  FileSpreadsheet,
+  FileText,
   Loader2,
   Percent,
   Printer,
+  Receipt,
   RefreshCw,
+  RotateCcw,
 } from 'lucide-react';
 
 // ── Status helpers ─────────────────────────────────────────────────────────
@@ -96,6 +115,11 @@ export default function KasirDetailPage() {
   const [invoiceNotes, setInvoiceNotes] = useState('');
   const [savingDiscount, setSavingDiscount] = useState(false);
 
+  // Cancel payment dialog
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [paymentToCancel, setPaymentToCancel] = useState<number | null>(null);
+  const [cancelingPayment, setCancelingPayment] = useState(false);
+
   const remaining = invoice ? Math.max(0, invoice.total_amount - invoice.paid_amount) : 0;
   const isPaid = invoice?.status === 'lunas';
   const isCancelled = invoice?.status === 'batal';
@@ -103,6 +127,8 @@ export default function KasirDetailPage() {
   const canEdit = !isPaid && !isCancelled;
   const canPay = canEdit && remaining > 0 && isVisitFinalized;
   const hasDiscount = (invoice?.discount ?? 0) > 0 || Boolean(invoice?.discount_type);
+  const hasPayments = (invoice?.payments?.length ?? 0) > 0;
+  const canCancelPayment = (isPaid || invoice?.status === 'sebagian') && hasPayments && !isCancelled;
 
   const fetchInvoice = useCallback(async () => {
     try {
@@ -152,13 +178,13 @@ export default function KasirDetailPage() {
     }
   };
 
-  const handlePrint = async () => {
+  const handlePrint = async (format: 'a4' | 'a5' | 'thermal' = 'a4') => {
     try {
-      const res = await billingApi.print(Number(id));
+      const res = await billingApi.print(Number(id), format);
       const blob = new Blob([res.data as ArrayBuffer], { type: 'application/pdf' });
       window.open(URL.createObjectURL(blob), '_blank');
     } catch {
-      toast({ variant: 'destructive', title: 'Gagal mencetak invoice' });
+      toast({ variant: 'destructive', title: 'Gagal mencetak kwitansi' });
     }
   };
 
@@ -259,6 +285,32 @@ export default function KasirDetailPage() {
     });
   };
 
+  const handleConfirmCancelPayment = async () => {
+    if (!invoice) return;
+    setCancelingPayment(true);
+    try {
+      if (paymentToCancel) {
+        const res = await billingApi.cancelPayment(invoice.id, paymentToCancel);
+        toast({ title: res.data?.message || 'Pembayaran berhasil dibatalkan' });
+      } else {
+        const res = await billingApi.cancelAllPayments(invoice.id);
+        toast({ title: res.data?.message || 'Pembayaran berhasil dibatalkan' });
+      }
+      setCancelDialogOpen(false);
+      setPaymentToCancel(null);
+      await fetchInvoice();
+    } catch (error) {
+      const requestError = error as AxiosError<{ error?: string }>;
+      toast({
+        variant: 'destructive',
+        title: 'Gagal membatalkan pembayaran',
+        description: requestError.response?.data?.error || 'Terjadi kesalahan sistem saat membatalkan pembayaran.',
+      });
+    } finally {
+      setCancelingPayment(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -324,14 +376,42 @@ export default function KasirDetailPage() {
                 Diskon / Pajak
               </Button>
             )}
-            <Button
-              variant="outline"
-              className="rounded-none shadow-none"
-              onClick={() => void handlePrint()}
-            >
-              <Printer className="mr-2 h-4 w-4" />
-              Cetak
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="rounded-none shadow-none gap-1.5">
+                  <Printer className="h-4 w-4" />
+                  <span>Cetak Kwitansi</span>
+                  <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 rounded-none shadow-lg">
+                <DropdownMenuLabel className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Pilih Format Cetak
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => void handlePrint('a4')} className="gap-2.5 cursor-pointer py-2">
+                  <FileText className="h-4 w-4 text-blue-600 shrink-0" />
+                  <div className="flex flex-col">
+                    <span className="font-medium text-xs">Kwitansi A4</span>
+                    <span className="text-[10px] text-muted-foreground">Standar lembar penuh</span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void handlePrint('a5')} className="gap-2.5 cursor-pointer py-2">
+                  <FileSpreadsheet className="h-4 w-4 text-emerald-600 shrink-0" />
+                  <div className="flex flex-col">
+                    <span className="font-medium text-xs">Kwitansi A5</span>
+                    <span className="text-[10px] text-muted-foreground">Format kompak setengah A4</span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void handlePrint('thermal')} className="gap-2.5 cursor-pointer py-2">
+                  <Receipt className="h-4 w-4 text-amber-600 shrink-0" />
+                  <div className="flex flex-col">
+                    <span className="font-medium text-xs">Struk Thermal (80mm)</span>
+                    <span className="text-[10px] text-muted-foreground">Printer struk kasir</span>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             {canPay && (
               <Button
                 className="rounded-none shadow-none"
@@ -341,113 +421,76 @@ export default function KasirDetailPage() {
                 Proses Pembayaran
               </Button>
             )}
+            {canCancelPayment && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9 rounded-none shadow-none border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-400"
+                    onClick={() => {
+                      setPaymentToCancel(null);
+                      setCancelDialogOpen(true);
+                    }}
+                    aria-label="Batal Pembayaran"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  <p>Batal Pembayaran</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
           </>
         }
-        aside={
-          <MasterDataAsideStack>
-            {/* Informasi Pasien */}
-            <div>
-              <MasterDataAsideSection
-                title="Informasi Pasien"
-                helper="Data pasien dan kunjungan yang terkait dengan invoice ini."
-              >
-                <div className="space-y-3 text-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="text-muted-foreground">Nama Pasien</span>
-                    <span className="font-medium text-right">{invoice.patient?.full_name || '-'}</span>
-                  </div>
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="text-muted-foreground">No. RM</span>
-                    <span className="font-mono font-medium text-right">{invoice.patient?.medical_record_number || '-'}</span>
-                  </div>
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="text-muted-foreground">No. Kunjungan</span>
-                    <span className="font-mono text-right">{invoice.visit?.visit_number || '-'}</span>
-                  </div>
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="text-muted-foreground">Poli</span>
-                    <span className="text-right">{invoice.visit?.polyclinic?.name || '-'}</span>
-                  </div>
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="text-muted-foreground">Dokter</span>
-                    <span className="text-right">{invoice.visit?.doctor?.full_name || '-'}</span>
-                  </div>
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="text-muted-foreground">Tgl. Invoice</span>
-                    <span className="text-right">{formatDateTime(invoice.invoice_date)}</span>
-                  </div>
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="text-muted-foreground">Status Kunjungan</span>
-                    <span className="text-right">{isVisitFinalized ? 'Final / Selesai' : 'Belum Final'}</span>
-                  </div>
+      >
+        <div className="divide-y divide-border/70">
+          <MasterDataSection
+            title="Informasi Pasien & Kunjungan"
+            helper="Data identitas pasien, poli tujuan, dan status finalisasi medis."
+          >
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <MasterDataDetailItem label="Nama Pasien" value={invoice.patient?.full_name || '-'} />
+              <MasterDataDetailItem label="No. Rekam Medis" value={invoice.patient?.medical_record_number || '-'} />
+              <MasterDataDetailItem label="No. Kunjungan" value={invoice.visit?.visit_number || '-'} />
+              <MasterDataDetailItem label="Poliklinik" value={invoice.visit?.polyclinic?.name || '-'} />
+              <MasterDataDetailItem label="Dokter Pemeriksa" value={invoice.visit?.doctor?.full_name || '-'} />
+              <MasterDataDetailItem label="Waktu Invoice" value={formatDateTime(invoice.invoice_date)} />
+              <MasterDataDetailItem
+                label="Status Kunjungan"
+                value={
+                  <span className={isVisitFinalized ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'}>
+                    {isVisitFinalized ? 'Final / Selesai' : 'Belum Final'}
+                  </span>
+                }
+              />
+              <MasterDataDetailItem
+                label="Sisa Tagihan"
+                value={
+                  <span className={remaining > 0 ? 'text-red-600 font-semibold' : 'text-emerald-600 font-semibold'}>
+                    {formatCurrency(remaining)}
+                  </span>
+                }
+              />
+              {invoice.notes && (
+                <div className="md:col-span-2 xl:col-span-4">
+                  <MasterDataDetailItem label="Catatan" value={invoice.notes} />
                 </div>
-                {!isVisitFinalized && (
-                  <div className="mt-3 border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                    Pembayaran kasir baru bisa diproses setelah kunjungan difinalisasi di EMR.
-                  </div>
-                )}
-              </MasterDataAsideSection>
+              )}
             </div>
-
-            {/* Ringkasan Pembayaran */}
-            <div>
-              <MasterDataAsideSection
-                title="Ringkasan Pembayaran"
-                helper="Kalkulasi total tagihan setelah diskon dan pajak diterapkan."
-              >
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="text-muted-foreground">Subtotal</span>
-                    <span>{formatCurrency(invoice.sub_total)}</span>
-                  </div>
-                  {invoice.discount > 0 && (
-                    <div className="flex items-start justify-between gap-3 text-emerald-600">
-                      <span>Diskon{invoice.discount_type === 'persen' ? ' (%)' : ''}</span>
-                      <span>− {formatCurrency(invoice.discount)}</span>
-                    </div>
-                  )}
-                  {invoice.tax > 0 && (
-                    <div className="flex items-start justify-between gap-3 text-orange-600">
-                      <span>Pajak</span>
-                      <span>+ {formatCurrency(invoice.tax)}</span>
-                    </div>
-                  )}
-                  <div className="border-t border-border/70 pt-2">
-                    <div className="flex items-start justify-between gap-3 font-semibold">
-                      <span>Total</span>
-                      <span>{formatCurrency(invoice.total_amount)}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-start justify-between gap-3 text-emerald-600">
-                    <span>Sudah Dibayar</span>
-                    <span>{formatCurrency(invoice.paid_amount)}</span>
-                  </div>
-                  {remaining > 0 && (
-                    <div className="flex items-start justify-between gap-3 font-semibold text-red-600">
-                      <span>Sisa Tagihan</span>
-                      <span>{formatCurrency(remaining)}</span>
-                    </div>
-                  )}
-                </div>
-              </MasterDataAsideSection>
-            </div>
-
-            {/* Catatan */}
-            {invoice.notes && (
-              <div>
-                <MasterDataAsideSection title="Catatan">
-                  <p className="whitespace-pre-wrap text-sm text-muted-foreground">{invoice.notes}</p>
-                </MasterDataAsideSection>
+            {!isVisitFinalized && (
+              <div className="mt-3 border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Pembayaran kasir baru bisa diproses setelah kunjungan difinalisasi di EMR.
               </div>
             )}
-          </MasterDataAsideStack>
-        }
-      >
-        {/* ── Rincian Tagihan ── */}
-        <MasterDataSection
-          title="Rincian Tagihan"
-          helper={`${invoice.items?.length || 0} item dari kunjungan ini.`}
-        >
+          </MasterDataSection>
+
+          {/* ── Rincian Tagihan ── */}
+          <MasterDataSection
+            title="Rincian Tagihan"
+            helper={`${invoice.items?.length || 0} item dari kunjungan ini.`}
+          >
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -473,7 +516,9 @@ export default function KasirDetailPage() {
                           {item.item_type}
                         </Badge>
                       </td>
-                      <td className="py-3 pr-4 font-medium">{item.description}</td>
+                      <td className="py-3 pr-4">
+                        <span className="font-medium">{item.description}</span>
+                      </td>
                       <td className="py-3 pr-4 text-center">{item.quantity}</td>
                       <td className="py-3 pr-4 text-right text-muted-foreground">{formatCurrency(item.unit_price)}</td>
                       <td className="py-3 text-right font-medium">{formatCurrency(item.total_price)}</td>
@@ -531,6 +576,9 @@ export default function KasirDetailPage() {
                     <th className="pb-2 pr-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Kasir</th>
                     <th className="pb-2 pr-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Catatan</th>
                     <th className="pb-2 text-right text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Jumlah</th>
+                    {!isCancelled && (
+                      <th className="pb-2 text-right text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Aksi</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
@@ -542,6 +590,29 @@ export default function KasirDetailPage() {
                       <td className="py-3 pr-4 text-muted-foreground">{payment.receiver?.full_name || '-'}</td>
                       <td className="py-3 pr-4 text-muted-foreground">{payment.notes || '-'}</td>
                       <td className="py-3 text-right font-medium text-emerald-600">{formatCurrency(payment.amount)}</td>
+                      {!isCancelled && (
+                        <td className="py-3 text-right">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-none"
+                                onClick={() => {
+                                  setPaymentToCancel(payment.id);
+                                  setCancelDialogOpen(true);
+                                }}
+                                aria-label="Batalkan Pembayaran"
+                              >
+                                <RotateCcw className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="left">
+                              <p>Batalkan Pembayaran</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -549,6 +620,7 @@ export default function KasirDetailPage() {
             </div>
           </MasterDataSection>
         )}
+        </div>
       </MasterDataPageShell>
 
       {/* ── Payment Dialog ── */}
@@ -711,6 +783,66 @@ export default function KasirDetailPage() {
             >
               {savingDiscount && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
               Simpan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* ── Cancel Payment Confirmation Dialog ── */}
+      <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <DialogContent className="rounded-none sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+              <span>{paymentToCancel ? 'Batalkan Transaksi Pembayaran' : 'Batalkan Pembayaran'}</span>
+            </DialogTitle>
+            <DialogDescription className="pt-2 text-sm text-foreground">
+              {paymentToCancel ? (
+                <>
+                  Apakah Anda yakin ingin membatalkan transaksi pembayaran senilai{' '}
+                  <span className="font-semibold text-red-600">
+                    {formatCurrency(invoice.payments?.find(p => p.id === paymentToCancel)?.amount ?? 0)}
+                  </span>
+                  ? Riwayat transaksi pembayaran ini akan dihapus dan sisa tagihan akan diperbarui.
+                </>
+              ) : (
+                <>
+                  Apakah Anda yakin ingin membatalkan pembayaran untuk invoice{' '}
+                  <span className="font-mono font-semibold">{invoice.invoice_number}</span>?{' '}
+                  {(invoice.payments?.length ?? 0) > 1
+                    ? `Seluruh ${invoice.payments?.length} transaksi pembayaran akan dihapus dan status tagihan dikembalikan menjadi Belum Bayar.`
+                    : 'Data pembayaran akan dihapus dan status tagihan dikembalikan menjadi Belum Bayar.'}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 space-y-1">
+            <p className="font-semibold">Perhatian:</p>
+            <p>
+              Setelah pembayaran dibatalkan, status invoice akan kembali ke belum lunas dan kasir dapat menerima ulang pembayaran atau memperbarui diskon/pajak tagihan.
+            </p>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              className="rounded-none shadow-none"
+              onClick={() => {
+                setCancelDialogOpen(false);
+                setPaymentToCancel(null);
+              }}
+              disabled={cancelingPayment}
+            >
+              Kembali
+            </Button>
+            <Button
+              variant="destructive"
+              className="rounded-none shadow-none bg-red-600 hover:bg-red-700 text-white"
+              onClick={() => void handleConfirmCancelPayment()}
+              disabled={cancelingPayment}
+            >
+              {cancelingPayment && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+              Ya, Batalkan Pembayaran
             </Button>
           </DialogFooter>
         </DialogContent>

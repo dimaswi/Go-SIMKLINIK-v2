@@ -60,7 +60,7 @@ func PrintPharmacyTicket(c *gin.Context) {
 		return
 	}
 
-	viewData := buildPrescriptionPrintViewData(c, record)
+	viewData := buildPrescriptionPrintViewData(c, record, "pharmacy")
 	hospitalInfo := getInitialAssessmentHospitalInfo()
 	pdfBytes, fileName, err := renderPharmacyTicketPDF(hospitalInfo, viewData)
 	if err != nil {
@@ -303,34 +303,283 @@ func hasRadiologyResultData(record models.MedicalRecord) bool {
 	return false
 }
 
+func formatEtiketSigna(signa string) string {
+	trimmed := strings.TrimSpace(signa)
+	if trimmed == "" {
+		return "-"
+	}
+	trimmed = initialAssessmentPDFTextReplacer.Replace(trimmed)
+	trimmed = signaMultiplierRegex.ReplaceAllString(trimmed, "${1}x${2}")
+	trimmed = strings.Join(strings.Fields(trimmed), " ")
+	if strings.HasPrefix(strings.ToUpper(trimmed), "S. ") {
+		trimmed = strings.TrimSpace(trimmed[3:])
+	} else if strings.HasPrefix(strings.ToUpper(trimmed), "S ") {
+		trimmed = strings.TrimSpace(trimmed[2:])
+	}
+	if trimmed == "" {
+		return "-"
+	}
+	return trimmed
+}
+
+func formatCompoundPreparationUnit(prepType string) string {
+	lower := strings.ToLower(strings.TrimSpace(prepType))
+	switch {
+	case strings.Contains(lower, "kapsul") || strings.Contains(lower, "capsul"):
+		return "Kapsul"
+	case strings.Contains(lower, "pulveres") || strings.Contains(lower, "puyer") || strings.Contains(lower, "serbuk_bagi"):
+		return "Bungkus"
+	case strings.Contains(lower, "sirup") || strings.Contains(lower, "potio") || strings.Contains(lower, "suspensi") ||
+		strings.Contains(lower, "emulsi") || strings.Contains(lower, "larutan") || strings.Contains(lower, "solution") ||
+		strings.Contains(lower, "guttae") || strings.Contains(lower, "tetes") || strings.Contains(lower, "kumur") ||
+		strings.Contains(lower, "pulvis"):
+		return "Botol"
+	case strings.Contains(lower, "salep") || strings.Contains(lower, "krim") || strings.Contains(lower, "cream") ||
+		strings.Contains(lower, "pasta"):
+		return "Pot"
+	case strings.Contains(lower, "gel"):
+		return "Tube"
+	case strings.Contains(lower, "supp"):
+		return "Supp"
+	case strings.Contains(lower, "ovula"):
+		return "Butir"
+	default:
+		cleaned := strings.ReplaceAll(prepType, "_", " ")
+		words := strings.Fields(cleaned)
+		for i, w := range words {
+			words[i] = strings.Title(strings.ToLower(w))
+		}
+		res := strings.Join(words, " ")
+		if res == "" {
+			return "Bungkus"
+		}
+		return res
+	}
+}
+
 func renderPharmacyTicketPDF(hospitalInfo initialAssessmentHospitalInfo, data prescriptionPrintViewData) ([]byte, string, error) {
 	visit := resolvePrintVisit(data.Record)
-	pdf := newInitialAssessmentStyledPDF("TIKET FARMASI", data.PrintedBy, data.GeneratedAt)
-	entries := buildPharmacyTicketEntries(data)
+	resolvedInfo := resolvePrescriptionHospitalInfo(hospitalInfo)
 
-	for index, entry := range entries {
-		beginInitialAssessmentStyledSection(pdf, hospitalInfo, "ETIKET FARMASI", buildSupportingOrderSectionSubtitle(visit.VisitNumber, entry.Title))
-		addInitialAssessmentCompactFieldSection(pdf, "INFORMASI DOKUMEN", buildPharmacyTicketDocumentFields(visit, data, entry, index+1, len(entries)), "")
-		addInitialAssessmentCompactFieldSection(pdf, "DATA PASIEN", buildSupportingOrderPatientFields(visit.Patient), "Data pasien tidak tersedia.")
-		addInitialAssessmentCompactFieldSection(pdf, "DATA KUNJUNGAN", buildInitialAssessmentVisitFields(visit), "Data kunjungan tidak tersedia.")
-		addPharmacyTicketItemSection(pdf, entry)
+	// Etiket ukuran lebar 80 mm x tinggi 40 mm
+	// Orientation "P" pada SizeType{Wd: 80, Ht: 40} di gofpdf menghasilkan Lebar: 80mm, Tinggi: 40mm
+	pdf := gofpdf.NewCustom(&gofpdf.InitType{
+		OrientationStr: "P",
+		UnitStr:        "mm",
+		Size:           gofpdf.SizeType{Wd: 80, Ht: 40},
+	})
+	pdf.SetMargins(0, 0, 0)
+	pdf.SetAutoPageBreak(false, 0)
+	pdf.SetTitle("Etiket Obat", false)
+	pdf.SetAuthor(fallbackText(data.PrintedBy), false)
+	pdf.SetCreator("SIMKLINIK", false)
 
-		if strings.TrimSpace(data.BatchNotes) != "" {
-			addInitialAssessmentSectionTitle(pdf, "CATATAN RESEP")
-			addInitialAssessmentFullWidthRow(pdf, data.BatchNotes, false)
-			addInitialAssessmentSectionSpacing(pdf)
-		}
-
-		addOrderPrintSignatureSection(pdf, hospitalInfo, data.GeneratedAt, "Petugas Cetak", data.PrintedBy, "Dokter Pemeriksa", visit.Doctor.FullName)
+	type etiketEntry struct {
+		MedName      string
+		QuantityStr  string
+		Instructions string
+		Notes        string
 	}
 
-	pdfBytes, err := outputInitialAssessmentStyledPDF(pdf)
-	if err != nil {
+	entries := make([]etiketEntry, 0, len(data.Items)+len(data.Compounds))
+
+	// 1. Obat Non-Racikan
+	for _, item := range data.Items {
+		qtyStr := strings.TrimSpace(item.QuantityLine)
+		if idx := strings.Index(qtyStr, "-"); idx != -1 {
+			qtyStr = strings.TrimSpace(qtyStr[:idx])
+		}
+		if qtyStr == "" {
+			qtyStr = fmt.Sprintf("%d", item.Quantity)
+		}
+		inst := strings.TrimSpace(item.Instructions)
+		if inst == "" {
+			inst = strings.TrimSpace(item.RuleLine)
+		}
+		entries = append(entries, etiketEntry{
+			MedName:      fallbackText(item.Name),
+			QuantityStr:  fallbackText(qtyStr),
+			Instructions: inst,
+			Notes:        strings.TrimSpace(item.Notes),
+		})
+	}
+
+	// 2. Obat Racikan (Etiket tanpa bahan racikan, hanya nama racikan saja dengan satuan kemasan yang rapi)
+	for _, compound := range data.Compounds {
+		prep := formatCompoundPreparationUnit(compound.PreparationType)
+		qtyStr := ""
+		if compound.OutputQuantity > 0 {
+			qtyStr = fmt.Sprintf("%d %s", compound.OutputQuantity, prep)
+		} else {
+			qtyStr = prep
+		}
+		inst := strings.TrimSpace(compound.Instructions)
+		if inst == "" {
+			inst = strings.TrimSpace(compound.RuleLine)
+		}
+		entries = append(entries, etiketEntry{
+			MedName:      fallbackText(compound.Name),
+			QuantityStr:  fallbackText(qtyStr),
+			Instructions: inst,
+			Notes:        strings.TrimSpace(compound.Notes),
+		})
+	}
+
+	if len(entries) == 0 {
+		entries = append(entries, etiketEntry{
+			MedName:      "-",
+			QuantityStr:  "-",
+			Instructions: "-",
+		})
+	}
+
+	// Format tanggal resep DD/MM/YYYY
+	tglStr := data.Record.RecordDate.Format("02/01/2006")
+	if data.Record.PrescriptionOrderedAt != nil && !data.Record.PrescriptionOrderedAt.IsZero() {
+		tglStr = data.Record.PrescriptionOrderedAt.Format("02/01/2006")
+	}
+
+	boxX := 2.0
+	boxY := 2.0
+	boxW := 76.0
+	boxH := 36.0
+
+	for _, entry := range entries {
+		pdf.AddPage()
+
+		// 1. Border Luar
+		pdf.SetLineWidth(0.35)
+		pdf.SetDrawColor(0, 0, 0)
+		pdf.Rect(boxX, boxY, boxW, boxH, "D")
+
+		// 2. Header KOP Etiket
+		kopH := 8.2
+		line1Y := boxY + kopH
+
+		logoSize := 6.6
+		logoX := boxX + 1.5
+		logoY := boxY + (kopH-logoSize)/2
+		textX := boxX + 1.5
+		textW := boxW - 3.0
+
+		if resolvedInfo.LogoPath != "" && resolvedInfo.LogoType != "" {
+			pdf.ImageOptions(resolvedInfo.LogoPath, logoX, logoY, logoSize, logoSize, false, gofpdf.ImageOptions{ImageType: resolvedInfo.LogoType}, 0, "")
+			textX = logoX + logoSize + 2.0
+			textW = (boxX + boxW) - textX - 1.5
+		}
+
+		// Nama Klinik (Bold)
+		pdf.SetFont("Arial", "B", 7.2)
+		pdf.SetTextColor(0, 0, 0)
+		hospName := strings.TrimSpace(resolvedInfo.Name)
+		if hospName == "" {
+			hospName = "KLINIK UTAMA"
+		}
+		pdf.SetXY(textX, boxY+0.6)
+		pdf.CellFormat(textW, 2.9, fitTextToWidth(pdf, sanitizePDFText(hospName), textW), "", 0, "L", false, 0, "")
+
+		// Alamat Ringkas
+		pdf.SetFont("Arial", "", 4.4)
+		addrParts := []string{strings.TrimSpace(resolvedInfo.Address), strings.TrimSpace(resolvedInfo.City)}
+		addrStr := strings.Trim(strings.Join(filterEmptyStrings(addrParts), ", "), ", ")
+		if addrStr != "" {
+			pdf.SetXY(textX, boxY+3.6)
+			pdf.CellFormat(textW, 2.0, fitTextToWidth(pdf, sanitizePDFText(addrStr), textW), "", 0, "L", false, 0, "")
+		}
+
+		// Telepon / Kontak
+		contactStr := ""
+		if strings.TrimSpace(resolvedInfo.Phone) != "" {
+			contactStr = "Telp: " + strings.TrimSpace(resolvedInfo.Phone)
+		}
+		if email := strings.TrimSpace(resolvedInfo.Email); email != "" {
+			if contactStr != "" {
+				contactStr += " | " + email
+			} else {
+				contactStr = email
+			}
+		}
+		if contactStr != "" {
+			pdf.SetXY(textX, boxY+5.7)
+			pdf.CellFormat(textW, 2.0, fitTextToWidth(pdf, sanitizePDFText(contactStr), textW), "", 0, "L", false, 0, "")
+		}
+
+		// Garis Pemisah KOP Tebal
+		pdf.SetLineWidth(0.35)
+		pdf.Line(boxX, line1Y, boxX+boxW, line1Y)
+
+		// 3. Body Data Pasien & Obat
+		startBodyY := line1Y + 0.7
+		rowH := 3.1
+		labelW := 10.5
+		colonW := 2.0
+		valW := 40.0
+
+		// Baris 1: Nama & Tgl
+		pdf.SetXY(boxX+1.5, startBodyY)
+		pdf.SetFont("Arial", "", 6.2)
+		pdf.CellFormat(labelW, rowH, "Nama", "", 0, "L", false, 0, "")
+		pdf.CellFormat(colonW, rowH, ":", "", 0, "C", false, 0, "")
+		pdf.SetFont("Arial", "B", 6.8)
+		pdf.CellFormat(valW, rowH, fitTextToWidth(pdf, sanitizePDFText(strings.ToUpper(data.PatientName)), valW), "", 0, "L", false, 0, "")
+		pdf.SetFont("Arial", "", 5.8)
+		tglW := (boxX + boxW) - (boxX + 1.5 + labelW + colonW + valW) - 1.5
+		pdf.CellFormat(tglW, rowH, "Tgl: "+tglStr, "", 0, "R", false, 0, "")
+
+		// Baris 2: No. RM
+		pdf.SetXY(boxX+1.5, startBodyY+rowH)
+		pdf.SetFont("Arial", "", 6.2)
+		pdf.CellFormat(labelW, rowH, "No. RM", "", 0, "L", false, 0, "")
+		pdf.CellFormat(colonW, rowH, ":", "", 0, "C", false, 0, "")
+		pdf.SetFont("Arial", "B", 6.8)
+		pdf.CellFormat(valW, rowH, sanitizePDFText(data.PatientRM), "", 0, "L", false, 0, "")
+
+		// Baris 3: Obat (Nama obat / racikan bersih)
+		pdf.SetXY(boxX+1.5, startBodyY+2*rowH)
+		pdf.SetFont("Arial", "", 6.2)
+		pdf.CellFormat(labelW, rowH, "Obat", "", 0, "L", false, 0, "")
+		pdf.CellFormat(colonW, rowH, ":", "", 0, "C", false, 0, "")
+		pdf.SetFont("Arial", "B", 6.8)
+		medW := boxW - labelW - colonW - 3.5
+		pdf.CellFormat(medW, rowH, fitTextToWidth(pdf, sanitizePDFText(entry.MedName), medW), "", 0, "L", false, 0, "")
+
+		// Baris 4: Jumlah & ED
+		pdf.SetXY(boxX+1.5, startBodyY+3*rowH)
+		pdf.SetFont("Arial", "", 6.2)
+		pdf.CellFormat(labelW, rowH, "Jumlah", "", 0, "L", false, 0, "")
+		pdf.CellFormat(colonW, rowH, ":", "", 0, "C", false, 0, "")
+		pdf.SetFont("Arial", "B", 6.8)
+		qtyW := 28.0
+		pdf.CellFormat(qtyW, rowH, fitTextToWidth(pdf, sanitizePDFText(entry.QuantityStr), qtyW), "", 0, "L", false, 0, "")
+		pdf.SetFont("Arial", "", 5.8)
+		edW := (boxX + boxW) - (boxX + 1.5 + labelW + colonW + qtyW) - 1.5
+		pdf.CellFormat(edW, rowH, "ED    :  -", "", 0, "R", false, 0, "")
+
+		// Garis Pemisah Tipis
+		line2Y := startBodyY + 4*rowH + 0.5
+		pdf.SetLineWidth(0.25)
+		pdf.Line(boxX, line2Y, boxX+boxW, line2Y)
+
+		// 4. Aturan Pakai (Signa)
+		aturanY := line2Y + 1.2
+		pdf.SetXY(boxX+1.5, aturanY)
+		pdf.SetFont("Arial", "B", 6.8)
+		pdf.CellFormat(16.0, 3.4, "Aturan Pakai", "", 0, "L", false, 0, "")
+		pdf.CellFormat(2.0, 3.4, ":", "", 0, "C", false, 0, "")
+
+		cleanSigna := formatEtiketSigna(entry.Instructions)
+		pdf.SetFont("Arial", "B", 7.6)
+		signaW := boxW - 1.5 - 16.0 - 2.0 - 1.5
+		pdf.CellFormat(signaW, 3.4, fitTextToWidth(pdf, sanitizePDFText(cleanSigna), signaW), "", 0, "L", false, 0, "")
+	}
+
+	var output bytes.Buffer
+	if err := pdf.Output(&output); err != nil {
 		return nil, "", err
 	}
 
-	fileName := fmt.Sprintf("tiket-farmasi-%s-%s.pdf", sanitizePDFFileName(visit.Patient.FullName), sanitizePDFFileName(visit.VisitNumber))
-	return pdfBytes, fileName, nil
+	fileName := fmt.Sprintf("etiket-farmasi-%s-%s.pdf", sanitizePDFFileName(visit.Patient.FullName), sanitizePDFFileName(visit.VisitNumber))
+	return output.Bytes(), fileName, nil
 }
 
 func renderLaboratoryTicketPDF(hospitalInfo initialAssessmentHospitalInfo, data orderPrintBaseViewData) ([]byte, string, error) {
@@ -631,15 +880,19 @@ func addRadiologyResultItemSection(pdf *gofpdf.Fpdf, item models.RadiologyOrderI
 			pdf,
 			"HASIL PEMERIKSAAN",
 			[]supportingOrderResultTableColumn{
-				{Title: "Parameter", WidthRatio: 0.21, Align: "L"},
-				{Title: "Hasil", WidthRatio: 0.79, Align: "L"},
+				{Title: "Parameter", WidthRatio: 0.25, Align: "L"},
+				{Title: "Hasil", WidthRatio: 0.75, Align: "L"},
 			},
 			buildRadiologyResultTableRows(item.ParameterResults),
 			"Belum ada hasil parameter radiologi.",
 		)
 	} else {
-		addInitialAssessmentKeyValueRow(pdf, "Temuan", fallbackText(item.Findings))
-		addInitialAssessmentKeyValueRow(pdf, "Kesan", fallbackText(item.Impression))
+		if strings.TrimSpace(item.Findings) != "" {
+			addInitialAssessmentKeyValueRow(pdf, "Temuan", item.Findings)
+		}
+		if strings.TrimSpace(item.Impression) != "" {
+			addInitialAssessmentKeyValueRow(pdf, "Kesan", item.Impression)
+		}
 		if strings.TrimSpace(item.Recommendation) != "" {
 			addInitialAssessmentKeyValueRow(pdf, "Rekomendasi", item.Recommendation)
 		}

@@ -9,8 +9,7 @@ import { medicinesApi, type KFAProductDetail, type Medicine } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
 import { Edit, Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import {
-  MasterDataAsideSection,
-  MasterDataAsideStack,
+  HeaderActionButton,
   MasterDataDetailItem,
   MasterDataPageShell,
   MasterDataSection,
@@ -172,46 +171,31 @@ export default function MedicineShow() {
         }
         actions={
           <>
-            {canSyncMedication && <Button variant="outline" className="rounded-none shadow-none" onClick={() => void handleSyncMedication()} disabled={syncingMedication || !data.kfa_code?.trim()}><RefreshCw className={`h-4 w-4 ${syncingMedication ? 'animate-spin' : ''}`} />{data.satusehat_medication_id ? 'Sync Ulang Medication' : 'Sync Medication'}</Button>}
-            {hasPermission('medicines.update') && <Button className="rounded-none shadow-none" onClick={() => navigate(`/medicines/${id}/edit`)}><Edit className="h-4 w-4" />Edit</Button>}
-            {hasPermission('medicines.delete') && <Button variant="destructive" className="rounded-none shadow-none" onClick={() => setDeleteDialogOpen(true)} disabled={deleting}>{deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}Hapus</Button>}
+            {canSyncMedication && (
+              <HeaderActionButton
+                label={data.satusehat_medication_id ? 'Sync Ulang Medication' : 'Sync Medication'}
+                icon={<RefreshCw className={`h-4 w-4 ${syncingMedication ? 'animate-spin' : ''}`} />}
+                onClick={() => void handleSyncMedication()}
+                disabled={syncingMedication || !data.kfa_code?.trim()}
+              />
+            )}
+            {hasPermission('medicines.update') && (
+              <HeaderActionButton
+                label="Edit Obat"
+                icon={<Edit className="h-4 w-4" />}
+                onClick={() => navigate(`/medicines/${id}/edit`)}
+              />
+            )}
+            {hasPermission('medicines.delete') && (
+              <HeaderActionButton
+                label="Hapus Obat"
+                icon={deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                variant="destructive"
+                onClick={() => setDeleteDialogOpen(true)}
+                disabled={deleting}
+              />
+            )}
           </>
-        }
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Status Integrasi" helper="Ringkasan kesiapan obat lokal terhadap alur SATUSEHAT farmasi.">
-                <div className="space-y-3">
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant={data.kfa_code ? 'default' : 'secondary'} className="rounded-none">{data.kfa_code ? 'Mapped ke KFA' : 'Belum mapped'}</Badge>
-                    {data.satusehat_medication_id ? <Badge className="rounded-none border-0 bg-emerald-600 text-white">Medication tersinkron</Badge> : <Badge variant="outline" className="rounded-none">Belum sync Medication</Badge>}
-                  </div>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p>Kode KFA: <span className="font-medium text-foreground">{data.kfa_code || '-'}</span></p>
-                    <p>Medication SATUSEHAT: <span className="font-medium text-foreground">{data.satusehat_medication_id || '-'}</span></p>
-                    <p>Sync terakhir: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.satusehat_medication_synced_at)}</span></p>
-                  </div>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-            <div>
-              <MasterDataAsideSection title="Stok & Status" helper="Ringkasan cepat kondisi stok dan status aktif obat.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Status: <span className="font-medium text-foreground">{data.is_active ? 'Aktif' : 'Tidak aktif'}</span></p>
-                  <p>Stok saat ini: <span className={stockLow ? 'font-medium text-destructive' : 'font-medium text-foreground'}>{data.current_stock ?? '-'} {data.unit?.name || ''}</span></p>
-                  <p>Stok minimum: <span className="font-medium text-foreground">{data.min_stock ?? '-'}</span></p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-            <div>
-              <MasterDataAsideSection title="Metadata" helper="Jejak pembuatan dan pembaruan data obat.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Dibuat: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.created_at)}</span></p>
-                  <p>Terakhir diubah: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.updated_at)}</span></p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
         }
       >
         <div className="divide-y divide-border/70">
@@ -236,7 +220,8 @@ export default function MedicineShow() {
               <MasterDataDetailItem label="Satuan" value={data.unit?.name || '-'} />
               <MasterDataDetailItem label="Bentuk" value={data.form || '-'} />
               <MasterDataDetailItem label="Kekuatan" value={data.strength || '-'} />
-              <MasterDataDetailItem label="Produsen" value={data.manufacturer || '-'} />
+              <MasterDataDetailItem label="Waktu Dibuat" value={formatMasterDataDateTime(data.created_at)} />
+              <MasterDataDetailItem label="Terakhir Diubah" value={formatMasterDataDateTime(data.updated_at)} />
             </div>
           </MasterDataSection>
 

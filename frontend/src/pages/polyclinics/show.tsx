@@ -10,8 +10,7 @@ import { polyclinicsApi, satusehatApi, type Polyclinic } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
 import { Building2, Edit, Loader2, MapPin, RefreshCw, Trash2 } from 'lucide-react';
 import {
-  MasterDataAsideSection,
-  MasterDataAsideStack,
+  HeaderActionButton,
   MasterDataDetailItem,
   MasterDataPageShell,
   MasterDataSection,
@@ -166,83 +165,37 @@ export default function PolyclinicShow() {
         }
         actions={
           <>
-            {hasPermission('polyclinics.update') && <Button className="rounded-none shadow-none" onClick={() => navigate(`/polyclinics/${id}/edit`)}><Edit className="h-4 w-4" />Edit</Button>}
-            {hasPermission('polyclinics.delete') && <Button variant="destructive" className="rounded-none shadow-none" onClick={() => setDeleteDialogOpen(true)} disabled={deleting}>{deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}Hapus</Button>}
+            {hasPermission('polyclinics.update') && (
+              <HeaderActionButton
+                label="Edit Poliklinik"
+                icon={<Edit className="h-4 w-4" />}
+                onClick={() => navigate(`/polyclinics/${id}/edit`)}
+              />
+            )}
+            {hasPermission('polyclinics.delete') && (
+              <HeaderActionButton
+                label="Hapus Poliklinik"
+                icon={deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                variant="destructive"
+                onClick={() => setDeleteDialogOpen(true)}
+                disabled={deleting}
+              />
+            )}
           </>
-        }
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Metadata" helper="Status dan riwayat perubahan data poliklinik.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Status: <span className="font-medium text-foreground">{data.is_active ? 'Aktif' : 'Tidak aktif'}</span></p>
-                  <p>Dibuat: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.created_at)}</span></p>
-                  <p>Terakhir diubah: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.updated_at)}</span></p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-            <div>
-              <MasterDataAsideSection title="SATUSEHAT" helper="Resource facility turunan dari poli ini untuk Organization dan Location.">
-                <div className="space-y-4 text-sm text-muted-foreground">
-                  <div className="space-y-2 border border-border/70 bg-muted/10 p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="flex items-center gap-2 font-medium text-foreground"><Building2 className="h-4 w-4" />Organization</p>
-                        <p className="break-all text-xs leading-5">{data.satusehat_organization_id || 'Belum tersinkron'}</p>
-                      </div>
-                      <Badge variant={data.satusehat_organization_id ? 'secondary' : 'outline'} className="rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none">
-                        {data.satusehat_organization_id ? 'Tersinkron' : 'Draft'}
-                      </Badge>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button type="button" variant="outline" size="sm" className="rounded-none" onClick={() => void handlePreview('organization')} disabled={actionLoading !== null || !(hasPermission('polyclinics.view') || hasPermission('settings.view'))}>
-                        {actionLoading === 'organization-preview' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                        Preview
-                      </Button>
-                      <Button type="button" size="sm" className="rounded-none" onClick={() => void handleSync('organization')} disabled={actionLoading !== null || !(hasPermission('polyclinics.update') || hasPermission('settings.update'))}>
-                        {actionLoading === 'organization-sync' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                        Sync
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 border border-border/70 bg-muted/10 p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="flex items-center gap-2 font-medium text-foreground"><MapPin className="h-4 w-4" />Location</p>
-                        <p className="break-all text-xs leading-5">{data.satusehat_location_id || 'Belum tersinkron'}</p>
-                      </div>
-                      <Badge variant={data.satusehat_location_id ? 'secondary' : 'outline'} className="rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none">
-                        {data.satusehat_location_id ? 'Tersinkron' : 'Draft'}
-                      </Badge>
-                    </div>
-                    <p className="text-xs leading-5">Location memakai Organization poli sebagai managingOrganization dan akan dipakai di payload Encounter.</p>
-                    <div className="flex flex-wrap gap-2">
-                      <Button type="button" variant="outline" size="sm" className="rounded-none" onClick={() => void handlePreview('location')} disabled={actionLoading !== null || !(hasPermission('polyclinics.view') || hasPermission('settings.view'))}>
-                        {actionLoading === 'location-preview' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                        Preview
-                      </Button>
-                      <Button type="button" size="sm" className="rounded-none" onClick={() => void handleSync('location')} disabled={actionLoading !== null || !(hasPermission('polyclinics.update') || hasPermission('settings.update')) || !data.satusehat_organization_id}>
-                        {actionLoading === 'location-sync' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                        Sync
-                      </Button>
-                    </div>
-                    {!data.satusehat_organization_id ? <p className="text-xs leading-5 text-amber-700">Sync Location akan aktif setelah Organization poli berhasil tersinkron.</p> : null}
-                  </div>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
         }
       >
         <div className="divide-y divide-border/70">
           <MasterDataSection title="Identitas Poliklinik" helper="Informasi utama yang dipakai untuk penamaan dan pengelompokan layanan.">
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               <MasterDataDetailItem label="Nama" value={data.name} />
               <MasterDataDetailItem label="Kode" value={data.code || '-'} />
-              <MasterDataDetailItem label="Deskripsi" value={data.description || '-'} />
               <MasterDataDetailItem label="Biaya Administrasi" value={formatCurrency(data.admin_fee)} />
               <MasterDataDetailItem label="Status" value={data.is_active ? 'Aktif' : 'Tidak aktif'} />
+              <MasterDataDetailItem label="Waktu Dibuat" value={formatMasterDataDateTime(data.created_at)} />
+              <MasterDataDetailItem label="Terakhir Diubah" value={formatMasterDataDateTime(data.updated_at)} />
+              <div className="md:col-span-2 xl:col-span-3">
+                <MasterDataDetailItem label="Deskripsi" value={data.description || '-'} />
+              </div>
             </div>
           </MasterDataSection>
 
@@ -251,6 +204,56 @@ export default function PolyclinicShow() {
               <MasterDataDetailItem label="Warna" value={<span className="inline-flex items-center gap-2"><span className="h-3.5 w-3.5 border border-border/70" style={{ backgroundColor: data.color || '#6B7280' }} /><span>{data.color || '-'}</span></span>} />
               <MasterDataDetailItem label="Icon" value={data.icon || '-'} />
               <MasterDataDetailItem label="Urutan" value={data.sort_order ?? '-'} />
+            </div>
+          </MasterDataSection>
+
+          <MasterDataSection title="Integrasi SATUSEHAT" helper="Resource facility turunan dari poli ini untuk Organization dan Location.">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2 border border-border/70 bg-card p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-2 font-medium text-foreground"><Building2 className="h-4 w-4" />Organization</p>
+                    <p className="break-all text-xs leading-5 text-muted-foreground">{data.satusehat_organization_id || 'Belum tersinkron'}</p>
+                  </div>
+                  <Badge variant={data.satusehat_organization_id ? 'secondary' : 'outline'} className="rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none">
+                    {data.satusehat_organization_id ? 'Tersinkron' : 'Draft'}
+                  </Badge>
+                </div>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Button type="button" variant="outline" size="sm" className="rounded-none shadow-none text-xs" onClick={() => void handlePreview('organization')} disabled={actionLoading !== null || !(hasPermission('polyclinics.view') || hasPermission('settings.view'))}>
+                    {actionLoading === 'organization-preview' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                    Preview
+                  </Button>
+                  <Button type="button" size="sm" className="rounded-none shadow-none text-xs" onClick={() => void handleSync('organization')} disabled={actionLoading !== null || !(hasPermission('polyclinics.update') || hasPermission('settings.update'))}>
+                    {actionLoading === 'organization-sync' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                    Sync
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2 border border-border/70 bg-card p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-2 font-medium text-foreground"><MapPin className="h-4 w-4" />Location</p>
+                    <p className="break-all text-xs leading-5 text-muted-foreground">{data.satusehat_location_id || 'Belum tersinkron'}</p>
+                  </div>
+                  <Badge variant={data.satusehat_location_id ? 'secondary' : 'outline'} className="rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none">
+                    {data.satusehat_location_id ? 'Tersinkron' : 'Draft'}
+                  </Badge>
+                </div>
+                <p className="text-xs leading-5 text-muted-foreground">Location memakai Organization poli sebagai managingOrganization.</p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Button type="button" variant="outline" size="sm" className="rounded-none shadow-none text-xs" onClick={() => void handlePreview('location')} disabled={actionLoading !== null || !(hasPermission('polyclinics.view') || hasPermission('settings.view'))}>
+                    {actionLoading === 'location-preview' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                    Preview
+                  </Button>
+                  <Button type="button" size="sm" className="rounded-none shadow-none text-xs" onClick={() => void handleSync('location')} disabled={actionLoading !== null || !(hasPermission('polyclinics.update') || hasPermission('settings.update')) || !data.satusehat_organization_id}>
+                    {actionLoading === 'location-sync' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                    Sync
+                  </Button>
+                </div>
+                {!data.satusehat_organization_id ? <p className="text-xs leading-5 text-amber-700">Sync Location akan aktif setelah Organization poli berhasil tersinkron.</p> : null}
+              </div>
             </div>
           </MasterDataSection>
         </div>

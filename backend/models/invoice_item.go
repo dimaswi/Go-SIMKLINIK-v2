@@ -11,7 +11,7 @@ type InvoiceItem struct {
 	InvoiceID   uint      `gorm:"not null;index" json:"invoice_id"`
 	ItemType    string    `gorm:"size:20" json:"item_type"`
 	ReferenceID uint      `json:"reference_id"`
-	Description string    `gorm:"size:255" json:"description"`
+	Description string    `gorm:"type:text" json:"description"`
 	Quantity    int       `json:"quantity"`
 	UnitPrice   float64   `json:"unit_price"`
 	Discount    float64   `gorm:"default:0" json:"discount"`

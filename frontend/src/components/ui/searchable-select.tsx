@@ -23,6 +23,7 @@ interface SearchableSelectProps {
   disabled?: boolean
   square?: boolean
   portal?: boolean
+  allowCustom?: boolean
 }
 
 export function SearchableSelect({
@@ -38,6 +39,7 @@ export function SearchableSelect({
   disabled = false,
   square = false,
   portal = true,
+  allowCustom = false,
 }: SearchableSelectProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -53,7 +55,26 @@ export function SearchableSelect({
     maxHeight: 256,
   })
 
-  const selectedOption = value === '' ? null : options.find((option) => option.value === value) ?? null
+  // Sanitize options to avoid duplicates if noneLabel is provided, or if multiple options have identical values
+  const sanitizedOptions = useMemo(() => {
+    const seen = new Set<string>()
+    const result: SearchableSelectOption[] = []
+
+    for (const option of options) {
+      if (noneLabel !== undefined && option.value === '') {
+        continue
+      }
+      if (!seen.has(option.value)) {
+        seen.add(option.value)
+        result.push(option)
+      }
+    }
+    return result
+  }, [noneLabel, options])
+
+  const selectedOption = value === ''
+    ? null
+    : sanitizedOptions.find((option) => option.value === value) ?? (allowCustom && value ? { value, label: value } : null)
 
   const filteredOptions = useMemo(() => {
     const normalizedSearch = searchText.trim().toLowerCase()
@@ -61,11 +82,11 @@ export function SearchableSelect({
     const shouldShowAllOptions = open && selectedOption !== null && normalizedSearch === normalizedSelectedLabel
 
     if (!normalizedSearch || shouldShowAllOptions) {
-      return options
+      return sanitizedOptions
     }
 
-    return options.filter((option) => option.label.toLowerCase().includes(normalizedSearch))
-  }, [open, options, searchText, selectedOption])
+    return sanitizedOptions.filter((option) => option.label.toLowerCase().includes(normalizedSearch))
+  }, [open, sanitizedOptions, searchText, selectedOption])
 
   const exactMatch = useMemo(() => {
     const normalizedSearch = searchText.trim().toLowerCase()
@@ -73,8 +94,8 @@ export function SearchableSelect({
       return null
     }
 
-    return options.find((option) => option.label.trim().toLowerCase() === normalizedSearch) ?? null
-  }, [options, searchText])
+    return sanitizedOptions.find((option) => option.label.trim().toLowerCase() === normalizedSearch) ?? null
+  }, [sanitizedOptions, searchText])
 
   const shouldUsePortal = portal && !isInsideDialog
 
@@ -82,6 +103,9 @@ export function SearchableSelect({
     if (shouldCommitExactMatch && exactMatch) {
       onValueChange(exactMatch.value)
       setSearchText(exactMatch.label)
+    } else if (allowCustom && searchText.trim()) {
+      onValueChange(searchText.trim())
+      setSearchText(searchText.trim())
     } else {
       setSearchText(selectedOption?.label ?? '')
     }
@@ -116,16 +140,25 @@ export function SearchableSelect({
         return
       }
 
+      const viewportWidth = window.innerWidth
       const viewportHeight = window.innerHeight
       const spaceBelow = viewportHeight - rect.bottom - 12
       const spaceAbove = rect.top - 12
       const shouldOpenUpward = spaceBelow < 220 && spaceAbove > spaceBelow
       const maxHeight = Math.max(160, Math.min(320, shouldOpenUpward ? spaceAbove : spaceBelow))
 
+      const dropdownEl = dropdownRef.current
+      const measuredWidth = dropdownEl ? dropdownEl.offsetWidth : rect.width
+      const targetWidth = Math.max(rect.width, measuredWidth)
+      let left = rect.left
+      if (left + targetWidth > viewportWidth - 12) {
+        left = Math.max(12, viewportWidth - targetWidth - 12)
+      }
+
       setDropdownStyle({
         top: shouldOpenUpward ? undefined : rect.bottom + 4,
         bottom: shouldOpenUpward ? Math.max(8, viewportHeight - rect.top + 4) : undefined,
-        left: rect.left,
+        left,
         width: rect.width,
         maxHeight,
       })
@@ -186,6 +219,9 @@ export function SearchableSelect({
         onChange={(event) => {
           const nextValue = event.target.value
           setSearchText(nextValue)
+          if (allowCustom) {
+            onValueChange(nextValue)
+          }
           onSearchChange?.(nextValue)
           if (!disabled) {
             setOpen(true)
@@ -244,6 +280,13 @@ export function SearchableSelect({
 
             if (exactMatch) {
               selectOption(exactMatch)
+              return
+            }
+
+            if (allowCustom && searchText.trim()) {
+              onValueChange(searchText.trim())
+              setOpen(false)
+              return
             }
             return
           }
@@ -273,7 +316,9 @@ export function SearchableSelect({
                   top: dropdownStyle.top,
                   bottom: dropdownStyle.bottom,
                   left: dropdownStyle.left,
-                  width: dropdownStyle.width,
+                  minWidth: dropdownStyle.width,
+                  width: 'max-content',
+                  maxWidth: 'calc(100vw - 24px)',
                 }}
               >
                 <div className="overflow-auto p-1" style={{ maxHeight: dropdownStyle.maxHeight }}>
@@ -281,7 +326,7 @@ export function SearchableSelect({
                     <button
                       type="button"
                       className={cn(
-                        'flex w-full items-center px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground',
+                        'flex w-full items-center px-3 py-2 text-left text-sm whitespace-nowrap hover:bg-accent hover:text-accent-foreground',
                         square && 'rounded-none'
                       )}
                       onMouseDown={(event) => event.preventDefault()}
@@ -291,20 +336,40 @@ export function SearchableSelect({
                         setOpen(false)
                       }}
                     >
-                      <Check className={cn('mr-2 h-4 w-4', value === '' ? 'opacity-100' : 'opacity-0')} />
-                      <span className="truncate">{noneLabel}</span>
+                      <Check className={cn('mr-2 h-4 w-4 shrink-0', value === '' ? 'opacity-100' : 'opacity-0')} />
+                      <span className="whitespace-nowrap">{noneLabel}</span>
+                    </button>
+                  )}
+
+                  {allowCustom && searchText.trim() && !exactMatch && (
+                    <button
+                      type="button"
+                      className={cn(
+                        'flex w-full items-center px-3 py-2 text-left text-sm whitespace-nowrap text-primary font-medium hover:bg-accent hover:text-accent-foreground border-b border-border/40 mb-1',
+                        square && 'rounded-none'
+                      )}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        onValueChange(searchText.trim())
+                        setOpen(false)
+                      }}
+                    >
+                      <Check className="mr-2 h-4 w-4 shrink-0 opacity-0" />
+                      <span>Gunakan: &quot;{searchText.trim()}&quot;</span>
                     </button>
                   )}
 
                   {filteredOptions.length === 0 ? (
-                    <div className="px-3 py-2 text-sm text-muted-foreground">{emptyText}</div>
+                    !(allowCustom && searchText.trim()) && (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">{emptyText}</div>
+                    )
                   ) : (
                     filteredOptions.map((option) => (
                       <button
                         key={option.value}
                         type="button"
                         className={cn(
-                          'flex w-full items-center px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground',
+                          'flex w-full items-center px-3 py-2 text-left text-sm whitespace-nowrap hover:bg-accent hover:text-accent-foreground',
                           highlightedIndex >= 0 && filteredOptions[highlightedIndex]?.value === option.value && 'bg-accent text-accent-foreground',
                           square && 'rounded-none'
                         )}
@@ -312,8 +377,8 @@ export function SearchableSelect({
                         onMouseEnter={() => setHighlightedIndex(filteredOptions.findIndex((item) => item.value === option.value))}
                         onClick={() => selectOption(option)}
                       >
-                        <Check className={cn('mr-2 h-4 w-4', value === option.value ? 'opacity-100' : 'opacity-0')} />
-                        <span className="truncate">{option.label}</span>
+                        <Check className={cn('mr-2 h-4 w-4 shrink-0', value === option.value ? 'opacity-100' : 'opacity-0')} />
+                        <span className="whitespace-nowrap">{option.label}</span>
                       </button>
                     ))
                   )}
@@ -325,7 +390,7 @@ export function SearchableSelect({
               <div
                 ref={dropdownRef}
                 className={cn(
-                  'absolute left-0 right-0 top-full z-50 mt-1 border bg-popover text-popover-foreground shadow-md',
+                  'absolute left-0 top-full z-50 mt-1 min-w-full w-max max-w-[calc(100vw-24px)] border bg-popover text-popover-foreground shadow-md',
                   square ? 'rounded-none' : 'rounded-md'
                 )}
               >
@@ -334,7 +399,7 @@ export function SearchableSelect({
                     <button
                       type="button"
                       className={cn(
-                        'flex w-full items-center px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground',
+                        'flex w-full items-center px-3 py-2 text-left text-sm whitespace-nowrap hover:bg-accent hover:text-accent-foreground',
                         square && 'rounded-none'
                       )}
                       onMouseDown={(event) => event.preventDefault()}
@@ -344,20 +409,40 @@ export function SearchableSelect({
                         setOpen(false)
                       }}
                     >
-                      <Check className={cn('mr-2 h-4 w-4', value === '' ? 'opacity-100' : 'opacity-0')} />
-                      <span className="truncate">{noneLabel}</span>
+                      <Check className={cn('mr-2 h-4 w-4 shrink-0', value === '' ? 'opacity-100' : 'opacity-0')} />
+                      <span className="whitespace-nowrap">{noneLabel}</span>
+                    </button>
+                  )}
+
+                  {allowCustom && searchText.trim() && !exactMatch && (
+                    <button
+                      type="button"
+                      className={cn(
+                        'flex w-full items-center px-3 py-2 text-left text-sm whitespace-nowrap text-primary font-medium hover:bg-accent hover:text-accent-foreground border-b border-border/40 mb-1',
+                        square && 'rounded-none'
+                      )}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        onValueChange(searchText.trim())
+                        setOpen(false)
+                      }}
+                    >
+                      <Check className="mr-2 h-4 w-4 shrink-0 opacity-0" />
+                      <span>Gunakan: &quot;{searchText.trim()}&quot;</span>
                     </button>
                   )}
 
                   {filteredOptions.length === 0 ? (
-                    <div className="px-3 py-2 text-sm text-muted-foreground">{emptyText}</div>
+                    !(allowCustom && searchText.trim()) && (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">{emptyText}</div>
+                    )
                   ) : (
                     filteredOptions.map((option) => (
                       <button
                         key={option.value}
                         type="button"
                         className={cn(
-                          'flex w-full items-center px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground',
+                          'flex w-full items-center px-3 py-2 text-left text-sm whitespace-nowrap hover:bg-accent hover:text-accent-foreground',
                           highlightedIndex >= 0 && filteredOptions[highlightedIndex]?.value === option.value && 'bg-accent text-accent-foreground',
                           square && 'rounded-none'
                         )}
@@ -365,8 +450,8 @@ export function SearchableSelect({
                         onMouseEnter={() => setHighlightedIndex(filteredOptions.findIndex((item) => item.value === option.value))}
                         onClick={() => selectOption(option)}
                       >
-                        <Check className={cn('mr-2 h-4 w-4', value === option.value ? 'opacity-100' : 'opacity-0')} />
-                        <span className="truncate">{option.label}</span>
+                        <Check className={cn('mr-2 h-4 w-4 shrink-0', value === option.value ? 'opacity-100' : 'opacity-0')} />
+                        <span className="whitespace-nowrap">{option.label}</span>
                       </button>
                     ))
                   )}

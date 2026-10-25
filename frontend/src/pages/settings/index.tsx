@@ -4,18 +4,12 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowUpRight,
   BadgeCheck,
-  Building2,
   FileText,
   HardDrive,
   Eye,
   FileImage,
-  Globe,
   Image,
   Loader2,
-  Mail,
-  MapPin,
-  Phone,
-  PlugZap,
   Save,
   Upload,
 } from "lucide-react";
@@ -314,7 +308,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <MasterDataPageShell
         title="Settings"
         subtitle="Pusat konfigurasi aplikasi, branding, dokumen cetak, dan pengaturan integrasi eksternal."
@@ -407,44 +401,38 @@ export default function SettingsPage() {
       >
         <MasterDataLegacySections>
           <div className="space-y-6">
-            <section className="space-y-4 rounded-lg border border-border/80 p-5">
-              <div className="space-y-1">
-                <h2 className="text-sm font-semibold tracking-tight">Application</h2>
+            <section className="space-y-3 border border-border/70 p-4">
+              <div className="space-y-0.5">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Application</h2>
                 <p className="text-[11px] leading-5 text-muted-foreground">Atur identitas utama aplikasi yang dipakai di sidebar, judul halaman, dan area login.</p>
               </div>
 
-              <div className="grid gap-5 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="appName" className="flex items-center gap-2 text-xs font-medium">
-                    <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                    Application Name
-                  </Label>
-                  <Input id="appName" value={appName} onChange={(event) => setAppName(event.target.value)} placeholder="SIMKLINIK" className="h-10 text-sm" />
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-1">
+                  <Label htmlFor="appName" className="text-xs font-medium">Application Name</Label>
+                  <Input id="appName" value={appName} onChange={(event) => setAppName(event.target.value)} placeholder="SIMKLINIK" className="h-9 text-xs rounded-none" />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="appSubtitle" className="flex items-center gap-2 text-xs font-medium">
-                    <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                    Application Subtitle
-                  </Label>
-                  <Input id="appSubtitle" value={appSubtitle} onChange={(event) => setAppSubtitle(event.target.value)} placeholder="Sistem Informasi Manajemen Klinik" className="h-10 text-sm" />
+                <div className="space-y-1">
+                  <Label htmlFor="appSubtitle" className="text-xs font-medium">Application Subtitle</Label>
+                  <Input id="appSubtitle" value={appSubtitle} onChange={(event) => setAppSubtitle(event.target.value)} placeholder="Sistem Informasi Manajemen Klinik" className="h-9 text-xs rounded-none" />
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={handleSaveAppSettings} disabled={loading} className="rounded-none shadow-none">
-                  {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button size="sm" onClick={handleSaveAppSettings} disabled={loading} className="h-8 px-4 text-xs rounded-none shadow-none">
+                  {loading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1.5 h-3.5 w-3.5" />}
                   Simpan Application
                 </Button>
               </div>
             </section>
 
-            <section className="space-y-4 rounded-lg border border-border/80 p-5">
-              <div className="space-y-1">
-                <h2 className="text-sm font-semibold tracking-tight">Branding Assets</h2>
+            <section className="space-y-3 border border-border/70 p-4">
+              <div className="space-y-0.5">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Branding Assets</h2>
                 <p className="text-[11px] leading-5 text-muted-foreground">Upload logo, favicon, dan logo khusus dokumen cetak. Seluruh aset disimpan di server dan dipakai lintas halaman.</p>
               </div>
 
-              <div className="grid gap-4 xl:grid-cols-3">
+              <div className="grid gap-3 xl:grid-cols-3">
                 <AssetUploadCard
                   title="Application Logo"
                   description="Digunakan di sidebar dan halaman login."
@@ -456,7 +444,7 @@ export default function SettingsPage() {
                   onClick={() => logoInputRef.current?.click()}
                 >
                   <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/jpg,image/svg+xml" onChange={handleUploadLogo} className="hidden" />
-                  <p className="text-xs text-muted-foreground">PNG, JPG, atau SVG. Disarankan latar transparan.</p>
+                  <p className="text-[11px] text-muted-foreground">PNG, JPG, atau SVG. Disarankan latar transparan.</p>
                 </AssetUploadCard>
 
                 <AssetUploadCard
@@ -470,7 +458,7 @@ export default function SettingsPage() {
                   onClick={() => faviconInputRef.current?.click()}
                 >
                   <input ref={faviconInputRef} type="file" accept="image/png,image/jpeg,image/jpg,image/x-icon,image/ico" onChange={handleUploadFavicon} className="hidden" />
-                  <p className="text-xs text-muted-foreground">ICO, PNG, atau JPG. 32x32 atau 64x64 direkomendasikan.</p>
+                  <p className="text-[11px] text-muted-foreground">ICO, PNG, atau JPG. 32x32 atau 64x64 direkomendasikan.</p>
                 </AssetUploadCard>
 
                 <AssetUploadCard
@@ -484,133 +472,124 @@ export default function SettingsPage() {
                   onClick={() => printLogoInputRef.current?.click()}
                 >
                   <input ref={printLogoInputRef} type="file" accept="image/png,image/jpeg,image/jpg" onChange={handleUploadPrintLogo} className="hidden" />
-                  <p className="text-xs text-muted-foreground">Gunakan PNG atau JPG agar render PDF backend tetap stabil.</p>
+                  <p className="text-[11px] text-muted-foreground">Gunakan PNG atau JPG agar render PDF backend tetap stabil.</p>
                 </AssetUploadCard>
               </div>
             </section>
 
-            <section className="space-y-4 rounded-lg border border-border/80 p-5">
-              <div className="space-y-1">
-                <h2 className="text-sm font-semibold tracking-tight">Versioning</h2>
-                <p className="text-[11px] leading-5 text-muted-foreground">Halaman versioning v1 merangkum versi aktif berdasarkan fitur SIMKLINIK yang memang sudah berjalan sekarang, sehingga support dan operasional punya referensi scope yang lebih jelas.</p>
+            <section className="space-y-3 border border-border/70 p-4">
+              <div className="space-y-0.5">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Versioning</h2>
+                <p className="text-[11px] leading-5 text-muted-foreground">Halaman versioning v1 merangkum versi aktif berdasarkan fitur SIMKLINIK yang memang sudah berjalan sekarang.</p>
               </div>
 
-              <div className="flex flex-col gap-4 rounded-lg border border-dashed p-4 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <BadgeCheck className="h-4 w-4 text-muted-foreground" />
-                    Ringkasan versi aktif dan cakupan fitur
-                  </div>
-                  <p className="text-sm text-muted-foreground">Cocok untuk mengecek modul yang sudah masuk versi berjalan tanpa mencampur roadmap atau fitur yang belum mandatory.</p>
+              <div className="flex flex-col gap-3 border border-border/70 p-3 md:flex-row md:items-center md:justify-between bg-muted/10">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-medium">Ringkasan versi aktif dan cakupan fitur</div>
+                  <p className="text-[11px] text-muted-foreground">Mengecek modul yang sudah masuk versi berjalan tanpa mencampur roadmap.</p>
                 </div>
-                <Button asChild variant="outline" className="rounded-none shadow-none">
+                <Button asChild size="sm" variant="outline" className="h-8 text-xs rounded-none shadow-none">
                   <Link to="/settings/versioning">
                     Buka Halaman Versioning
-                    <ArrowUpRight className="ml-2 h-4 w-4" />
+                    <ArrowUpRight className="ml-1.5 h-3.5 w-3.5" />
                   </Link>
                 </Button>
               </div>
             </section>
 
-            <section className="space-y-4 rounded-lg border border-border/80 p-5">
-              <div className="space-y-1">
-                <h2 className="text-sm font-semibold tracking-tight">Terms & Conditions</h2>
-                <p className="text-[11px] leading-5 text-muted-foreground">Halaman ini merangkum ketentuan penggunaan SIMKLINIK untuk user internal, termasuk disiplin akses akun, pengelolaan data pasien, alur operasional, backup, dan integrasi eksternal.</p>
+            <section className="space-y-3 border border-border/70 p-4">
+              <div className="space-y-0.5">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Terms & Conditions</h2>
+                <p className="text-[11px] leading-5 text-muted-foreground">Ketentuan penggunaan SIMKLINIK untuk user internal, pengelolaan data pasien, dan alur operasional.</p>
               </div>
 
-              <div className="flex flex-col gap-4 rounded-lg border border-dashed p-4 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <FileText className="h-4 w-4 text-muted-foreground" />
-                    Ketentuan penggunaan aplikasi operasional klinik
-                  </div>
-                  <p className="text-sm text-muted-foreground">Cocok dipakai sebagai referensi internal saat onboarding user, review SOP digital, atau validasi tanggung jawab penggunaan sistem.</p>
+              <div className="flex flex-col gap-3 border border-border/70 p-3 md:flex-row md:items-center md:justify-between bg-muted/10">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-medium">Ketentuan penggunaan aplikasi operasional klinik</div>
+                  <p className="text-[11px] text-muted-foreground">Dipakai sebagai referensi internal saat onboarding user atau review SOP digital.</p>
                 </div>
-                <Button asChild variant="outline" className="rounded-none shadow-none">
+                <Button asChild size="sm" variant="outline" className="h-8 text-xs rounded-none shadow-none">
                   <Link to="/settings/terms-and-conditions">
                     Buka Terms & Conditions
-                    <ArrowUpRight className="ml-2 h-4 w-4" />
+                    <ArrowUpRight className="ml-1.5 h-3.5 w-3.5" />
                   </Link>
                 </Button>
               </div>
             </section>
 
             {canAccessIntegrations ? (
-              <section className="space-y-4 rounded-lg border border-border/80 p-5">
-                <div className="space-y-1">
-                  <h2 className="text-sm font-semibold tracking-tight">Integrations</h2>
-                  <p className="text-[11px] leading-5 text-muted-foreground">Ruang konfigurasi integrasi sistem eksternal. SATUSEHAT sudah tersedia, dan provider berikutnya bisa ditambahkan tanpa mengubah struktur halaman.</p>
+              <section className="space-y-3 border border-border/70 p-4">
+                <div className="space-y-0.5">
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Integrations</h2>
+                  <p className="text-[11px] leading-5 text-muted-foreground">Ruang konfigurasi integrasi sistem eksternal seperti SATUSEHAT dan BPJS.</p>
                 </div>
 
-                <div className="flex flex-col gap-4 rounded-lg border border-dashed p-4 md:flex-row md:items-center md:justify-between">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      <PlugZap className="h-4 w-4 text-muted-foreground" />
-                      SATUSEHAT dan katalog integrasi
-                    </div>
-                    <p className="text-sm text-muted-foreground">Endpoint autentikasi, base URL FHIR, organization ID, client ID, dan client secret dikelola terpisah di halaman integrasi.</p>
+                <div className="flex flex-col gap-3 border border-border/70 p-3 md:flex-row md:items-center md:justify-between bg-muted/10">
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-medium">SATUSEHAT dan katalog integrasi</div>
+                    <p className="text-[11px] text-muted-foreground">Endpoint autentikasi, base URL FHIR, organization ID, client ID, dan client secret.</p>
                   </div>
-                  <Button asChild variant="outline" className="rounded-none shadow-none">
+                  <Button asChild size="sm" variant="outline" className="h-8 text-xs rounded-none shadow-none">
                     <Link to="/settings/integrations">
                       Buka Halaman Integrasi
-                      <ArrowUpRight className="ml-2 h-4 w-4" />
+                      <ArrowUpRight className="ml-1.5 h-3.5 w-3.5" />
                     </Link>
                   </Button>
                 </div>
               </section>
             ) : null}
 
-            <section className="space-y-4 rounded-lg border border-border/80 p-5">
-              <div className="space-y-1">
-                <h2 className="text-sm font-semibold tracking-tight">Print Header / KOP</h2>
-                <p className="text-[11px] leading-5 text-muted-foreground">Konfigurasi identitas fasilitas yang dipakai oleh dokumen PDF backend. Preview di bawah meniru struktur kertas cetak agar hasil lebih mudah divalidasi.</p>
+            <section className="space-y-3 border border-border/70 p-4">
+              <div className="space-y-0.5">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Print Header / KOP</h2>
+                <p className="text-[11px] leading-5 text-muted-foreground">Konfigurasi identitas fasilitas yang dipakai oleh dokumen PDF backend.</p>
               </div>
 
-              <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-                <div className="space-y-5">
-                  <div className="space-y-2">
-                    <Label htmlFor="hospitalName" className="flex items-center gap-2 text-xs font-medium"><Building2 className="h-3.5 w-3.5 text-muted-foreground" />Nama Klinik / RS</Label>
-                    <Input id="hospitalName" value={hospitalName} onChange={(event) => setHospitalName(event.target.value)} placeholder="Klinik Utama Sehat" className="h-10 text-sm" />
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="hospitalName" className="text-xs font-medium">Nama Klinik / RS</Label>
+                    <Input id="hospitalName" value={hospitalName} onChange={(event) => setHospitalName(event.target.value)} placeholder="Klinik Utama Sehat" className="h-9 text-xs rounded-none" />
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="hospitalAddress" className="flex items-center gap-2 text-xs font-medium"><MapPin className="h-3.5 w-3.5 text-muted-foreground" />Alamat</Label>
-                    <Textarea id="hospitalAddress" value={hospitalAddress} onChange={(event) => setHospitalAddress(event.target.value)} placeholder="Jl. Contoh No. 1, Kelurahan, Kecamatan" rows={3} />
+                  <div className="space-y-1">
+                    <Label htmlFor="hospitalAddress" className="text-xs font-medium">Alamat</Label>
+                    <Textarea id="hospitalAddress" value={hospitalAddress} onChange={(event) => setHospitalAddress(event.target.value)} placeholder="Jl. Contoh No. 1, Kelurahan, Kecamatan" rows={2} className="text-xs rounded-none" />
                   </div>
 
-                  <div className="grid gap-5 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="hospitalCity" className="flex items-center gap-2 text-xs font-medium"><MapPin className="h-3.5 w-3.5 text-muted-foreground" />Kota / Kabupaten</Label>
-                      <Input id="hospitalCity" value={hospitalCity} onChange={(event) => setHospitalCity(event.target.value)} placeholder="Bojonegoro" className="h-10 text-sm" />
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <Label htmlFor="hospitalCity" className="text-xs font-medium">Kota / Kabupaten</Label>
+                      <Input id="hospitalCity" value={hospitalCity} onChange={(event) => setHospitalCity(event.target.value)} placeholder="Bojonegoro" className="h-9 text-xs rounded-none" />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="hospitalPhone" className="flex items-center gap-2 text-xs font-medium"><Phone className="h-3.5 w-3.5 text-muted-foreground" />Telepon</Label>
-                      <Input id="hospitalPhone" value={hospitalPhone} onChange={(event) => setHospitalPhone(event.target.value)} placeholder="(0353) 123456" className="h-10 text-sm" />
-                    </div>
-                  </div>
-
-                  <div className="grid gap-5 md:grid-cols-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="hospitalFax" className="flex items-center gap-2 text-xs font-medium"><Phone className="h-3.5 w-3.5 text-muted-foreground" />Fax</Label>
-                      <Input id="hospitalFax" value={hospitalFax} onChange={(event) => setHospitalFax(event.target.value)} placeholder="(0353) 123457" className="h-10 text-sm" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="hospitalEmail" className="flex items-center gap-2 text-xs font-medium"><Mail className="h-3.5 w-3.5 text-muted-foreground" />Email</Label>
-                      <Input id="hospitalEmail" value={hospitalEmail} onChange={(event) => setHospitalEmail(event.target.value)} placeholder="info@klinik.co.id" className="h-10 text-sm" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="hospitalWebsite" className="flex items-center gap-2 text-xs font-medium"><Globe className="h-3.5 w-3.5 text-muted-foreground" />Website</Label>
-                      <Input id="hospitalWebsite" value={hospitalWebsite} onChange={(event) => setHospitalWebsite(event.target.value)} placeholder="www.klinik.co.id" className="h-10 text-sm" />
+                    <div className="space-y-1">
+                      <Label htmlFor="hospitalPhone" className="text-xs font-medium">Telepon</Label>
+                      <Input id="hospitalPhone" value={hospitalPhone} onChange={(event) => setHospitalPhone(event.target.value)} placeholder="(0353) 123456" className="h-9 text-xs rounded-none" />
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-2">
-                    <Button onClick={handleSaveHospitalSettings} disabled={savingHospitalSettings} className="rounded-none shadow-none">
-                      {savingHospitalSettings ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="space-y-1">
+                      <Label htmlFor="hospitalFax" className="text-xs font-medium">Fax</Label>
+                      <Input id="hospitalFax" value={hospitalFax} onChange={(event) => setHospitalFax(event.target.value)} placeholder="(0353) 123457" className="h-9 text-xs rounded-none" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="hospitalEmail" className="text-xs font-medium">Email</Label>
+                      <Input id="hospitalEmail" value={hospitalEmail} onChange={(event) => setHospitalEmail(event.target.value)} placeholder="info@klinik.co.id" className="h-9 text-xs rounded-none" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="hospitalWebsite" className="text-xs font-medium">Website</Label>
+                      <Input id="hospitalWebsite" value={hospitalWebsite} onChange={(event) => setHospitalWebsite(event.target.value)} placeholder="www.klinik.co.id" className="h-9 text-xs rounded-none" />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <Button size="sm" onClick={handleSaveHospitalSettings} disabled={savingHospitalSettings} className="h-8 px-4 text-xs rounded-none shadow-none">
+                      {savingHospitalSettings ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1.5 h-3.5 w-3.5" />}
                       Simpan KOP
                     </Button>
-                    <Button variant="outline" onClick={openPrintHeaderPreview} disabled={previewingHospitalPdf} className="rounded-none shadow-none">
-                      {previewingHospitalPdf ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}
+                    <Button size="sm" variant="outline" onClick={openPrintHeaderPreview} disabled={previewingHospitalPdf} className="h-8 px-3 text-xs rounded-none shadow-none">
+                      {previewingHospitalPdf ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Eye className="mr-1.5 h-3.5 w-3.5" />}
                       Lihat Contoh PDF
                     </Button>
                   </div>

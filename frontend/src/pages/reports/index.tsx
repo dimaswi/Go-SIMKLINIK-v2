@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { ArrowUpDown, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
+import { ArrowUpDown, Calendar, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
-import { Input } from '@/components/ui/input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { downloadBlobResponse } from '@/lib/blob-download';
 import {
@@ -145,34 +144,34 @@ function formatCellValue(value: unknown, column: ReportCenterColumn) {
 }
 
 function getColumnSize(column: ReportCenterColumn) {
-  if (column.key.includes('name')) return 240;
-  if (column.key.includes('number') || column.key.includes('date')) return 150;
-  if (column.key.includes('status') || column.kind === 'badge') return 140;
-  if (column.kind === 'currency') return 150;
-  if (column.kind === 'number') return 120;
-  if (column.key.includes('code')) return 120;
-  if (column.key.includes('type') || column.key.includes('group') || column.key.includes('category')) return 150;
-  return 170;
+  if (column.key.includes('name') || column.key.includes('diagnos') || column.key === 'label') return 260;
+  if (column.key.includes('number') || column.key.includes('date')) return 140;
+  if (column.key.includes('status') || column.kind === 'badge') return 120;
+  if (column.kind === 'currency') return 140;
+  if (column.kind === 'number') return 80;
+  if (column.key.includes('code') || column.key === 'icd10') return 110;
+  if (column.key.includes('type') || column.key.includes('group') || column.key.includes('category')) return 140;
+  return 140;
 }
 
 function getColumnMeta(column: ReportCenterColumn): ReportColumnMeta {
   if (column.kind === 'currency' || column.kind === 'number') {
     return {
-      headerClassName: 'text-right',
-      cellClassName: 'text-right tabular-nums',
+      headerClassName: 'py-2 px-3 text-xs font-semibold text-right',
+      cellClassName: 'py-2 px-3 text-xs align-middle text-right tabular-nums',
     };
   }
 
   if (column.kind === 'badge' || column.kind === 'date') {
     return {
-      headerClassName: 'text-center',
-      cellClassName: 'text-center',
+      headerClassName: 'py-2 px-3 text-xs font-semibold text-center',
+      cellClassName: 'py-2 px-3 text-xs align-middle text-center',
     };
   }
 
   return {
-    headerClassName: 'text-left',
-    cellClassName: 'truncate',
+    headerClassName: 'py-2 px-3 text-xs font-semibold text-left',
+    cellClassName: 'py-2 px-3 text-xs align-middle truncate',
   };
 }
 
@@ -186,40 +185,41 @@ function createColumns(columns: ReportCenterColumn[]): ColumnDef<Record<string, 
         : 'justify-start text-left';
 
     return ({
-    accessorKey: column.key,
-    size: getColumnSize(column),
-    minSize: Math.min(getColumnSize(column), 110),
-    meta: columnMeta,
-    header: ({ column: tableColumn }) => (
-      <Button
-        variant="ghost"
-        className={cn('flex h-8 w-full px-0 hover:bg-transparent', alignClassName)}
-        onClick={() => tableColumn.toggleSorting(tableColumn.getIsSorted() === 'asc')}
-      >
-        {column.label}
-        <ArrowUpDown className="ml-2 h-4 w-4 shrink-0" />
-      </Button>
-    ),
-    cell: ({ row }) => {
-      const value = row.original[column.key];
-      if (isCategoricalBadgeColumn(column)) {
-        return <Badge variant="outline" className={cn('max-w-full rounded-none shadow-none', badgeClassName(value))}>{formatCellValue(value, column)}</Badge>;
-      }
-
-      return (
-        <div className={cn(
-          'w-full',
-          column.kind === 'currency' || column.kind === 'number'
-            ? 'text-right font-medium tabular-nums'
-            : column.kind === 'date'
-              ? 'text-center'
-              : 'truncate text-left',
-        )}
+      accessorKey: column.key,
+      size: getColumnSize(column),
+      minSize: Math.min(getColumnSize(column), 80),
+      meta: columnMeta,
+      header: ({ column: tableColumn }) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn('flex h-7 items-center gap-1.5 px-0 text-xs font-semibold hover:bg-transparent text-foreground hover:text-primary', alignClassName)}
+          onClick={() => tableColumn.toggleSorting(tableColumn.getIsSorted() === 'asc')}
         >
-          {formatCellValue(value, column)}
-        </div>
-      );
-    },
+          <span>{column.label}</span>
+          <ArrowUpDown className="h-3 w-3 shrink-0 opacity-50" />
+        </Button>
+      ),
+      cell: ({ row }) => {
+        const value = row.original[column.key];
+        if (isCategoricalBadgeColumn(column)) {
+          return <Badge variant="outline" className={cn('max-w-full rounded-none shadow-none text-[10px] py-0 px-1.5', badgeClassName(value))}>{formatCellValue(value, column)}</Badge>;
+        }
+
+        return (
+          <div className={cn(
+            'w-full text-xs',
+            column.kind === 'currency' || column.kind === 'number'
+              ? 'text-right font-medium tabular-nums'
+              : column.kind === 'date'
+                ? 'text-center'
+                : 'truncate text-left',
+          )}
+          >
+            {formatCellValue(value, column)}
+          </div>
+        );
+      },
     });
   });
 }
@@ -327,75 +327,118 @@ export default function ReportsIndex() {
   const columns = useMemo(() => createColumns(activeDataset?.columns || []), [activeDataset?.columns]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden p-4">
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ReportCenterType)} className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-        {/* Unified Header: Tabs on Left, Date Period on Right */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 pb-2">
-          <div className="shrink-0 overflow-x-auto">
-            <TabsList className="flex h-auto min-w-max gap-0 bg-transparent p-0 text-muted-foreground md:min-w-full">
+    <div className="p-4 md:p-6">
+      <div className="border border-border/70 bg-card shadow-none">
+        {/* Card Header Bar */}
+        <div className="flex flex-col gap-3 p-4 border-b border-border/70 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="flex h-9 w-9 items-center justify-center border border-border/70 bg-muted/20">
+              <FileSpreadsheet className="h-4 w-4 text-primary" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-sm sm:text-base font-bold tracking-tight text-foreground">
+                  Laporan & Rekapitulasi Klinik
+                </h1>
+                <Badge variant="outline" className="rounded-none text-[10px] uppercase font-semibold text-primary border-primary/30 bg-primary/5 shadow-none">
+                  {activeMeta.label}
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {activeMeta.description}
+              </p>
+            </div>
+          </div>
+
+          {/* Right Header Controls: Period Date Inputs + Export Buttons */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 border border-border/70 bg-background px-2.5 py-1 text-xs">
+              <Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Periode:</span>
+              <input
+                type="date"
+                value={reportStartDate}
+                onChange={(event) => setReportStartDate(event.target.value)}
+                className="h-6 w-[115px] border-0 bg-transparent text-xs outline-none focus:ring-0 p-0 text-foreground"
+              />
+              <span className="text-muted-foreground">-</span>
+              <input
+                type="date"
+                value={reportEndDate}
+                onChange={(event) => setReportEndDate(event.target.value)}
+                className="h-6 w-[115px] border-0 bg-transparent text-xs outline-none focus:ring-0 p-0 text-foreground"
+              />
+            </div>
+            {rangeError ? <span className="text-xs text-destructive">{rangeError}</span> : null}
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-none px-3 text-xs shadow-none shrink-0"
+              onClick={() => void handleDownload('pdf')}
+              disabled={loading || exportingFormat !== null}
+            >
+              {exportingFormat === 'pdf' ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <FileText className="mr-1.5 h-3.5 w-3.5" />}
+              Export PDF
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 rounded-none px-3 text-xs shadow-none shrink-0"
+              onClick={() => void handleDownload('excel')}
+              disabled={loading || exportingFormat !== null}
+            >
+              {exportingFormat === 'excel' ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5" />}
+              Export Excel
+            </Button>
+          </div>
+        </div>
+
+        {/* Tab Strip */}
+        <div className="border-b border-border/70 bg-muted/15 px-4 pt-1.5 overflow-x-auto">
+          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ReportCenterType)}>
+            <TabsList className="flex h-auto w-full justify-start gap-1 bg-transparent p-0 text-muted-foreground">
               {reportTabs.map((tab) => (
                 <TabsTrigger
                   key={tab.value}
                   value={tab.value}
-                  className="-mb-px rounded-none border-b-2 border-transparent px-4 pb-2 pt-1 text-sm font-medium data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
+                  className="rounded-none border-b-2 border-transparent px-3.5 py-2 text-xs font-medium data-[state=active]:border-primary data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-none data-[state=active]:font-semibold transition-all whitespace-nowrap"
                 >
                   {tab.shortLabel}
                 </TabsTrigger>
               ))}
             </TabsList>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs text-muted-foreground">Periode:</span>
-              <Input type="date" value={reportStartDate} onChange={(event) => setReportStartDate(event.target.value)} className="h-8 w-[135px] rounded-none text-xs" />
-              <span className="text-xs text-muted-foreground">-</span>
-              <Input type="date" value={reportEndDate} onChange={(event) => setReportEndDate(event.target.value)} className="h-8 w-[135px] rounded-none text-xs" />
-            </div>
-            {rangeError ? <span className="text-xs text-rose-700">{rangeError}</span> : null}
-          </div>
+          </Tabs>
         </div>
 
-        <TabsContent value={activeTab} className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden outline-none">
-          <div className="min-h-0 flex-1 overflow-hidden">
-            {loading ? (
-              <div className="flex h-full min-h-[320px] items-center justify-center border border-dashed border-border/70">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              </div>
-            ) : (
-              <DataTable
-                className="h-full"
-                columns={columns}
-                data={activeDataset?.rows || []}
-                fixedLayout
-                searchPlaceholder={`Cari data ${activeMeta.shortLabel.toLowerCase()}...`}
-                pageSize={10}
-                showColumnVisibility={false}
-                showSelectionSummary={false}
-                emptyMessage="Tidak ada data pada periode ini."
-                toolbarActions={
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button type="button" variant="outline" className="h-9 rounded-none" onClick={() => void handleDownload('pdf')} disabled={loading || exportingFormat !== null}>
-                      {exportingFormat === 'pdf' ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <FileText className="mr-1.5 h-4 w-4" />}
-                      Export PDF
-                    </Button>
-                    <Button type="button" className="h-9 rounded-none" onClick={() => void handleDownload('excel')} disabled={loading || exportingFormat !== null}>
-                      {exportingFormat === 'excel' ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-1.5 h-4 w-4" />}
-                      Export Excel
-                    </Button>
-                    <Badge variant="outline" className="rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.14em]">
-                      {formatNumber((activeDataset?.rows || []).length)} baris
-                    </Badge>
-                    <Badge variant="outline" className="rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.14em]">
-                      {activeMeta.label}
-                    </Badge>
-                  </div>
-                }
-              />
-            )}
-          </div>
-        </TabsContent>
-      </Tabs>
+        {/* Table Content Area */}
+        <div className="p-0">
+          {loading ? (
+            <div className="flex h-64 items-center justify-center">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : (
+            <DataTable
+              columns={columns}
+              data={activeDataset?.rows || []}
+              searchPlaceholder={`Cari data ${activeMeta.shortLabel.toLowerCase()}...`}
+              pageSize={10}
+              showColumnVisibility={false}
+              showSelectionSummary={false}
+              borderless
+              emptyMessage="Tidak ada data pada periode ini."
+              toolbarActions={
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="rounded-none border-border/70 bg-muted/30 px-2.5 py-1 text-[11px] font-mono shadow-none">
+                    {formatNumber((activeDataset?.rows || []).length)} baris data
+                  </Badge>
+                </div>
+              }
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 }

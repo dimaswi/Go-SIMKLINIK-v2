@@ -199,7 +199,7 @@ export default function OperationsGuidePage() {
   const filePageCount = Math.max(1, Math.ceil(filesTotal / FILES_PER_PAGE));
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <MasterDataPageShell
         title="Monitoring Backup Dan Storage"
         subtitle="Dashboard operasional untuk memantau kapasitas penyimpanan, mengatur auto backup, menjalankan backup manual, dan mengunduh file backup yang dibuat sistem."

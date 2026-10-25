@@ -208,9 +208,6 @@ export default function DoctorsPage() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 Data Dokter
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Kelola master data dokter, spesialisasi, dan SIP ({filteredDoctors.length} dokter)
-              </p>
             </div>
           </div>
 

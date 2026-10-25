@@ -15,4 +15,14 @@ type RegistrationQueue struct {
 	CancelledAt         *time.Time `json:"cancelled_at,omitempty"`
 	VisitID             *uint      `gorm:"index" json:"visit_id,omitempty"`
 	Visit               *Visit     `gorm:"foreignKey:VisitID" json:"visit,omitempty"`
+	NIK                 string     `gorm:"size:20;index" json:"nik"`
+	PatientName         string     `gorm:"size:150" json:"patient_name"`
+	Phone               string     `gorm:"size:30" json:"phone"`
+	PatientID           *uint       `gorm:"index" json:"patient_id,omitempty"`
+	Patient             *Patient    `gorm:"foreignKey:PatientID" json:"patient,omitempty"`
+	PolyclinicID        *uint       `gorm:"index" json:"polyclinic_id,omitempty"`
+	Polyclinic          *Polyclinic `gorm:"foreignKey:PolyclinicID" json:"polyclinic,omitempty"`
+	DoctorID            *uint       `gorm:"index" json:"doctor_id,omitempty"`
+	Doctor              *Doctor     `gorm:"foreignKey:DoctorID" json:"doctor,omitempty"`
+	IsNewPatient        bool        `gorm:"default:false" json:"is_new_patient"`
 }

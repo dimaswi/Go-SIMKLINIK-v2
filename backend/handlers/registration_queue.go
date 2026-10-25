@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"starter/backend/database"
@@ -46,6 +48,9 @@ func parseRegistrationQueueDate(c *gin.Context) (time.Time, string, error) {
 
 func registrationQueueQuery() *gorm.DB {
 	return database.DB.
+		Preload("Patient").
+		Preload("Polyclinic").
+		Preload("Doctor").
 		Preload("Visit").
 		Preload("Visit.Patient").
 		Preload("Visit.Polyclinic").
@@ -135,12 +140,104 @@ func DeleteRegistrationQueue(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Antrian pendaftaran berhasil dihapus"})
 }
 
+type CreateRegistrationQueueRequest struct {
+	NIK          string `json:"nik"`
+	PatientName  string `json:"patient_name"`
+	Phone        string `json:"phone"`
+	PolyclinicID *uint  `json:"polyclinic_id"`
+	DoctorID     *uint  `json:"doctor_id"`
+}
+
 func CreateRegistrationQueue(c *gin.Context) {
+	var req CreateRegistrationQueueRequest
+	_ = c.ShouldBindJSON(&req)
+
+	nik := strings.TrimSpace(req.NIK)
+	name := strings.TrimSpace(req.PatientName)
+	phone := strings.TrimSpace(req.Phone)
+
 	now := time.Now()
+	var patientID *uint
+	isNewPatient := false
+
+	if nik != "" {
+		var existingPatient models.Patient
+		if err := database.DB.Where("nik = ?", nik).First(&existingPatient).Error; err == nil {
+			patientID = &existingPatient.ID
+			if name == "" {
+				name = existingPatient.FullName
+			}
+			if phone == "" {
+				phone = existingPatient.Phone
+			}
+
+			// Validate if patient already has an active visit not finished until billing
+			activeVisit, err := FindActiveVisitForPatient(database.DB, existingPatient.ID)
+			if err == nil && activeVisit != nil {
+				poliName := "Poli"
+				if activeVisit.Polyclinic.Name != "" {
+					poliName = activeVisit.Polyclinic.Name
+				}
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": fmt.Sprintf("Pasien %s masih memiliki pendaftaran aktif di %s (%s) yang belum selesai sampai billing. Selesaikan transaksi billing terlebih dahulu.", existingPatient.FullName, poliName, activeVisit.VisitNumber),
+				})
+				return
+			}
+
+			var visitCount int64
+			database.DB.Model(&models.Visit{}).Where("patient_id = ?", existingPatient.ID).Count(&visitCount)
+			isNewPatient = (visitCount == 0)
+		} else {
+			// Pasien belum terdaftar -> buat rekam medis baru secara otomatis
+			err := database.DB.Transaction(func(tx *gorm.DB) error {
+				newID, mrn, err := reservePatientIdentity(tx)
+				if err != nil {
+					return err
+				}
+
+				if name == "" {
+					name = "Pasien Baru (" + mrn + ")"
+				}
+
+				newPatient := models.Patient{
+					ID:                  newID,
+					MedicalRecordNumber: mrn,
+					NIK:                 nik,
+					FullName:            name,
+					Phone:               phone,
+					IsActive:            true,
+					Gender:              "L",
+				}
+
+				if err := tx.Create(&newPatient).Error; err != nil {
+					return err
+				}
+
+				patientID = &newPatient.ID
+				isNewPatient = true
+				return nil
+			})
+
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mendaftarkan pasien baru: " + err.Error()})
+				return
+			}
+		}
+	} else if name != "" {
+		isNewPatient = true
+	}
+
 	queue := models.RegistrationQueue{
 		QueueDate:    now,
 		TicketNumber: getNextRegistrationTicketNumber(now),
 		Status:       "waiting",
+		NIK:          nik,
+		PatientName:  name,
+		Phone:        phone,
+		PatientID:    patientID,
+		PolyclinicID: req.PolyclinicID,
+		DoctorID:     req.DoctorID,
+		IsNewPatient: isNewPatient,
 	}
 
 	if err := database.DB.Create(&queue).Error; err != nil {
@@ -246,10 +343,10 @@ func UpdateRegistrationQueueStatus(c *gin.Context) {
 	case "called":
 		updates["called_at"] = &now
 	case "processing":
-		if queue.CalledAt == nil {
-			updates["called_at"] = &now
+		updates["called_at"] = &now
+		if queue.ProcessingStartedAt == nil {
+			updates["processing_started_at"] = &now
 		}
-		updates["processing_started_at"] = &now
 	case "completed":
 		if req.VisitID == nil || *req.VisitID == 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "visit_id wajib diisi saat menyelesaikan tiket"})
@@ -262,9 +359,7 @@ func UpdateRegistrationQueueStatus(c *gin.Context) {
 			return
 		}
 
-		if queue.CalledAt == nil {
-			updates["called_at"] = &now
-		}
+		updates["called_at"] = &now
 		if queue.ProcessingStartedAt == nil {
 			updates["processing_started_at"] = &now
 		}

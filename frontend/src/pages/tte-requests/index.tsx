@@ -9,7 +9,7 @@ import { api, tteApi, type TteInboxItem } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { setPageTitle } from "@/lib/page-title";
 import { notifyTTEBadgeRefresh } from "@/lib/tte-badge-events";
-import { cn } from "@/lib/utils";
+import { cn, getLocalISODate } from "@/lib/utils";
 
 function formatDateTime(value?: string | null) {
   if (!value) return "-";
@@ -58,6 +58,7 @@ export default function TTERequestsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
   const [search, setSearch] = useState("");
+  const [dateFilter, setDateFilter] = useState(getLocalISODate());
   const [approvingId, setApprovingId] = useState<number | null>(null);
   const [previewingId, setPreviewingId] = useState<number | null>(null);
 
@@ -327,9 +328,16 @@ export default function TTERequestsPage() {
   const displayedList = activeTab === "pending" ? pendingRequests : historyRequests;
 
   const filteredData = useMemo(() => {
-    if (!search.trim()) return displayedList;
+    let list = displayedList;
+    if (dateFilter) {
+      list = list.filter((item) => {
+        const itemDate = (item.requested_at || item.signed_at || '')?.slice(0, 10);
+        return itemDate === dateFilter;
+      });
+    }
+    if (!search.trim()) return list;
     const q = search.toLowerCase();
-    return displayedList.filter((item) =>
+    return list.filter((item) =>
       item.document_label?.toLowerCase().includes(q) ||
       item.patient_name?.toLowerCase().includes(q) ||
       item.visit_number?.toLowerCase().includes(q) ||
@@ -337,7 +345,7 @@ export default function TTERequestsPage() {
       item.signer_name?.toLowerCase().includes(q) ||
       item.requested_by_name?.toLowerCase().includes(q)
     );
-  }, [displayedList, search]);
+  }, [dateFilter, displayedList, search]);
 
   if (loading) {
     return (
@@ -359,11 +367,6 @@ export default function TTERequestsPage() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 Permintaan TTE
               </h1>
-              <p className="text-xs text-muted-foreground">
-                {activeTab === "pending"
-                  ? `Daftar permintaan persetujuan tanda tangan elektronik (${pendingRequests.length} menunggu)`
-                  : `Riwayat permintaan tanda tangan elektronik (${historyRequests.length} riwayat)`}
-              </p>
             </div>
           </div>
 
@@ -398,6 +401,14 @@ export default function TTERequestsPage() {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Cari dokumen, pasien, dokter..."
               className="h-9 w-52 sm:w-60 rounded-none text-xs focus:ring-inset"
+            />
+
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="h-9 w-36 border border-border bg-background px-2.5 text-xs outline-none focus:ring-1 focus:ring-ring shrink-0"
+              title="Filter tanggal permintaan TTE"
             />
 
             <Button

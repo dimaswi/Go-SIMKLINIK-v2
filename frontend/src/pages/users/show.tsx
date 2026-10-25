@@ -12,7 +12,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
-import { MasterDataAsideSection, MasterDataAsideStack, MasterDataDetailItem, MasterDataPageShell, MasterDataSection, formatMasterDataDateTime } from '@/pages/master-data/shared';
+import { HeaderActionButton, MasterDataDetailItem, MasterDataPageShell, MasterDataSection, formatMasterDataDateTime } from '@/pages/master-data/shared';
 
 export default function UserShow() {
   const navigate = useNavigate();
@@ -137,39 +137,23 @@ export default function UserShow() {
         }
         actions={
           <>
-            {hasPermission('users.update') && <Button className="rounded-none shadow-none" onClick={() => navigate(`/users/${id}/edit`)}><Edit className="h-4 w-4" />Edit User</Button>}
-            {hasPermission('users.delete') && <Button variant="destructive" className="rounded-none shadow-none" onClick={handleDelete} disabled={deleting}>{deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}Hapus User</Button>}
+            {hasPermission('users.update') && (
+              <HeaderActionButton
+                label="Edit User"
+                icon={<Edit className="h-4 w-4" />}
+                onClick={() => navigate(`/users/${id}/edit`)}
+              />
+            )}
+            {hasPermission('users.delete') && (
+              <HeaderActionButton
+                label="Hapus User"
+                icon={deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                variant="destructive"
+                onClick={handleDelete}
+                disabled={deleting}
+              />
+            )}
           </>
-        }
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Status Akun" helper="Ringkasan cepat status dan peran user.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Status: <span className="font-medium text-foreground">{user.is_active ? 'Akun aktif' : 'Akun tidak aktif'}</span></p>
-                  <p>Role: <span className="font-medium text-foreground">{user.role?.name || 'Tanpa role'}</span></p>
-                  <p>Total permission: <span className="font-medium text-foreground">{permissionCount}</span></p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-            <div>
-              <MasterDataAsideSection title="Tautan Pegawai" helper="Akun user idealnya ditautkan ke master pegawai bila dipakai dalam operasional klinik.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Status: <span className="font-medium text-foreground">{linkedEmployee ? 'Sudah tertaut' : 'Belum tertaut'}</span></p>
-                  <p>Nama pegawai: <span className="font-medium text-foreground">{linkedEmployee?.full_name || '-'}</span></p>
-                  <p>Profesi: <span className="font-medium text-foreground">{linkedEmployee?.profession || '-'}</span></p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-            <div>
-              <MasterDataAsideSection title="Metadata" helper="Riwayat pencatatan akun user.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Dibuat: <span className="font-medium text-foreground">{formatMasterDataDateTime(user.created_at)}</span></p>
-                  <p>Terakhir diubah: <span className="font-medium text-foreground">{formatMasterDataDateTime(user.updated_at)}</span></p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
         }
       >
         <div className="divide-y divide-border/70">
@@ -181,6 +165,8 @@ export default function UserShow() {
               <MasterDataDetailItem label="Role" value={user.role?.name || '-'} />
               <MasterDataDetailItem label="Deskripsi Role" value={user.role?.description || 'Role belum memiliki deskripsi'} />
               <MasterDataDetailItem label="Status" value={user.is_active ? 'Aktif' : 'Nonaktif'} />
+              <MasterDataDetailItem label="Waktu Dibuat" value={formatMasterDataDateTime(user.created_at)} />
+              <MasterDataDetailItem label="Terakhir Diubah" value={formatMasterDataDateTime(user.updated_at)} />
             </div>
           </MasterDataSection>
 

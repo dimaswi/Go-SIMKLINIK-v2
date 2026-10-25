@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { AxiosError } from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   CheckCircle2,
   Download,
   ExternalLink,
+  FileText,
   Loader2,
   PillBottle,
   RefreshCw,
@@ -21,7 +22,7 @@ import { downloadBlobResponse } from '../../lib/blob-download';
 import { medicalRecordsApi, pharmacyApi, type MedicalRecord } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
 import { getPrescriptionWorkflowLabel } from '@/pages/emr/constants';
-import { cn } from '@/lib/utils';
+import { cn, getLocalISODate } from '@/lib/utils';
 import {
   buildOrderLines,
   filterPharmacyOrders,
@@ -50,6 +51,7 @@ export default function PharmacyIndex() {
   const [search, setSearch] = useState('');
   const [polyclinicFilter, setPolyclinicFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState(getLocalISODate());
   const [preparingRecordId, setPreparingRecordId] = useState<number | null>(null);
   const [downloadingRecordId, setDownloadingRecordId] = useState<number | null>(null);
 
@@ -153,13 +155,19 @@ export default function PharmacyIndex() {
 
   const filteredOrders = useMemo(() => {
     let result = filterPharmacyOrders(orders, search, polyclinicFilter);
+    if (dateFilter) {
+      result = result.filter((record) => {
+        const orderDate = (record.prescription_ordered_at || record.record_date || record.visit?.visit_date || '')?.slice(0, 10);
+        return orderDate === dateFilter;
+      });
+    }
     if (statusFilter !== 'all') {
       result = result.filter(
         (record) => record.prescription_workflow_status === statusFilter,
       );
     }
     return result;
-  }, [orders, polyclinicFilter, search, statusFilter]);
+  }, [dateFilter, orders, polyclinicFilter, search, statusFilter]);
 
   const columns = useMemo<ColumnDef<MedicalRecord>[]>(() => {
     return [
@@ -270,21 +278,21 @@ export default function PharmacyIndex() {
           const isDownloading = downloadingRecordId === record.id;
 
           return (
-            <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+            <div className="flex items-center justify-end gap-1 whitespace-nowrap">
               {status === 'ordered' && canManage ? (
                 <Button
                   type="button"
                   size="sm"
-                  className="h-7 px-2.5 text-xs rounded-none shadow-none"
+                  className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
                   onClick={() => void handlePrepare(record)}
                   disabled={isPreparing}
+                  title="Terima Resep"
                 >
                   {isPreparing ? (
-                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
+                    <CheckCircle2 className="h-4 w-4" />
                   )}
-                  Terima Resep
                 </Button>
               ) : null}
 
@@ -292,27 +300,42 @@ export default function PharmacyIndex() {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-7 px-2.5 text-xs rounded-none shadow-none"
+                className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
                 onClick={() => navigate(`/pharmacy/${record.id}`)}
+                title={status === 'dispensed' ? 'Lihat Resep' : 'Detail / Proses Resep'}
               >
-                <ExternalLink className="mr-1 h-3.5 w-3.5" />
-                {status === 'dispensed' ? 'Lihat Resep' : 'Detail / Proses'}
+                <ExternalLink className="h-4 w-4" />
               </Button>
+
+              {record.visit_id && (
+                <Button
+                  asChild
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+                  title="Buka EMR"
+                >
+                  <Link to={`/emr/${record.visit_id}`}>
+                    <FileText className="h-4 w-4" />
+                  </Link>
+                </Button>
+              )}
 
               {status === 'dispensed' ? (
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-7 px-2 text-xs rounded-none shadow-none"
+                  className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
                   onClick={() => void handleDownloadPrescription(record)}
                   disabled={isDownloading}
                   title="Cetak Resep PDF"
                 >
                   {isDownloading ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <Download className="h-3.5 w-3.5" />
+                    <Download className="h-4 w-4" />
                   )}
                 </Button>
               ) : null}
@@ -337,7 +360,7 @@ export default function PharmacyIndex() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-4 md:p-6 space-y-4">
       <div className="border border-border bg-card shadow-none">
         <div className="flex flex-col gap-3 p-4 border-b border-border xl:flex-row xl:items-center xl:justify-between">
           <div className="flex items-center gap-2.5 shrink-0">
@@ -348,9 +371,6 @@ export default function PharmacyIndex() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 Farmasi
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Kelola order dan penyerahan resep obat pasien ({filteredOrders.length} order)
-              </p>
             </div>
           </div>
 
@@ -360,6 +380,14 @@ export default function PharmacyIndex() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="h-9 w-48 sm:w-56 rounded-none text-xs focus:ring-inset"
+            />
+
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="h-9 w-36 border border-border bg-background px-2.5 text-xs outline-none focus:ring-1 focus:ring-ring shrink-0"
+              title="Filter tanggal order resep"
             />
 
             <SearchableSelect

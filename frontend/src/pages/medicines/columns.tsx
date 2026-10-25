@@ -2,7 +2,6 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Eye, Edit, Trash2, ArrowUpDown } from "lucide-react"
-import { createSelectColumn } from "@/components/ui/data-table"
 import type { Medicine } from "@/lib/api"
 
 interface Props {
@@ -16,7 +15,6 @@ interface Props {
 
 export function createMedicineColumns({ onView, onEdit, onDelete, hasViewPermission, hasEditPermission, hasDeletePermission }: Props): ColumnDef<Medicine>[] {
   return [
-    createSelectColumn<Medicine>(),
     {
       accessorKey: "name",
       header: ({ column }) => (

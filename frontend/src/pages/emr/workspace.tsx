@@ -1,20 +1,30 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Lock, Loader2 } from 'lucide-react';
+import { Loader2, Lock, Megaphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useBpjsAntreanEnabled } from '@/hooks/use-bpjs-antrean-enabled';
 import { useToast } from '@/hooks/use-toast';
-import { medicalRecordsApi, visitsApi, type FinalizeVisitPayload, type SatusehatVisitAutoSyncResult } from '@/lib/api';
+import {
+  medicalRecordsApi,
+  visitsApi,
+  type FinalizeVisitPayload,
+} from '@/lib/api';
 import { createControlScheduleWhatsAppPayloadFromVisit } from '@/lib/control-schedule-whatsapp';
 import { setPageTitle } from '@/lib/page-title';
 import { FinalizedVisitActions } from './components/finalized-visit-actions';
 import { FinalizeVisitDialog } from './components/finalize-visit-dialog';
-import { openPdfDocumentInNewWindow } from './print-document';
 import { SheetWorkspaceTable } from './components/sheet-workspace-table';
 import { StickyVisitHeader } from './components/sticky-visit-header';
-import { buildSatusehatAutoSyncSummary, getCompletedCoreSections, getFinalizeVisitBlockingOrders, getLatestRecordForSection, groupRecordsBySection } from './utils';
+import { openPdfDocumentInNewWindow } from './print-document';
 import { useVisitEmr } from './use-visit-emr';
 import { useVisitOdontogramEntries } from './use-visit-odontogram';
+import {
+  buildSatusehatAutoSyncSummary,
+  getCompletedCoreSections,
+  getFinalizeVisitBlockingOrders,
+  getLatestRecordForSection,
+  groupRecordsBySection,
+} from './utils';
 
 export default function EMRWorkspace() {
   const { id } = useParams();
@@ -25,21 +35,17 @@ export default function EMRWorkspace() {
 
   const { visit, records, loading, error, reload } = useVisitEmr(visitId);
   const { entries: odontogramEntries, loading: loadingOdontogram, error: odontogramError } = useVisitOdontogramEntries(visitId);
+
   const [finalizeOpen, setFinalizeOpen] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [printingControlLetter, setPrintingControlLetter] = useState(false);
   const [printingResumeMedical, setPrintingResumeMedical] = useState(false);
   const [cancelingFinalization, setCancelingFinalization] = useState(false);
   const [callingBPJS, setCallingBPJS] = useState(false);
-  const [latestAutoSyncResult, setLatestAutoSyncResult] = useState<SatusehatVisitAutoSyncResult | null>(null);
-  const [latestAutoSyncMessage, setLatestAutoSyncMessage] = useState('');
 
   const recordsBySection = useMemo(() => groupRecordsBySection(records), [records]);
+  const completedSections = useMemo(() => getCompletedCoreSections(recordsBySection), [recordsBySection]);
 
-  const completedSections = useMemo(
-    () => getCompletedCoreSections(recordsBySection),
-    [recordsBySection]
-  );
   const allergyInfo = useMemo(() => {
     const values = [
       visit?.patient?.allergies,
@@ -70,9 +76,9 @@ export default function EMRWorkspace() {
   }, [visit]);
 
   useEffect(() => {
-	if (odontogramError) {
-		toast({ variant: 'destructive', title: 'Odontogram gagal dimuat', description: odontogramError });
-	}
+    if (odontogramError) {
+      toast({ variant: 'destructive', title: 'Odontogram gagal dimuat', description: odontogramError });
+    }
   }, [odontogramError, toast]);
 
   const finalizeVisit = async (payload: FinalizeVisitPayload) => {
@@ -82,8 +88,6 @@ export default function EMRWorkspace() {
     try {
       const response = await medicalRecordsApi.finalizeVisit(visit.id, payload);
       const autoSyncSummary = buildSatusehatAutoSyncSummary(response.data?.satusehat_auto_sync);
-      setLatestAutoSyncResult(response.data?.satusehat_auto_sync || null);
-      setLatestAutoSyncMessage('Hasil auto-sync dari finalisasi kunjungan.');
       setFinalizeOpen(false);
       await reload();
       toast({
@@ -200,12 +204,14 @@ export default function EMRWorkspace() {
 
   if (!visit || error) {
     return (
-      <div className="space-y-4 p-4 lg:p-5">
-        <div className="rounded-xl border border-border/80 bg-background px-5 py-8">
-          <h1 className="text-lg font-semibold">Workspace rekam medis tidak tersedia</h1>
-          <p className="mt-2 text-sm text-muted-foreground">{error || 'Data kunjungan tidak ditemukan.'}</p>
+      <div className="p-4 md:p-6">
+        <div className="border border-border bg-card p-6 shadow-none">
+          <h1 className="text-base font-semibold">Workspace rekam medis tidak tersedia</h1>
+          <p className="mt-1 text-xs text-muted-foreground">{error || 'Data kunjungan tidak ditemukan.'}</p>
           <div className="mt-4">
-            <Button variant="outline" onClick={() => navigate('/emr')}>Kembali ke daftar</Button>
+            <Button variant="outline" size="sm" className="rounded-none shadow-none text-xs" onClick={() => navigate('/emr')}>
+              Kembali ke daftar
+            </Button>
           </div>
         </div>
       </div>
@@ -213,53 +219,70 @@ export default function EMRWorkspace() {
   }
 
   return (
-    <div className="pb-8">
-      <StickyVisitHeader
-        visit={visit}
-        completedSections={completedSections}
-        isLocked={Boolean(workspaceLocked)}
-        allergyInfo={allergyInfo}
-        onBack={() => navigate('/emr')}
-        onEncounterSynced={reload}
-        prefetchedMonitorResult={latestAutoSyncResult}
-        prefetchedMonitorMessage={latestAutoSyncMessage}
-        actions={!workspaceLocked ? (
-          <div className="flex items-center gap-2">
-            {bpjsAntreanEnabled ? (
-              <Button variant="outline" className="gap-1.5 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-800" onClick={callBPJSQueue} disabled={callingBPJS} title="Panggil Antrean BPJS">
-                {callingBPJS ? <Loader2 className="h-4 w-4 animate-spin" /> : <span className="font-semibold">Panggil BPJS</span>}
-              </Button>
-            ) : null}
-            <Button className="gap-1.5" onClick={() => setFinalizeOpen(true)} title='Final Kunjungan'>
-              <Lock className="h-4 w-4" />
-            </Button>
-          </div>
-        ) : visit.status === 'completed' ? (
-          <FinalizedVisitActions
-            visitId={visit.id}
-            showControlLetter={controlLetterAvailable}
-            controlWhatsAppPayload={controlWhatsAppPayload}
-            onPrintControlLetter={printControlLetter}
-            printingControlLetter={printingControlLetter}
-            onPrintMedicalResume={printMedicalResume}
-            printingMedicalResume={printingResumeMedical}
-            onCancelFinalization={cancelFinalization}
-            cancelingFinalization={cancelingFinalization}
-          />
-        ) : undefined}
-      />
+    <div className="p-4 md:p-6">
+      {/* Combined Single Card */}
+      <div className="border border-border bg-card shadow-none">
+        <StickyVisitHeader
+          sticky={false}
+          visit={visit}
+          completedSections={completedSections}
+          isLocked={Boolean(workspaceLocked)}
+          allergyInfo={allergyInfo}
+          onBack={() => navigate('/emr')}
+          onEncounterSynced={reload}
+          actions={
+            !workspaceLocked ? (
+              <div className="flex items-center gap-2">
+                {bpjsAntreanEnabled ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 w-8 p-0 rounded-none shadow-none shrink-0 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-800"
+                    onClick={callBPJSQueue}
+                    disabled={callingBPJS}
+                    title="Panggil Antrean BPJS"
+                  >
+                    {callingBPJS ? <Loader2 className="h-4 w-4 animate-spin" /> : <Megaphone className="h-4 w-4" />}
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+                  onClick={() => setFinalizeOpen(true)}
+                  title="Finalisasi Kunjungan"
+                >
+                  <Lock className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : visit.status === 'completed' ? (
+              <FinalizedVisitActions
+                visitId={visit.id}
+                showControlLetter={controlLetterAvailable}
+                controlWhatsAppPayload={controlWhatsAppPayload}
+                onPrintControlLetter={printControlLetter}
+                printingControlLetter={printingControlLetter}
+                onPrintMedicalResume={printMedicalResume}
+                printingMedicalResume={printingResumeMedical}
+                onCancelFinalization={cancelFinalization}
+                cancelingFinalization={cancelingFinalization}
+                buttonClassName="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+              />
+            ) : null
+          }
+        />
 
-      <div className="space-y-5 px-4 py-5 lg:px-5">
-        <section className="space-y-3">
-          <SheetWorkspaceTable
-            visitId={visit.id}
-            recordsBySection={recordsBySection}
-            visitLocked={Boolean(workspaceLocked)}
-            odontogramEntries={odontogramEntries}
-          />
-        </section>
+        {/* Sheet Workspace Document Table inside the same card */}
+        <SheetWorkspaceTable
+          visitId={visit.id}
+          recordsBySection={recordsBySection}
+          visitLocked={Boolean(workspaceLocked)}
+          odontogramEntries={odontogramEntries}
+        />
       </div>
 
+      {/* Finalize Dialog */}
       <FinalizeVisitDialog
         open={finalizeOpen}
         onOpenChange={setFinalizeOpen}

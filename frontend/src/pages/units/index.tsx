@@ -87,9 +87,6 @@ export default function UnitsPage() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 Satuan
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Kelola master satuan sediaan obat & bahan medis ({filteredData.length} satuan)
-              </p>
             </div>
           </div>
 

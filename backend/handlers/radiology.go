@@ -684,17 +684,24 @@ func CompleteRadiologyOrder(c *gin.Context) {
 	}
 
 	for _, item := range record.RadiologyOrderItems {
+		hasNarrative := strings.TrimSpace(item.Findings) != "" || strings.TrimSpace(item.Impression) != ""
+
 		if len(item.ParameterResults) > 0 {
+			hasEmptyRequired := false
 			for _, parameter := range item.ParameterResults {
 				if parameter.IsRequired && strings.TrimSpace(parameter.ResultValue) == "" {
-					c.JSON(http.StatusBadRequest, gin.H{"error": "Lengkapi seluruh parameter hasil radiologi sebelum menandai order selesai"})
-					return
+					hasEmptyRequired = true
+					break
 				}
+			}
+			if hasEmptyRequired && !hasNarrative {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Lengkapi parameter hasil radiologi atau temuan/kesan sebelum menandai order selesai"})
+				return
 			}
 			continue
 		}
 
-		if strings.TrimSpace(item.Findings) == "" && strings.TrimSpace(item.Impression) == "" {
+		if !hasNarrative {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Lengkapi hasil seluruh item radiologi sebelum menandai order selesai"})
 			return
 		}

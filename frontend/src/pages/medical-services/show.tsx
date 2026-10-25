@@ -9,8 +9,6 @@ import { medicalServicesApi } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
 import { Edit, Loader2, Trash2 } from 'lucide-react';
 import {
-  MasterDataAsideSection,
-  MasterDataAsideStack,
   MasterDataDetailItem,
   MasterDataPageShell,
   MasterDataSection,
@@ -148,51 +146,6 @@ export default function MedicalServiceShow() {
             {hasPermission('medical_services.delete') && <Button variant="destructive" className="rounded-none shadow-none" onClick={() => setDeleteDialogOpen(true)} disabled={deleting}>{deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}Hapus</Button>}
           </>
         }
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Ringkasan Tarif" helper="Tarif dan status aktif layanan medis.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Status: <span className="font-medium text-foreground">{data.is_active ? 'Aktif' : 'Tidak aktif'}</span></p>
-                  <p>Tarif: <span className="font-medium text-foreground">{formatCurrency(data.price)}</span></p>
-                  <p>Domain: <span className="font-medium text-foreground">{SERVICE_DOMAIN_LABELS[data.service_domain || 'general'] || data.service_domain || '-'}</span></p>
-                  <p>Target: <span className="font-medium text-foreground">{TARGET_SCOPE_LABELS[data.target_scope || 'none'] || data.target_scope || '-'}</span></p>
-                  {data.service_domain === 'laboratory' ? <p>Specimen: <span className="font-medium text-foreground">{(data.specimen_options || []).length} opsi</span></p> : null}
-                </div>
-              </MasterDataAsideSection>
-            </div>
-            {data.service_domain === 'laboratory' ? (
-              <div>
-                <MasterDataAsideSection title="Mapping Specimen" helper="Ringkasan template specimen yang aktif untuk layanan laboratorium ini.">
-                  {specimenSummaries.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Belum ada specimen option.</p>
-                  ) : (
-                    <div className="space-y-4">
-                      {specimenSummaries.map((item) => (
-                        <div key={item.key} className="space-y-1.5 border-b border-border/60 pb-4 last:border-b-0 last:pb-0">
-                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{item.title}</p>
-                          <p className="text-sm font-medium">{item.templateName}</p>
-                          <p className="text-xs text-muted-foreground">SNOMED Type: {item.typeDisplay}</p>
-                          <p className="text-xs text-muted-foreground">Collection Method: {item.collectionMethod}</p>
-                          {item.notes ? <p className="text-xs text-muted-foreground">Catatan: {item.notes}</p> : null}
-                          {item.templateId ? <Link to={`/specimen-templates/${item.templateId}`} className="inline-flex text-xs font-medium text-primary underline-offset-4 hover:underline">Lihat detail template</Link> : null}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </MasterDataAsideSection>
-              </div>
-            ) : null}
-            <div>
-              <MasterDataAsideSection title="Metadata" helper="Riwayat pencatatan layanan medis.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Dibuat: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.created_at)}</span></p>
-                  <p>Terakhir diubah: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.updated_at)}</span></p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
-        }
       >
         <div className="divide-y divide-border/70">
           <MasterDataSection title="Informasi Layanan" helper="Identitas dasar layanan medis yang dipakai dalam transaksi dan pemeriksaan.">
@@ -207,7 +160,11 @@ export default function MedicalServiceShow() {
               <MasterDataDetailItem label="Butuh Consent" value={data.requires_consent ? 'Ya' : 'Tidak'} />
               <MasterDataDetailItem label="Sinkron Odontogram" value={data.supports_odontogram_sync ? 'Ya' : 'Tidak'} />
               <MasterDataDetailItem label="Status" value={data.is_active ? 'Aktif' : 'Tidak aktif'} />
-              <MasterDataDetailItem label="Deskripsi" value={data.description || '-'} />
+              <MasterDataDetailItem label="Waktu Dibuat" value={formatMasterDataDateTime(data.created_at)} />
+              <MasterDataDetailItem label="Terakhir Diubah" value={formatMasterDataDateTime(data.updated_at)} />
+              <div className="md:col-span-2 xl:col-span-3">
+                <MasterDataDetailItem label="Deskripsi" value={data.description || '-'} />
+              </div>
             </div>
           </MasterDataSection>
 

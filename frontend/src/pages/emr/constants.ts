@@ -221,7 +221,7 @@ export const SHEET_CONFIGS: MedicalSheetConfig[] = [
     key: 'lembar-tindakan-kecil',
     label: 'Lembar Tindakan / Operasi Kecil',
     description: 'Bundle tindakan kecil: tindakan yang dilakukan dan dokumen consent terkait.',
-    helper: 'Outcome akhir kunjungan akan diisi saat finalisasi kunjungan, bukan dari lembar tindakan ini.',
+    helper: '',
     icon: Syringe,
     kind: 'section-editor',
     availability: 'ready',
@@ -409,6 +409,30 @@ export const PRESCRIPTION_DURATION_OPTIONS = [
   'Sampai habis',
 ].map((value) => ({ value, label: value }));
 
+export const PRESCRIPTION_SIGNA_OPTIONS = [
+  '3 × 1 Setelah Makan',
+  '3 × 1 Sebelum Makan',
+  '3 × 1 Bersama Makan',
+  '2 × 1 Setelah Makan',
+  '2 × 1 Sebelum Makan',
+  '1 × 1 Pagi Setelah Makan',
+  '1 × 1 Malam Setelah Makan',
+  '1 × 1 Sebelum Tidur',
+  '4 × 1 Setelah Makan',
+  '3 × 1 tablet sesudah makan',
+  '2 × 1 tablet sesudah makan',
+  '1 × 1 tablet sesudah makan',
+  '1 tablet bila demam / nyeri (PRN)',
+  '1 bungkus bila demam / nyeri (PRN)',
+  '3 × sehari 1 sendok teh (5 ml)',
+  '3 × sehari 1 sendok makan (15 ml)',
+  '2 × sehari 1 sendok teh (5 ml)',
+  'Teteskan 3 × sehari 2 tetes',
+  'Oleskan tipis 2 × sehari',
+  'Gunakan bila perlu (PRN)',
+  'Sampai habis',
+].map((value) => ({ value, label: value }));
+
 export const PRESCRIPTION_INSTRUCTION_OPTIONS = [
   'Sebelum makan',
   'Sesudah makan',
@@ -426,12 +450,61 @@ export const PRESCRIPTION_FULFILLMENT_OPTIONS = [
 ];
 
 export const PRESCRIPTION_COMPOUND_PREPARATION_OPTIONS = [
-  { value: 'puyer', label: 'Puyer' },
-  { value: 'kapsul_racik', label: 'Kapsul Racik' },
-  { value: 'sirup_racik', label: 'Sirup Racik' },
-  { value: 'salep_racik', label: 'Salep Racik' },
-  { value: 'serbuk_bagi', label: 'Serbuk Bagi' },
+  { value: 'pulveres', label: 'Pulveres (Puyer / Serbuk Bagi)' },
+  { value: 'pulvis', label: 'Pulvis (Serbuk Tabur / Tidak Terbagi)' },
+  { value: 'kapsul_racik', label: 'Capsulae (Kapsul Racik)' },
+  { value: 'sirup_racik', label: 'Sirup / Potio Racik' },
+  { value: 'suspensi', label: 'Suspensi Racik' },
+  { value: 'emulsi', label: 'Emulsi Racik' },
+  { value: 'salep_racik', label: 'Unguentum (Salep Racik)' },
+  { value: 'krim_racik', label: 'Cream / Krim Racik' },
+  { value: 'pasta_racik', label: 'Pasta Racik' },
+  { value: 'gel_racik', label: 'Gel Racik' },
+  { value: 'lotion_racik', label: 'Lotion / Linimentum' },
+  { value: 'guttae', label: 'Guttae (Obat Tetes Racik)' },
+  { value: 'larutan_racik', label: 'Solution / Larutan Racik' },
+  { value: 'obat_kumur', label: 'Gargarisma (Obat Kumur)' },
+  { value: 'suppositoria', label: 'Suppositoria Racik' },
+  { value: 'ovula', label: 'Ovula Racik' },
+  // Backward compatibility:
+  { value: 'puyer', label: 'Puyer (Pulveres)' },
+  { value: 'serbuk_bagi', label: 'Serbuk Bagi (Pulveres)' },
 ];
+
+export function getDefaultCompoundUnit(type: string): string {
+  const lower = (type || '').toLowerCase();
+  if (lower.includes('kapsul') || lower.includes('capsul')) return 'kapsul';
+  if (
+    lower.includes('sirup') ||
+    lower.includes('potio') ||
+    lower.includes('suspensi') ||
+    lower.includes('emulsi') ||
+    lower.includes('larutan') ||
+    lower.includes('solution') ||
+    lower.includes('guttae') ||
+    lower.includes('tetes') ||
+    lower.includes('kumur') ||
+    lower.includes('gargarisma') ||
+    lower.includes('lotion') ||
+    lower.includes('liniment')
+  ) {
+    return 'botol';
+  }
+  if (
+    lower.includes('salep') ||
+    lower.includes('unguentum') ||
+    lower.includes('krim') ||
+    lower.includes('cream') ||
+    lower.includes('pasta')
+  ) {
+    return 'pot';
+  }
+  if (lower.includes('gel')) return 'tube';
+  if (lower.includes('supp')) return 'supp';
+  if (lower.includes('ovula')) return 'butir';
+  if (lower.includes('pulvis') || lower.includes('tabur')) return 'botol';
+  return 'bungkus';
+}
 
 export function getPrescriptionFulfillmentLabel(mode?: string) {
   switch (mode) {

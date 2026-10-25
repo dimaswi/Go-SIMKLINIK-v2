@@ -74,6 +74,10 @@ export function DataTable<TData, TValue>({
   const [rowSelection, setRowSelection] = React.useState({})
   const [globalFilter, setGlobalFilter] = React.useState("")
 
+  const hasSelectColumn = React.useMemo(() => {
+    return (columns as any[]).some((col) => col.id === "select" || col.accessorKey === "select")
+  }, [columns])
+
   const table = useReactTable({
     data,
     columns,
@@ -96,7 +100,7 @@ export function DataTable<TData, TValue>({
     },
     initialState: {
       pagination: {
-        pageSize: Math.min(pageSize, 10),
+        pageSize: pageSize || 10,
       },
     },
   })
@@ -104,7 +108,7 @@ export function DataTable<TData, TValue>({
   const hasToolbar = showSearch || showColumnVisibility || Boolean(toolbarActions)
 
   return (
-    <div className={cn("flex h-auto min-h-0 w-full flex-col overflow-visible sm:h-full sm:overflow-hidden", className)}>
+    <div className={cn("flex w-full flex-col", className)}>
       {hasToolbar && (
         <div className="flex flex-col gap-3 pt-1 pb-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -151,10 +155,10 @@ export function DataTable<TData, TValue>({
         </div>
       )}
 
-      <div className={cn("flex min-h-0 flex-col overflow-visible sm:flex-1 sm:overflow-hidden", borderless ? "border-0 rounded-none" : "rounded-md border")}>
+      <div className={cn("w-full overflow-hidden", borderless ? "border-0 rounded-none" : "rounded-md border")}>
         {/* Table */}
-        <div className="overflow-x-auto overflow-y-visible overscroll-contain sm:min-h-0 sm:flex-1 sm:overflow-auto">
-          <Table className={cn(fixedLayout ? "table-fixed" : undefined)}>
+        <div className="w-full overflow-x-auto">
+          <Table className={cn("w-full min-w-full", fixedLayout ? "table-fixed" : undefined)}>
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup: any) => (
                 <TableRow key={headerGroup.id}>
@@ -222,7 +226,7 @@ export function DataTable<TData, TValue>({
           <div className="shrink-0 border-t bg-muted/10 px-4 py-3">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:space-x-2">
             <div className="flex-1 text-xs text-muted-foreground sm:text-sm">
-              {showSelectionSummary
+              {showSelectionSummary && hasSelectColumn
                 ? <>{table.getFilteredSelectedRowModel().rows.length} of{" "}{table.getFilteredRowModel().rows.length} row(s) selected.</>
                 : <>{table.getFilteredRowModel().rows.length} row(s)</>}
             </div>
@@ -230,18 +234,18 @@ export function DataTable<TData, TValue>({
               <div className="flex items-center justify-between gap-2 sm:justify-start sm:space-x-2">
                 <p className="text-xs font-medium sm:text-sm">Rows per page</p>
                 <Select
-                  value={`${Math.min(table.getState().pagination.pageSize, 10)}`}
+                  value={`${table.getState().pagination.pageSize}`}
                   onValueChange={(value) => {
-                    table.setPageSize(Math.min(Number(value), 10))
+                    table.setPageSize(Number(value))
                   }}
                 >
                   <SelectTrigger className="h-8 w-[70px]">
                     <SelectValue placeholder={table.getState().pagination.pageSize} />
                   </SelectTrigger>
                   <SelectContent side="top">
-                    {[10].map((pageSize) => (
-                      <SelectItem key={pageSize} value={`${pageSize}`}>
-                        {pageSize}
+                    {[10, 25, 50].map((size) => (
+                      <SelectItem key={size} value={`${size}`}>
+                        {size}
                       </SelectItem>
                     ))}
                   </SelectContent>

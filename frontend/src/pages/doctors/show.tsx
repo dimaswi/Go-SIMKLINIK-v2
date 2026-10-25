@@ -9,8 +9,7 @@ import { doctorsApi, satusehatApi, type Doctor } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
 import { Edit, Eye, Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import {
-  MasterDataAsideSection,
-  MasterDataAsideStack,
+  HeaderActionButton,
   MasterDataDetailItem,
   MasterDataPageShell,
   MasterDataSection,
@@ -215,51 +214,44 @@ export default function DoctorShow() {
         }
         actions={
           <>
-            {canPreviewSatusehat ? <Button variant="outline" className="rounded-none shadow-none" onClick={() => void handlePreviewSatusehat()} disabled={!satusehatRequired || previewingSatusehat || syncingSatusehat}>{previewingSatusehat ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}Preview SATUSEHAT</Button> : null}
-            {canSyncSatusehat ? <Button variant="outline" className="rounded-none shadow-none" onClick={() => void handleSyncSatusehat()} disabled={!satusehatRequired || syncingSatusehat || previewingSatusehat}>{syncingSatusehat ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{data.satusehat_practitioner_id ? 'Sync Ulang SATUSEHAT' : 'Sync ke SATUSEHAT'}</Button> : null}
-            {hasPermission('doctors.update') && <Button className="rounded-none shadow-none" onClick={() => navigate(`/doctors/${id}/edit`)}><Edit className="h-4 w-4" />Edit</Button>}
-            {hasPermission('doctors.delete') && <Button variant="destructive" className="rounded-none shadow-none" onClick={() => setDeleteDialogOpen(true)} disabled={deleting}>{deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}Hapus</Button>}
+            {canPreviewSatusehat ? (
+              <HeaderActionButton
+                label="Preview SATUSEHAT"
+                icon={previewingSatusehat ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+                onClick={() => void handlePreviewSatusehat()}
+                disabled={!satusehatRequired || previewingSatusehat || syncingSatusehat}
+              />
+            ) : null}
+            {canSyncSatusehat ? (
+              <HeaderActionButton
+                label={data.satusehat_practitioner_id ? 'Sync Ulang SATUSEHAT' : 'Sync ke SATUSEHAT'}
+                icon={syncingSatusehat ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                onClick={() => void handleSyncSatusehat()}
+                disabled={!satusehatRequired || syncingSatusehat || previewingSatusehat}
+              />
+            ) : null}
+            {hasPermission('doctors.update') && (
+              <HeaderActionButton
+                label="Edit Dokter"
+                icon={<Edit className="h-4 w-4" />}
+                onClick={() => navigate(`/doctors/${id}/edit`)}
+              />
+            )}
+            {hasPermission('doctors.delete') && (
+              <HeaderActionButton
+                label="Hapus Dokter"
+                icon={deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                variant="destructive"
+                onClick={() => setDeleteDialogOpen(true)}
+                disabled={deleting}
+              />
+            )}
           </>
-        }
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="SATUSEHAT" helper="Status sinkronisasi Practitioner untuk dokter ini.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Kebutuhan dari master pegawai: <span className="font-medium text-foreground">{satusehatManagedFromEmployee ? (satusehatRequired ? 'Perlu integrasi' : 'Tidak perlu integrasi') : 'Belum diatur dari master pegawai'}</span></p>
-                  <p>Practitioner ID: <span className="font-medium break-all text-foreground">{data.satusehat_practitioner_id || '-'}</span></p>
-                  <p>Sync terakhir: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.satusehat_synced_at)}</span></p>
-                  <p>Status preview: <span className="font-medium text-foreground">{previewReady === null ? 'Belum dimuat' : previewReady ? 'Siap dikirim' : 'Perlu perhatian'}</span></p>
-                  {satusehatDisabledReason ? <p className="text-amber-700">{satusehatDisabledReason}</p> : null}
-                </div>
-              </MasterDataAsideSection>
-            </div>
-            <div>
-              <MasterDataAsideSection title="Tautan Pegawai" helper="Profil dokter bisa mengambil identitas dasar dari master pegawai.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Pegawai: <span className="font-medium text-foreground">{data.employee?.full_name || '-'}</span></p>
-                  <p>Kode: <span className="font-medium text-foreground">{data.employee?.employee_code || '-'}</span></p>
-                  <p>Akun: <span className="font-medium text-foreground">{data.employee?.user?.email || data.user?.email || '-'}</span></p>
-                  <p>Flag SATUSEHAT: <span className="font-medium text-foreground">{data.employee ? (data.employee.requires_satusehat ? 'Perlu integrasi' : 'Tidak perlu integrasi') : '-'}</span></p>
-                  <p>Practitioner pegawai: <span className="font-medium break-all text-foreground">{data.employee?.satusehat_practitioner_id || '-'}</span></p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-            <div>
-              <MasterDataAsideSection title="Metadata" helper="Status keaktifan dan riwayat perubahan data dokter.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Status: <span className="font-medium text-foreground">{data.is_active ? 'Aktif' : 'Tidak aktif'}</span></p>
-                  <p>Dibuat: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.created_at)}</span></p>
-                  <p>Terakhir diubah: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.updated_at)}</span></p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
         }
       >
         <div className="divide-y divide-border/70">
           <MasterDataSection title="Identitas Dokter" helper="Data profesi dan kontak yang dipakai untuk penjadwalan dan pelayanan klinik.">
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               <MasterDataDetailItem label="Master Pegawai" value={data.employee?.full_name || '-'} />
               <MasterDataDetailItem label="Kode Pegawai" value={data.employee?.employee_code || '-'} />
               <MasterDataDetailItem label="Butuh SATUSEHAT" value={satusehatManagedFromEmployee ? (satusehatRequired ? 'Ya' : 'Tidak') : '-'} />
@@ -269,6 +261,9 @@ export default function DoctorShow() {
               <MasterDataDetailItem label="Nomor SIP" value={data.sip_number || '-'} />
               <MasterDataDetailItem label="Spesialisasi" value={data.specialization || '-'} />
               <MasterDataDetailItem label="Telepon" value={data.phone || '-'} />
+              <MasterDataDetailItem label="Status" value={data.is_active ? 'Aktif' : 'Tidak aktif'} />
+              <MasterDataDetailItem label="Waktu Dibuat" value={formatMasterDataDateTime(data.created_at)} />
+              <MasterDataDetailItem label="Terakhir Diubah" value={formatMasterDataDateTime(data.updated_at)} />
             </div>
           </MasterDataSection>
 

@@ -8,7 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { specimenTemplatesApi } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
 import { Edit, Loader2, Trash2 } from 'lucide-react';
-import { MasterDataAsideSection, MasterDataAsideStack, MasterDataDetailItem, MasterDataPageShell, MasterDataSection, formatMasterDataDateTime } from '@/pages/master-data/shared';
+import { MasterDataDetailItem, MasterDataPageShell, MasterDataSection, formatMasterDataDateTime } from '@/pages/master-data/shared';
 
 export default function SpecimenTemplateShow() {
   const navigate = useNavigate();
@@ -50,7 +50,6 @@ export default function SpecimenTemplateShow() {
         onBack={() => navigate('/specimen-templates')}
         badges={<><Badge variant="secondary" className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none">ID #{data.id}</Badge><Badge className={data.is_active ? 'h-5 rounded-none border-0 bg-emerald-600 px-2 text-[10px] uppercase tracking-wide text-white shadow-none' : 'h-5 rounded-none border-0 bg-rose-600 px-2 text-[10px] uppercase tracking-wide text-white shadow-none'}>{data.is_active ? 'Aktif' : 'Nonaktif'}</Badge></>}
         actions={<>{hasPermission('medical_services.update') && <Button className="rounded-none shadow-none" onClick={() => navigate(`/specimen-templates/${id}/edit`)}><Edit className="h-4 w-4" />Edit</Button>}{hasPermission('medical_services.delete') && <Button variant="destructive" className="rounded-none shadow-none" onClick={() => setDeleteDialogOpen(true)} disabled={deleting}>{deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}Hapus</Button>}</>}
-        aside={<MasterDataAsideStack><div><MasterDataAsideSection title="Metadata" helper="Waktu pencatatan dan perubahan terakhir."><div className="space-y-2 text-sm text-muted-foreground"><p>Dibuat: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.created_at)}</span></p><p>Terakhir diubah: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.updated_at)}</span></p></div></MasterDataAsideSection></div></MasterDataAsideStack>}
       >
         <div className="divide-y divide-border/70">
           <MasterDataSection title="Informasi Template" helper="Identitas template specimen yang dipakai di layanan laboratorium.">
@@ -59,6 +58,8 @@ export default function SpecimenTemplateShow() {
               <MasterDataDetailItem label="Nama" value={data.name || '-'} />
               <MasterDataDetailItem label="Deskripsi" value={data.description || '-'} />
               <MasterDataDetailItem label="Status" value={data.is_active ? 'Aktif' : 'Tidak aktif'} />
+              <MasterDataDetailItem label="Waktu Dibuat" value={formatMasterDataDateTime(data.created_at)} />
+              <MasterDataDetailItem label="Terakhir Diubah" value={formatMasterDataDateTime(data.updated_at)} />
             </div>
           </MasterDataSection>
           <MasterDataSection title="Mapping SNOMED Type" helper="Coding type yang akan dipakai pada resource Specimen.">

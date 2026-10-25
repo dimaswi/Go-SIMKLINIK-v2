@@ -12,7 +12,7 @@ import {
   Edit,
   Trash2,
 } from 'lucide-react';
-import { MasterDataAsideSection, MasterDataAsideStack, MasterDataDetailItem, MasterDataPageShell, MasterDataSection, formatMasterDataDateTime } from '@/pages/master-data/shared';
+import { HeaderActionButton, MasterDataDetailItem, MasterDataPageShell, MasterDataSection, formatMasterDataDateTime } from '@/pages/master-data/shared';
 
 export default function RoleShow() {
   const navigate = useNavigate();
@@ -125,29 +125,23 @@ export default function RoleShow() {
         meta={<span>Role Management</span>}
         actions={
           <>
-            {hasPermission('roles.update') && <Button className="rounded-none shadow-none" onClick={() => navigate(`/roles/${id}/edit`)}><Edit className="h-4 w-4" />Edit Role</Button>}
-            {hasPermission('roles.delete') && <Button variant="destructive" className="rounded-none shadow-none" onClick={handleDelete} disabled={deleting}>{deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}Hapus Role</Button>}
+            {hasPermission('roles.update') && (
+              <HeaderActionButton
+                label="Edit Role"
+                icon={<Edit className="h-4 w-4" />}
+                onClick={() => navigate(`/roles/${id}/edit`)}
+              />
+            )}
+            {hasPermission('roles.delete') && (
+              <HeaderActionButton
+                label="Hapus Role"
+                icon={deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                variant="destructive"
+                onClick={handleDelete}
+                disabled={deleting}
+              />
+            )}
           </>
-        }
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Ringkasan" helper="Jumlah permission yang diwariskan ke user pengguna role ini.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Total permission: <span className="font-medium text-foreground">{permissionCount}</span></p>
-                  <p>Kategori: <span className="font-medium text-foreground">Role Access Group</span></p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-            <div>
-              <MasterDataAsideSection title="Metadata" helper="Riwayat pencatatan role.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Dibuat: <span className="font-medium text-foreground">{formatMasterDataDateTime(role.created_at)}</span></p>
-                  <p>Terakhir diubah: <span className="font-medium text-foreground">{formatMasterDataDateTime(role.updated_at)}</span></p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
         }
       >
         <div className="divide-y divide-border/70">
@@ -156,6 +150,8 @@ export default function RoleShow() {
               <MasterDataDetailItem label="Nama Role" value={role.name} />
               <MasterDataDetailItem label="Deskripsi" value={role.description || '-'} />
               <MasterDataDetailItem label="Total Permission" value={permissionCount} />
+              <MasterDataDetailItem label="Waktu Dibuat" value={formatMasterDataDateTime(role.created_at)} />
+              <MasterDataDetailItem label="Terakhir Diubah" value={formatMasterDataDateTime(role.updated_at)} />
             </div>
           </MasterDataSection>
 

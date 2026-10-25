@@ -4,15 +4,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { patientsApi } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Save } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
 import {
   EMPTY_PATIENT_FORM_DATA,
   PatientFormSections,
-  PatientFormSummaryPanel,
   PatientPageShell,
   type PatientFormData,
-  getPatientGenderLabel,
   getPatientInsuranceLabel,
   isPatientSatusehatReady,
 } from './shared';
@@ -24,11 +22,16 @@ export default function PatientCreate() {
   const [formData, setFormData] = useState<PatientFormData>(EMPTY_PATIENT_FORM_DATA);
   const satusehatReady = isPatientSatusehatReady(formData);
 
-  useEffect(() => { setPageTitle('Tambah Pasien'); }, []);
+  useEffect(() => {
+    setPageTitle('Tambah Pasien');
+  }, []);
 
-  const setField = (field: keyof PatientFormData, value: string) => setFormData((previous) => ({ ...previous, [field]: value }));
-  const handleInput = (event: React.ChangeEvent<HTMLInputElement>) => setField(event.target.name as keyof PatientFormData, event.target.value);
-  const handleTextarea = (event: React.ChangeEvent<HTMLTextAreaElement>) => setField(event.target.name as keyof PatientFormData, event.target.value);
+  const setField = (field: keyof PatientFormData, value: string) =>
+    setFormData((previous) => ({ ...previous, [field]: value }));
+  const handleInput = (event: React.ChangeEvent<HTMLInputElement>) =>
+    setField(event.target.name as keyof PatientFormData, event.target.value);
+  const handleTextarea = (event: React.ChangeEvent<HTMLTextAreaElement>) =>
+    setField(event.target.name as keyof PatientFormData, event.target.value);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,10 +53,10 @@ export default function PatientCreate() {
   };
 
   return (
-    <form id="patient-create-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <form id="patient-create-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <PatientPageShell
         title="Tambah Pasien"
-        subtitle="Lengkapi identitas, domisili, kontak, dan penjamin pasien dalam satu alur form yang lebih ringkas seperti workspace EMR terbaru."
+        subtitle="Identitas, domisili, kontak, dan penjamin pasien."
         onBack={() => navigate('/patients')}
         badges={
           <>
@@ -64,27 +67,14 @@ export default function PatientCreate() {
             </Badge>
           </>
         }
-        meta={
-          <>
-            <span>{getPatientGenderLabel(formData.gender)}</span>
-            <span>Telepon {formData.phone || '-'}</span>
-            <span>NIK {formData.nik || '-'}</span>
-          </>
-        }
         actions={
-          <Button type="submit" form="patient-create-form" className="gap-1.5 rounded-none shadow-none" disabled={loading}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {loading ? 'Menyimpan...' : 'Simpan Pasien'}
+          <Button type="submit" form="patient-create-form" disabled={loading} size="sm" className="h-8 px-4 text-xs rounded-none shadow-none">
+            {loading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            Simpan Pasien
           </Button>
         }
-        aside={
-          <PatientFormSummaryPanel
-            formData={formData}
-            footerNote="Nomor rekam medis dibuat otomatis setelah pasien berhasil disimpan. Lengkapi NIK, tempat lahir, dan wilayah domisili bila pasien akan disinkronkan ke SATUSEHAT."
-          />
-        }
       >
-        <div className="divide-y divide-border/70">
+        <div className="space-y-4">
           <PatientFormSections
             formData={formData}
             setField={setField}

@@ -2,7 +2,6 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Eye, Edit, Trash2, ArrowUpDown } from "lucide-react"
-import { createSelectColumn } from "@/components/ui/data-table"
 import type { Polyclinic } from "@/lib/api"
 
 const currencyFormatter = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 })
@@ -25,7 +24,6 @@ export function createPolyclinicColumns({
   hasDeletePermission,
 }: PolyclinicColumnsProps): ColumnDef<Polyclinic>[] {
   return [
-    createSelectColumn<Polyclinic>(),
     {
       accessorKey: "name",
       header: ({ column }) => (

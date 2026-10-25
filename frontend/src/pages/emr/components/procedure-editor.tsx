@@ -29,7 +29,7 @@ import type {
   OdontogramSurfaceCondition,
   OdontogramToothCondition,
 } from '@/lib/api';
-import { Eye, FilePlus2, Printer, RotateCcw, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Eye, FilePlus2, Printer, RotateCcw, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import {
   ODONTOGRAM_SURFACE_LABELS,
   ODONTOGRAM_SURFACE_OPTIONS,
@@ -330,17 +330,6 @@ function isActionParameterFilled(parameter?: Pick<MedicalActionParameterValue, '
   return Boolean((parameter.result_value || '').trim() || (parameter.result_notes || '').trim());
 }
 
-function getActionParameterPreview(action: MedicalActionItem) {
-  const filled = (action.parameter_values || [])
-    .filter((parameter) => isActionParameterFilled(parameter))
-    .slice(0, 2)
-    .map((parameter) => {
-      const value = (parameter.result_value || '').trim() || (parameter.result_notes || '').trim() || '-';
-      return `${getActionParameterName(parameter)}: ${value}`;
-    });
-
-  return filled.join(' · ');
-}
 
 function buildActionParameterDrafts(action: MedicalActionItem): MedicalActionParameterDraft[] {
   const existingByParameterID = new Map<number, MedicalActionParameterValue>();
@@ -1266,6 +1255,22 @@ export function ProcedureEditor({
   const [savingParameters, setSavingParameters] = useState(false);
   const [dentalSetupOpen, setDentalSetupOpen] = useState(false);
   const [dentalDetailActionId, setDentalDetailActionId] = useState<number | null>(null);
+  const [expandedActionIds, setExpandedActionIds] = useState<Record<number, boolean>>({});
+
+  const toggleActionExpand = (actionId: number) => {
+    setExpandedActionIds((prev) => ({
+      ...prev,
+      [actionId]: !prev[actionId],
+    }));
+  };
+
+  const totalProcedurePrice = useMemo(() => {
+    return actions.reduce((sum, action) => {
+      const qty = action.quantity || 1;
+      const price = action.price || action.medical_service?.price || 0;
+      return sum + (qty * price);
+    }, 0);
+  }, [actions]);
 
   const procedureServices = useMemo(
     () => services.filter(isProcedureService),
@@ -1657,14 +1662,9 @@ export function ProcedureEditor({
           {selectedService && (selectedService.parameters?.length || 0) > 0 && (
             <TableRow>
               <TableCell label="Parameter Tindakan" colSpan={4}>
-                <div className="flex flex-col gap-2">
-                  <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground">Layanan ini memiliki {selectedService.parameters?.length || 0} parameter. Parameter belum diisi dari form atas.</p>
-                    <p className="text-xs text-muted-foreground">Klik Tambah Tindakan terlebih dahulu. Setelah item masuk ke daftar, gunakan tombol Isi Parameter atau Edit Parameter pada baris tindakan tersebut.</p>
-                  </div>
-                  <Badge variant="outline" className="w-fit rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.14em]">
-                    Parameter diisi dari daftar tindakan
-                  </Badge>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <SlidersHorizontal className="h-3.5 w-3.5 text-primary" />
+                  <span>Memiliki {selectedService.parameters?.length || 0} parameter (dapat diisi dan dilihat pada daftar tindakan di bawah).</span>
                 </div>
               </TableCell>
             </TableRow>
@@ -1718,115 +1718,259 @@ export function ProcedureEditor({
         </TableSection>
       )}
 
-      <div className="border border-border/70 bg-background">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/70 px-4 py-3">
-          <div>
-            <p className="text-sm font-semibold">Daftar Tindakan</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">Parameter tindakan diisi dari daftar ini melalui modal per item, supaya tabel utama tetap ringkas.</p>
+      <div className="space-y-1.5 pt-1">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-0.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="text-[13px] font-semibold tracking-tight text-foreground">Daftar Tindakan</h3>
+            <Badge variant="outline" className="rounded-none text-xs font-mono shadow-none">
+              {actions.length} Tindakan
+            </Badge>
+            {actions.length > 0 && (
+              <Badge variant="outline" className="rounded-none text-xs font-mono shadow-none text-primary border-primary/30">
+                Total: Rp {totalProcedurePrice.toLocaleString('id-ID')}
+              </Badge>
+            )}
           </div>
           {onPrint && actions.length > 0 && (
-            <Button type="button" variant="outline" size="sm" className="gap-1.5 rounded-none" onClick={onPrint} disabled={printing}>
-              <Printer className="h-4 w-4" />
-              {printing ? 'Menyiapkan Cetak...' : 'Cetak Tindakan'}
+            <Button type="button" variant="outline" size="sm" className="h-7 gap-1.5 rounded-none text-xs shadow-none" onClick={onPrint} disabled={printing}>
+              <Printer className="h-3.5 w-3.5" />
+              {printing ? 'Menyiapkan...' : 'Cetak Tindakan'}
             </Button>
           )}
         </div>
-        {actions.length === 0 ? (
-          <div className="px-4 py-4 text-sm text-muted-foreground">Belum ada tindakan.</div>
-        ) : (
+
+        <div className="border border-border/70 bg-background">
+          {actions.length === 0 ? (
+            <div className="px-4 py-4 text-xs text-muted-foreground">Belum ada tindakan tercatat.</div>
+          ) : (
           actions.map((action) => {
             const actionDomain = normalizeServiceDomain(action.medical_service?.service_domain || action.service_domain_snapshot);
             const actionTargetScope = normalizeTargetScope(action.medical_service?.target_scope || action.target_scope_snapshot);
-            const parameterCount = action.parameter_values?.length || action.medical_service?.parameters?.length || 0;
-            const filledParameterCount = (action.parameter_values || []).filter((parameter) => isActionParameterFilled(parameter)).length;
-            const parameterPreview = getActionParameterPreview(action);
+            const parameterDraftsList = buildActionParameterDrafts(action);
+            const parameterCount = parameterDraftsList.length;
+            const filledParameterCount = parameterDraftsList.filter((parameter) => Boolean((parameter.result_value || '').trim() || (parameter.result_notes || '').trim())).length;
+            const hasParameters = parameterCount > 0;
+            const isExpanded = Boolean(expandedActionIds[action.id]);
+            const unitPrice = action.price || action.medical_service?.price || 0;
+            const quantity = action.quantity || 1;
+            const subtotal = unitPrice * quantity;
             const targetDetailLines = buildTargetDetailLines(action.targets || []);
             const dentalActionSummary = buildDentalActionSummary(action);
 
             return (
-              <div key={action.id} className="border-t border-border/70 px-3 py-3 first:border-t-0">
-                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                  <div className="min-w-0 space-y-1.5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="break-words font-medium">{action.medical_service?.name || action.service_name_snapshot || '-'}</p>
-                      <Badge variant="secondary" className="rounded-none px-2 py-0 text-[10px] uppercase tracking-wide">{SERVICE_DOMAIN_LABELS[actionDomain]}</Badge>
-                      <Badge variant="outline" className="rounded-none px-2 py-0 text-[10px] uppercase tracking-wide">{TARGET_SCOPE_LABELS[actionTargetScope]}</Badge>
-                      {action.requires_consent_snapshot && <Badge className="rounded-none border-0 bg-amber-600 px-2 py-0 text-[10px] uppercase tracking-wide text-white">Consent</Badge>}
-                      {parameterCount > 0 && <Badge variant="outline" className="rounded-none px-2 py-0 text-[10px] uppercase tracking-wide">{filledParameterCount}/{parameterCount} parameter</Badge>}
-                    </div>
-                    {(action.targets || []).length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {(action.targets || []).map((target, index) => (
-                          <Badge key={`${action.id}-${index}-${buildTargetKey(target)}`} variant="outline" className="rounded-none px-2 py-0 text-[10px] text-muted-foreground">
-                            {formatTarget(target)}
-                          </Badge>
-                        ))}
-                      </div>
+              <div key={action.id} className="border-t border-border/70 first:border-t-0">
+                {/* Main Compact Row */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-2 hover:bg-muted/10 transition-colors">
+                  {/* Left: Action Info */}
+                  <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                    {hasParameters ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 rounded-none shadow-none text-muted-foreground hover:text-foreground shrink-0"
+                        onClick={() => toggleActionExpand(action.id)}
+                        title={isExpanded ? 'Sembunyikan parameter' : 'Tampilkan rincian parameter'}
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="h-3.5 w-3.5 text-primary" />
+                        ) : (
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                    ) : (
+                      <span className="w-6 shrink-0" />
                     )}
-                    {actionDomain === 'dental' && targetDetailLines.length > 0 && (
-                      <div className="space-y-3 border border-amber-200 bg-amber-50/60 px-3 py-3">
-                        <div className="space-y-1">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-900">Ringkasan Tindakan Gigi</p>
-                          <p className="text-xs text-amber-950/80">Berikut tindakan yang dikerjakan beserta lokasi giginya.</p>
-                        </div>
-                        <div className="space-y-2 text-xs leading-5 text-amber-950">
-                          {dentalActionSummary.map((detail, index) => (
-                            <div key={`${detail}-${index}`} className="border border-amber-200/80 bg-white/70 px-2.5 py-2">
-                              {detail}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+
+                    <span className="font-semibold text-xs sm:text-sm text-foreground">
+                      {action.medical_service?.name || action.service_name_snapshot || '-'}
+                    </span>
+                    <Badge variant="secondary" className="rounded-none px-1.5 py-0 text-[10px] uppercase font-mono">
+                      {SERVICE_DOMAIN_LABELS[actionDomain]}
+                    </Badge>
+                    {actionTargetScope !== 'none' && (
+                      <Badge variant="outline" className="rounded-none px-1.5 py-0 text-[10px] text-muted-foreground">
+                        {TARGET_SCOPE_LABELS[actionTargetScope]}
+                      </Badge>
                     )}
-                    {action.notes && <p className="break-words text-xs text-muted-foreground">{action.notes}</p>}
-                    {parameterCount > 0 && (
-                      <p className="break-words text-xs text-red-700">
-                        {parameterPreview || 'Parameter tindakan tersedia tetapi belum diisi.'}
-                      </p>
+                    {(action.targets || []).map((target, idx) => (
+                      <Badge key={`${action.id}-tgt-${idx}`} variant="outline" className="rounded-none px-1.5 py-0 text-[10px] font-mono text-muted-foreground">
+                        {formatTarget(target)}
+                      </Badge>
+                    ))}
+                    {action.requires_consent_snapshot && (
+                      <Badge className="rounded-none border-0 bg-amber-600 px-1.5 py-0 text-[10px] uppercase text-white font-mono">
+                        Consent
+                      </Badge>
+                    )}
+                    {action.notes && (
+                      <span className="text-[11px] italic text-muted-foreground truncate max-w-[220px]" title={action.notes}>
+                        · {action.notes}
+                      </span>
                     )}
                   </div>
-                  <div className="flex flex-wrap items-center md:justify-end">
-                    {actionDomain === 'dental' && (
-                      <Button
+
+                  {/* Right: Price, Parameter Badge & Actions */}
+                  <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 pl-7 sm:pl-0">
+                    {/* Price Detail */}
+                    <div className="flex items-center gap-1.5 text-xs font-mono text-right">
+                      <span className="text-muted-foreground text-[11px]">{quantity} × Rp {unitPrice.toLocaleString('id-ID')}</span>
+                      <span className="text-muted-foreground text-[10px] font-sans">=</span>
+                      <span className="font-semibold text-foreground">Rp {subtotal.toLocaleString('id-ID')}</span>
+                    </div>
+
+                    {/* Parameter Pill / Collapsible Toggle */}
+                    {hasParameters && (
+                      <button
                         type="button"
-                        variant="outline"
-                        size="sm"
-                        className="gap-1.5 rounded-none"
-                        onClick={() => openDentalDetailDialog(action)}
+                        onClick={() => toggleActionExpand(action.id)}
+                        className={cn(
+                          'inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono border rounded-none transition-colors cursor-pointer select-none',
+                          filledParameterCount === parameterCount
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-400'
+                            : 'bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950/40 dark:text-amber-400'
+                        )}
+                        title="Klik untuk melihat/menyembunyikan rincian parameter"
                       >
-                        <Eye className="h-4 w-4" /> Detail Gigi
-                      </Button>
+                        <SlidersHorizontal className="h-2.5 w-2.5" />
+                        <span>{filledParameterCount}/{parameterCount} Param</span>
+                        {isExpanded ? <ChevronDown className="h-2.5 w-2.5" /> : <ChevronRight className="h-2.5 w-2.5" />}
+                      </button>
                     )}
-                    {/* <Badge variant="outline" className="rounded-none px-2 py-0 text-[10px] uppercase tracking-wide">Qty {action.quantity}</Badge>
-                    <Badge variant="outline" className="rounded-none px-2 py-0 text-[10px] uppercase tracking-wide">Rp {action.price.toLocaleString('id-ID')}</Badge> */}
-                    {parameterCount > 0 && (
-                      <Button
-                        type="button"
-                        variant={readOnly ? 'outline' : 'default'}
-                        size="sm"
-                        className="gap-1.5 rounded-none"
-                        onClick={() => openParameterDialog(action)}
-                      >
-                        {readOnly ? <Eye className="h-4 w-4" /> : <SlidersHorizontal className="h-4 w-4" />}
-                        {readOnly ? 'Lihat Parameter' : filledParameterCount > 0 ? 'Edit Parameter' : 'Isi Parameter'}
-                      </Button>
-                    )}
-                    {/* {!readOnly && onUpdate && (
-                      <Button type="button" variant="ghost" size="sm" className="rounded-none" onClick={() => handleEditAction(action)}>
-                        <Edit className="h-4 w-4 text-yellow-700" />
-                      </Button>
-                    )} */}
-                    {!readOnly && (
-                      <Button type="button" variant="ghost" size="sm" className="rounded-none text-destructive" onClick={() => onDelete(action.id)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    )}
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-1">
+                      {actionDomain === 'dental' && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-6 px-1.5 text-[11px] gap-1 rounded-none shadow-none"
+                          onClick={() => openDentalDetailDialog(action)}
+                        >
+                          <Eye className="h-3 w-3" />
+                          <span className="hidden md:inline">Gigi</span>
+                        </Button>
+                      )}
+
+                      {hasParameters && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-6 px-2 text-[11px] gap-1 rounded-none shadow-none text-primary border-primary/30 hover:bg-primary/5"
+                          onClick={() => openParameterDialog(action)}
+                          title="Buka dialog pengisian parameter"
+                        >
+                          {readOnly ? <Eye className="h-3 w-3" /> : <SlidersHorizontal className="h-3 w-3" />}
+                          <span>{readOnly ? 'Lihat' : filledParameterCount > 0 ? 'Edit' : 'Isi Param'}</span>
+                        </Button>
+                      )}
+
+                      {!readOnly && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 rounded-none shadow-none text-destructive hover:bg-destructive/10"
+                          onClick={() => onDelete(action.id)}
+                          title="Hapus tindakan"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
+
+                {/* Dental Summary (jika dental) */}
+                {actionDomain === 'dental' && targetDetailLines.length > 0 && (
+                  <div className="border-t border-amber-200 bg-amber-50/50 px-3.5 py-1.5 text-xs">
+                    <div className="flex items-center gap-1.5 font-semibold text-[10px] uppercase text-amber-900 tracking-wider">
+                      <span>Lokasi Gigi:</span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-amber-950">
+                      {dentalActionSummary.map((detail, index) => (
+                        <span key={`${detail}-${index}`} className="border border-amber-200/80 bg-white/80 px-2 py-0.5 text-[11px]">
+                          {detail}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Collapsible Parameter Details Panel */}
+                {hasParameters && isExpanded && (
+                  <div className="bg-muted/15 border-t border-border/60 px-3.5 py-2.5 text-xs">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="font-semibold text-[11px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <SlidersHorizontal className="h-3 w-3 text-primary" />
+                        Parameter Tindakan ({action.medical_service?.name || action.service_name_snapshot})
+                      </span>
+                      {!readOnly && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-[11px] px-2 text-primary hover:bg-primary/10 rounded-none shadow-none font-medium"
+                          onClick={() => openParameterDialog(action)}
+                        >
+                          Ubah Nilai Parameter
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {parameterDraftsList.map((param, pIdx) => {
+                        const hasValue = Boolean((param.result_value || '').trim() || (param.result_notes || '').trim());
+                        return (
+                          <div
+                            key={`param-${action.id}-${param.medical_service_parameter_id || pIdx}`}
+                            className={cn(
+                              'border p-2 bg-background flex flex-col justify-between gap-1 shadow-none',
+                              hasValue ? 'border-border' : 'border-dashed border-amber-300 bg-amber-50/20'
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-medium text-foreground text-[11px] truncate" title={param.parameter_name_snapshot}>
+                                {param.parameter_name_snapshot}
+                              </span>
+                              {param.is_required && (
+                                <span className="text-[9px] text-destructive font-mono font-bold">*Wajib</span>
+                              )}
+                            </div>
+                            <div className="flex items-baseline gap-1 mt-0.5">
+                              {hasValue ? (
+                                <>
+                                  <span className="font-mono font-bold text-sm text-foreground">
+                                    {param.result_value || '-'}
+                                  </span>
+                                  {param.unit_snapshot && (
+                                    <span className="text-[10px] text-muted-foreground font-mono">
+                                      {param.unit_snapshot}
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-[11px] italic text-amber-700">Belum diisi</span>
+                              )}
+                            </div>
+                            {param.result_notes && (
+                              <p className="text-[10px] text-muted-foreground italic truncate mt-0.5" title={param.result_notes}>
+                                {param.result_notes}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })
         )}
+        </div>
       </div>
 
       <ActionParameterDialog

@@ -107,9 +107,6 @@ export default function PhysicalExamImagesPage() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 Template Gambar Pemeriksaan Fisik
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Kelola template gambar anatomi untuk dokumentasi rekam medis ({filteredData.length} template)
-              </p>
             </div>
           </div>
 

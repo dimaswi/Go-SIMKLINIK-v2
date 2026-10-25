@@ -87,9 +87,6 @@ export default function MedicineCategoriesPage() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 Kategori Obat
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Kelola pengelompokan klasifikasi sediaan obat ({filteredData.length} kategori)
-              </p>
             </div>
           </div>
 

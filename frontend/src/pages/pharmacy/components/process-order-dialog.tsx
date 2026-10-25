@@ -497,7 +497,7 @@ export function ProcessOrderDialog({
                                       <thead className="bg-muted/20">
                                         <tr className="border-b border-border/70 text-left">
                                           <th className="px-3 py-2 font-semibold text-foreground/90">Bahan</th>
-                                          <th className="px-3 py-2 font-semibold text-foreground/90">Jumlah</th>
+                                          <th className="px-3 py-2 font-semibold text-foreground/90">Dosis / Bahan</th>
                                           <th className="px-3 py-2 font-semibold text-foreground/90">Stok</th>
                                           <th className="px-3 py-2 text-right font-semibold text-foreground/90">Nilai</th>
                                         </tr>
@@ -505,10 +505,26 @@ export function ProcessOrderDialog({
                                       <tbody>
                                         {(compound.items || []).map((ingredient) => {
                                           const ingredientStock = getCompoundIngredientStockStatus(ingredient);
+                                          const doseMatch = ingredient.notes?.match(/Dosis:\s*([^·]+)/i)?.[1]?.trim();
+                                          const extraNote = ingredient.notes?.replace(/Dosis:\s*[^·]+(·\s*)?/i, '').trim();
+
                                           return (
                                             <tr key={`compound-${compound.id}-ingredient-${ingredient.id}`} className="border-b border-border/50 align-top last:border-b-0">
-                                              <td className="px-3 py-2 text-sm text-foreground/95">{ingredient.medicine?.name || '-'} {ingredient.medicine?.strength || ''}</td>
-                                              <td className="px-3 py-2 text-sm text-muted-foreground">{ingredient.quantity} {ingredient.medicine?.unit?.name || 'item'}</td>
+                                              <td className="px-3 py-2 text-sm text-foreground/95">
+                                                <div className="space-y-0.5">
+                                                  <div className="flex flex-wrap items-center gap-1.5">
+                                                    <span className="font-medium">{ingredient.medicine?.name || '-'} {ingredient.medicine?.strength || ''}</span>
+                                                    {doseMatch ? (
+                                                      <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0 rounded-none bg-primary/10 text-primary border-primary/25">
+                                                        Dosis: {doseMatch}
+                                                      </Badge>
+                                                    ) : null}
+                                                  </div>
+                                                  {extraNote ? (
+                                                    <p className="text-[11px] text-muted-foreground">{extraNote}</p>
+                                                  ) : null}
+                                                </div>
+                                              </td>
                                               <td className="px-3 py-2">
                                                 <Badge variant="outline" className={`rounded-none px-1.5 py-0 text-[9px] uppercase tracking-[0.14em] ${ingredientStock.badgeClassName}`}>{ingredientStock.label}</Badge>
                                               </td>

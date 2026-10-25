@@ -15,7 +15,7 @@ export function SectionStatusBadge({ label, tone }: SectionStatusBadgeProps) {
   }[tone];
 
   return (
-    <Badge variant="outline" className={className}>
+    <Badge variant="outline" className={`${className} rounded-none shadow-none text-xs`}>
       {label}
     </Badge>
   );

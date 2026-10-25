@@ -10,7 +10,7 @@ import { SearchableSelect } from '@/components/ui/searchable-select';
 import { useToast } from '@/hooks/use-toast';
 import { setPageTitle } from '@/lib/page-title';
 import { visitsApi, type Visit } from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { cn, getLocalISODate } from '@/lib/utils';
 import { Eye, FilePenLine, Loader2, RefreshCw, Stethoscope, XCircle } from 'lucide-react';
 
 const VISIT_STATUS_LABEL: Record<Visit['status'], string> = {
@@ -96,7 +96,7 @@ function createColumns(
     },
     {
       id: 'actions',
-      header: 'Aksi',
+      header: () => <div className="text-right pr-2">Aksi</div>,
       cell: ({ row }) => {
         const visit = row.original;
         const isCanceling = cancelingVisitId === visit.id;
@@ -140,6 +140,10 @@ function createColumns(
           </div>
         );
       },
+      meta: {
+        headerClassName: 'text-right pr-4 whitespace-nowrap',
+        cellClassName: 'text-right pr-4 whitespace-nowrap',
+      },
     },
   ];
 }
@@ -152,6 +156,7 @@ export default function MedicalRecordsIndex() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('active');
   const [polyclinicFilter, setPolyclinicFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState(getLocalISODate());
   const [cancelTarget, setCancelTarget] = useState<Visit | null>(null);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelingVisitId, setCancelingVisitId] = useState<number | null>(null);
@@ -196,6 +201,12 @@ export default function MedicalRecordsIndex() {
   const filteredVisits = useMemo(() => {
     const query = search.trim().toLowerCase();
     return visits.filter((visit) => {
+      // Date filter
+      if (dateFilter) {
+        const vDate = visit.visit_date?.slice(0, 10);
+        if (vDate !== dateFilter) return false;
+      }
+
       // Status filter
       if (statusFilter === 'active') {
         if (visit.status !== 'registered' && visit.status !== 'in_progress') return false;
@@ -224,7 +235,7 @@ export default function MedicalRecordsIndex() {
 
       return haystack.includes(query);
     });
-  }, [polyclinicFilter, search, statusFilter, visits]);
+  }, [dateFilter, polyclinicFilter, search, statusFilter, visits]);
 
   const columns = useMemo(
     () =>
@@ -280,9 +291,6 @@ export default function MedicalRecordsIndex() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 Rekam Medis (EMR)
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Workspace rekam medis dan riwayat kunjungan pasien ({filteredVisits.length} kunjungan)
-              </p>
             </div>
           </div>
 
@@ -292,6 +300,14 @@ export default function MedicalRecordsIndex() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="h-9 w-48 sm:w-56 rounded-none text-xs focus:ring-inset"
+            />
+
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="h-9 w-36 border border-border bg-background px-2.5 text-xs outline-none focus:ring-1 focus:ring-ring shrink-0"
+              title="Filter tanggal kunjungan"
             />
 
             <SearchableSelect

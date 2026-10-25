@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,9 +7,9 @@ import { Switch } from '@/components/ui/switch';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { medicinesApi, medicineCategoriesApi, unitsApi, type KFAProductDetail, type MedicineCategory, type Unit } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Pill, DollarSign } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
-import { MasterDataAsideSection, MasterDataAsideStack, MasterDataLegacySections, MasterDataPageShell } from '@/pages/master-data/shared';
+import { MasterDataPageShell } from '@/pages/master-data/shared';
 import { KFAProductPickerDialog } from './components/kfa-product-picker-dialog';
 import { MedicineKFAMappingCard } from './components/medicine-kfa-mapping-card';
 
@@ -117,48 +116,19 @@ export default function MedicineEdit() {
   return (
     <>
       <KFAProductPickerDialog open={kfaDialogOpen} onOpenChange={setKfaDialogOpen} onSelect={handleSelectKFA} />
-      <form id="medicine-edit-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <MasterDataPageShell
-        title="Edit Obat"
-        subtitle="Perbarui item obat yang sudah terdaftar tanpa kehilangan referensi kode dan kategori stoknya."
-        onBack={() => navigate('/medicines')}
-        actions={<Button type="submit" form="medicine-edit-form" disabled={loading} className="rounded-none shadow-none">{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Update Obat</Button>}
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Ringkasan" helper="Preview obat yang akan diperbarui.">
-                <div className="space-y-3">
-                  <div className="space-y-1">
-                    <p className="truncate font-medium">{formData.name || '-'}</p>
-                    <p className="truncate text-muted-foreground">Kode lokal: {formData.code || '-'}</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline" className="rounded-none">{formData.type || 'generic'}</Badge>
-                    <Badge variant={formData.kfa_code ? 'default' : 'secondary'} className="rounded-none">{formData.kfa_code ? 'KFA siap' : 'Belum mapped'}</Badge>
-                  </div>
-                  <div className="space-y-1 text-muted-foreground">
-                    <p>Harga jual: <span className="font-medium text-foreground">Rp {formData.selling_price.toLocaleString('id-ID')}</span></p>
-                    <p>Stok saat ini: <span className="font-medium text-foreground">{formData.current_stock}</span></p>
-                    <p>Status: <span className="font-medium text-foreground">{formData.is_active ? 'Aktif' : 'Nonaktif'}</span></p>
-                  </div>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-            <div>
-              <MasterDataAsideSection title="KFA Mapping" helper="Pemetaan ini yang dipakai saat Medication SATUSEHAT dibentuk dari obat lokal.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Kode KFA: <span className="font-medium text-foreground">{formData.kfa_code || '-'}</span></p>
-                  <p>Nama KFA: <span className="font-medium text-foreground">{formData.kfa_name || '-'}</span></p>
-                  <p>Medication SATUSEHAT: <span className="font-medium text-foreground">{formData.satusehat_medication_id || '-'}</span></p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
-        }
-      >
-        <MasterDataLegacySections>
-          <div className="space-y-6">
-          <section className="space-y-4 rounded-lg border border-border/80 p-5">
+      <form id="medicine-edit-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+        <MasterDataPageShell
+          title="Edit Obat"
+          subtitle="Perbarui item obat, identitas, dan stok farmasi."
+          onBack={() => navigate('/medicines')}
+          actions={
+            <Button type="submit" form="medicine-edit-form" disabled={loading} size="sm" className="h-8 px-4 text-xs rounded-none shadow-none">
+              {loading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+              Update Obat
+            </Button>
+          }
+        >
+          <div className="space-y-4">
             <MedicineKFAMappingCard
               kfaCode={formData.kfa_code}
               kfaName={formData.kfa_name}
@@ -169,88 +139,157 @@ export default function MedicineEdit() {
               onPick={() => setKfaDialogOpen(true)}
               onClear={handleClearMapping}
             />
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Kode Obat</Label>
-                <div className="h-10 px-3 flex items-center rounded-md border bg-muted text-sm font-mono text-muted-foreground">{formData.code}</div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="name" className="text-xs font-medium flex items-center gap-2"><Pill className="h-3.5 w-3.5 text-muted-foreground" />Nama Obat</Label>
-                <Input id="name" required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="h-10 text-sm" />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="generic_name" className="text-xs font-medium">Nama Generik</Label>
-              <Input id="generic_name" value={formData.generic_name} onChange={e => setFormData({ ...formData, generic_name: e.target.value })} className="h-10 text-sm" />
-            </div>
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Kategori</Label>
-                <SearchableSelect
-                  options={categories.map(c => ({ value: String(c.id), label: c.name }))}
-                  value={formData.category_id ? String(formData.category_id) : ''}
-                  onValueChange={v => setFormData({ ...formData, category_id: Number(v) })}
-                  placeholder="Pilih kategori"
-                  searchPlaceholder="Cari kategori..."
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Satuan</Label>
-                <SearchableSelect
-                  options={units.map(u => ({ value: String(u.id), label: u.name }))}
-                  value={formData.unit_id ? String(formData.unit_id) : ''}
-                  onValueChange={v => setFormData({ ...formData, unit_id: Number(v) })}
-                  placeholder="Pilih satuan"
-                  searchPlaceholder="Cari satuan..."
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Tipe</Label>
-                <SearchableSelect
-                  options={[
-                    { value: 'generic', label: 'Generic' },
-                    { value: 'patent', label: 'Patent' },
-                    { value: 'herbal', label: 'Herbal' },
-                    { value: 'otc', label: 'OTC' },
-                  ]}
-                  value={formData.type}
-                  onValueChange={v => setFormData({ ...formData, type: v })}
-                  searchPlaceholder="Cari tipe..."
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
-              <div className="space-y-2">
-                <Label htmlFor="form" className="text-xs font-medium">Bentuk Sediaan</Label>
-                <Input id="form" value={formData.form} onChange={e => setFormData({ ...formData, form: e.target.value })} className="h-10 text-sm" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="strength" className="text-xs font-medium">Kekuatan</Label>
-                <Input id="strength" value={formData.strength} onChange={e => setFormData({ ...formData, strength: e.target.value })} className="h-10 text-sm" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="manufacturer" className="text-xs font-medium">Produsen</Label>
-                <Input id="manufacturer" value={formData.manufacturer} onChange={e => setFormData({ ...formData, manufacturer: e.target.value })} className="h-10 text-sm" />
-              </div>
-            </div>
-          </section>
 
-          <section className="space-y-4 rounded-lg border border-border/80 p-5">
-            <p className="text-sm font-semibold flex items-center gap-2"><DollarSign className="h-4 w-4 text-muted-foreground" />Stok & Harga</p>
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4">
-              <div className="space-y-2"><Label htmlFor="min_stock" className="text-xs font-medium">Stok Minimum</Label><Input id="min_stock" type="number" min="0" value={formData.min_stock} onChange={e => setFormData({ ...formData, min_stock: Number(e.target.value) })} className="h-10 text-sm" /></div>
-              <div className="space-y-2"><Label htmlFor="current_stock" className="text-xs font-medium">Stok Saat Ini</Label><Input id="current_stock" type="number" min="0" value={formData.current_stock} onChange={e => setFormData({ ...formData, current_stock: Number(e.target.value) })} className="h-10 text-sm" /></div>
-              <div className="space-y-2"><Label htmlFor="purchase_price" className="text-xs font-medium">Harga Beli</Label><Input id="purchase_price" type="number" min="0" value={formData.purchase_price} onChange={e => setFormData({ ...formData, purchase_price: Number(e.target.value) })} className="h-10 text-sm" /></div>
-              <div className="space-y-2"><Label htmlFor="selling_price" className="text-xs font-medium">Harga Jual</Label><Input id="selling_price" type="number" min="0" value={formData.selling_price} onChange={e => setFormData({ ...formData, selling_price: Number(e.target.value) })} className="h-10 text-sm" /></div>
+            <div className="space-y-2.5">
+              <div className="border-b border-border/60 pb-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Identitas Obat</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Kode Obat</Label>
+                  <div className="h-9 px-3 flex items-center border border-border/70 bg-muted/30 text-xs font-mono text-muted-foreground">{formData.code}</div>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="name" className="text-xs font-medium">Nama Obat *</Label>
+                  <Input
+                    id="name"
+                    required
+                    value={formData.name}
+                    onChange={e => setFormData({ ...formData, name: e.target.value })}
+                    className="h-9 text-xs rounded-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="generic_name" className="text-xs font-medium">Nama Generik</Label>
+                  <Input
+                    id="generic_name"
+                    value={formData.generic_name}
+                    onChange={e => setFormData({ ...formData, generic_name: e.target.value })}
+                    className="h-9 text-xs rounded-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Kategori</Label>
+                  <SearchableSelect
+                    options={categories.map(c => ({ value: String(c.id), label: c.name }))}
+                    value={formData.category_id ? String(formData.category_id) : ''}
+                    onValueChange={v => setFormData({ ...formData, category_id: Number(v) })}
+                    placeholder="Pilih kategori"
+                    searchPlaceholder="Cari kategori..."
+                    square
+                    className="h-9 text-xs rounded-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Satuan</Label>
+                  <SearchableSelect
+                    options={units.map(u => ({ value: String(u.id), label: u.name }))}
+                    value={formData.unit_id ? String(formData.unit_id) : ''}
+                    onValueChange={v => setFormData({ ...formData, unit_id: Number(v) })}
+                    placeholder="Pilih satuan"
+                    searchPlaceholder="Cari satuan..."
+                    square
+                    className="h-9 text-xs rounded-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Tipe</Label>
+                  <SearchableSelect
+                    options={[
+                      { value: 'generic', label: 'Generic' },
+                      { value: 'patent', label: 'Patent' },
+                      { value: 'herbal', label: 'Herbal' },
+                      { value: 'otc', label: 'OTC' },
+                    ]}
+                    value={formData.type}
+                    onValueChange={v => setFormData({ ...formData, type: v })}
+                    searchPlaceholder="Cari tipe..."
+                    square
+                    className="h-9 text-xs rounded-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="form" className="text-xs font-medium">Bentuk Sediaan</Label>
+                  <Input
+                    id="form"
+                    value={formData.form}
+                    onChange={e => setFormData({ ...formData, form: e.target.value })}
+                    className="h-9 text-xs rounded-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="strength" className="text-xs font-medium">Kekuatan</Label>
+                  <Input
+                    id="strength"
+                    value={formData.strength}
+                    onChange={e => setFormData({ ...formData, strength: e.target.value })}
+                    className="h-9 text-xs rounded-none"
+                  />
+                </div>
+              </div>
             </div>
-            <div className="flex items-center justify-between rounded-md border p-4">
-              <div className="space-y-0.5"><Label htmlFor="is_active" className="text-xs font-medium cursor-pointer">Status Aktif</Label><p className="text-xs text-muted-foreground">{formData.is_active ? 'Obat aktif' : 'Obat tidak aktif'}</p></div>
-              <Switch id="is_active" checked={formData.is_active} onCheckedChange={checked => setFormData({ ...formData, is_active: checked })} />
+
+            <div className="space-y-2.5">
+              <div className="border-b border-border/60 pb-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Stok & Harga</span>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="min_stock" className="text-xs font-medium">Stok Min.</Label>
+                  <Input
+                    id="min_stock"
+                    type="number"
+                    min="0"
+                    value={formData.min_stock}
+                    onChange={e => setFormData({ ...formData, min_stock: Number(e.target.value) })}
+                    className="h-9 text-xs rounded-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="current_stock" className="text-xs font-medium">Stok Saat Ini</Label>
+                  <Input
+                    id="current_stock"
+                    type="number"
+                    min="0"
+                    value={formData.current_stock}
+                    onChange={e => setFormData({ ...formData, current_stock: Number(e.target.value) })}
+                    className="h-9 text-xs rounded-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="purchase_price" className="text-xs font-medium">Harga Beli</Label>
+                  <Input
+                    id="purchase_price"
+                    type="number"
+                    min="0"
+                    value={formData.purchase_price}
+                    onChange={e => setFormData({ ...formData, purchase_price: Number(e.target.value) })}
+                    className="h-9 text-xs rounded-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="selling_price" className="text-xs font-medium">Harga Jual</Label>
+                  <Input
+                    id="selling_price"
+                    type="number"
+                    min="0"
+                    value={formData.selling_price}
+                    onChange={e => setFormData({ ...formData, selling_price: Number(e.target.value) })}
+                    className="h-9 text-xs rounded-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between border border-border/70 p-2.5 bg-muted/10">
+                <div>
+                  <Label htmlFor="is_active" className="text-xs font-medium cursor-pointer">Status Aktif</Label>
+                  <p className="text-[11px] text-muted-foreground">{formData.is_active ? 'Obat aktif dan dapat diresepkan' : 'Obat nonaktif'}</p>
+                </div>
+                <Switch id="is_active" checked={formData.is_active} onCheckedChange={checked => setFormData({ ...formData, is_active: checked })} />
+              </div>
             </div>
-          </section>
           </div>
-        </MasterDataLegacySections>
-      </MasterDataPageShell>
+        </MasterDataPageShell>
       </form>
     </>
   );

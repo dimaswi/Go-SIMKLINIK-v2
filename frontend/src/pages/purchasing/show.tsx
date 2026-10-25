@@ -8,7 +8,7 @@ import { purchaseOrdersApi, type PurchaseOrder, type PurchaseOrderItem } from '@
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Edit, PackageCheck, Truck } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
-import { MasterDataAsideSection, MasterDataAsideStack, MasterDataPageShell, MasterDataSection } from '@/pages/master-data/shared';
+import { MasterDataDetailItem, MasterDataPageShell, MasterDataSection } from '@/pages/master-data/shared';
 
 const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; className?: string }> = {
   draft: { label: 'Draft', variant: 'secondary' },
@@ -157,58 +157,28 @@ export default function PurchasingShow() {
           ) : null}
         </>
       }
-      aside={
-        <MasterDataAsideStack>
-          <div>
-            <MasterDataAsideSection title="Informasi PO" helper="Ringkasan status dan supplier untuk memonitor proses pengadaan.">
-              <div className="space-y-3 text-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <span className="text-muted-foreground">No. PO</span>
-                  <span className="font-mono font-medium text-right">{po.po_number}</span>
-                </div>
-                <div className="flex items-start justify-between gap-3">
-                  <span className="text-muted-foreground">Status</span>
-                  <Badge variant={statusInfo.variant} className={statusInfo.className ? `rounded-none shadow-none ${statusInfo.className}` : 'rounded-none shadow-none'}>{statusInfo.label}</Badge>
-                </div>
-                <div className="flex items-start justify-between gap-3">
-                  <span className="text-muted-foreground">Supplier</span>
-                  <span className="text-right font-medium">{po.supplier?.name || '-'}</span>
-                </div>
-                <div className="flex items-start justify-between gap-3">
-                  <span className="text-muted-foreground">Tgl. Pesan</span>
-                  <span className="text-right">{formatDate(po.order_date)}</span>
-                </div>
-                {po.received_date ? (
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="text-muted-foreground">Tgl. Terima</span>
-                    <span className="text-right">{formatDate(po.received_date)}</span>
-                  </div>
-                ) : null}
-                <div className="flex items-start justify-between gap-3">
-                  <span className="text-muted-foreground">Dibuat oleh</span>
-                  <span className="text-right">{po.creator?.full_name || po.creator?.username || '-'}</span>
-                </div>
-                <div className="border-t border-border/70 pt-3">
-                  <div className="flex items-start justify-between gap-3 font-semibold">
-                    <span>Total</span>
-                    <span>Rp {po.total_amount.toLocaleString('id-ID')}</span>
-                  </div>
-                </div>
-              </div>
-            </MasterDataAsideSection>
-          </div>
-
-          {po.notes ? (
-            <div>
-              <MasterDataAsideSection title="Catatan" helper="Informasi tambahan yang ikut tersimpan pada purchase order.">
-                <p className="whitespace-pre-wrap text-sm text-muted-foreground">{po.notes}</p>
-              </MasterDataAsideSection>
-            </div>
-          ) : null}
-        </MasterDataAsideStack>
-      }
     >
       <div className="divide-y divide-border/70">
+        <MasterDataSection title="Informasi Purchase Order" helper="Detail nomor pesanan, supplier, tanggal transaksi, dan status pengadaan.">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <MasterDataDetailItem label="Nomor PO" value={po.po_number} />
+            <MasterDataDetailItem
+              label="Status"
+              value={
+                <Badge variant={statusInfo.variant} className={statusInfo.className ? `rounded-none shadow-none ${statusInfo.className}` : 'rounded-none shadow-none'}>
+                  {statusInfo.label}
+                </Badge>
+              }
+            />
+            <MasterDataDetailItem label="Supplier" value={po.supplier?.name || '-'} />
+            <MasterDataDetailItem label="Tanggal Pesan" value={formatDate(po.order_date)} />
+            <MasterDataDetailItem label="Tanggal Terima" value={formatDate(po.received_date)} />
+            <MasterDataDetailItem label="Dibuat Oleh" value={po.creator?.full_name || po.creator?.username || '-'} />
+            <MasterDataDetailItem label="Total Pembelian" value={`Rp ${po.total_amount.toLocaleString('id-ID')}`} />
+            <MasterDataDetailItem label="Catatan" value={po.notes || '-'} />
+          </div>
+        </MasterDataSection>
+
         <MasterDataSection title="Daftar Item" helper="Bandingkan jumlah yang dipesan, diterima, dan nilai pembelian per item.">
           <div className="overflow-x-auto rounded-md border border-border/70">
             <table className="w-full text-sm">

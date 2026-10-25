@@ -87,9 +87,6 @@ export default function SuppliersPage() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 Supplier
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Kelola data mitra distributor dan supplier farmasi ({filteredData.length} supplier)
-              </p>
             </div>
           </div>
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BadgeCheck, Briefcase, Loader2, Mail, Phone, User } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,8 +9,8 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { employeesApi, type Employee, type User as AppUser, usersApi } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
-import { MasterDataAsideSection, MasterDataAsideStack, MasterDataLegacySections, MasterDataPageShell } from '@/pages/master-data/shared';
-import { EMPLOYEE_PROFESSION_OPTIONS, getEmployeeProfessionLabel, shouldEmployeeProfessionRequireSatusehatByDefault } from './options';
+import { MasterDataPageShell } from '@/pages/master-data/shared';
+import { EMPLOYEE_PROFESSION_OPTIONS, shouldEmployeeProfessionRequireSatusehatByDefault } from './options';
 
 export default function EmployeeCreate() {
   const navigate = useNavigate();
@@ -56,8 +56,6 @@ export default function EmployeeCreate() {
     [availableUsers]
   );
 
-  const selectedUser = users.find((user) => String(user.id) === formData.user_id);
-
   const handleProfessionChange = (value: string) => {
     setFormData((current) => {
       const previousDefault = shouldEmployeeProfessionRequireSatusehatByDefault(current.profession);
@@ -91,125 +89,150 @@ export default function EmployeeCreate() {
   };
 
   return (
-    <form id="employee-create-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <form id="employee-create-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <MasterDataPageShell
         title="Tambah Pegawai"
-        subtitle="Bangun master pegawai lintas profesi sebagai sumber utama identitas dan akun operasional klinik."
+        subtitle="Identitas dan akun operasional klinik."
         onBack={() => navigate('/employees')}
-        actions={<Button type="submit" form="employee-create-form" disabled={loading} className="rounded-none shadow-none">{loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Simpan Pegawai</Button>}
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Ringkasan" helper="Preview master pegawai yang akan disimpan.">
-                <div className="space-y-1 text-sm">
-                  <p className="truncate font-medium">{formData.full_name || 'Nama belum diisi'}</p>
-                  <p className="text-muted-foreground">Profesi: {getEmployeeProfessionLabel(formData.profession)}</p>
-                  <p className="text-muted-foreground">Kode: Otomatis saat simpan</p>
-                  <p className="text-muted-foreground">Akun: {selectedUser?.email || 'Belum tertaut'}</p>
-                  <p className="text-muted-foreground">SATUSEHAT: {formData.requires_satusehat ? 'Perlu integrasi' : 'Tidak perlu'}</p>
-                  <p className="text-muted-foreground">Practitioner ID: {formData.satusehat_practitioner_id || '-'}</p>
-                  <p className="text-muted-foreground">Status: {formData.is_active ? 'Aktif' : 'Nonaktif'}</p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-            <div>
-              <MasterDataAsideSection title="Catatan" helper="Satu akun user hanya boleh tertaut ke satu pegawai.">
-                <p className="text-sm text-muted-foreground">Gunakan profesi dokter bila data ini akan ditautkan ke profil dokter dan dipakai pada TTE atau jadwal.</p>
-                <p className="mt-2 text-sm text-muted-foreground">Akun yang sudah dipakai pegawai lain tidak ditampilkan lagi di pilihan akun.</p>
-                <p className="mt-2 text-sm text-muted-foreground">Default SATUSEHAT akan aktif otomatis untuk profesi klinis seperti dokter, perawat, dan bidan, tetapi tetap bisa diubah manual.</p>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
+        actions={
+          <Button type="submit" form="employee-create-form" disabled={loading} size="sm" className="h-8 px-4 text-xs rounded-none shadow-none">
+            {loading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+            Simpan Pegawai
+          </Button>
         }
       >
-        <MasterDataLegacySections>
-          <div className="space-y-6">
-            <section className="space-y-4 rounded-lg border border-border/80 p-5">
-              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="full_name" className="flex items-center gap-2 text-xs font-medium"><User className="h-3.5 w-3.5 text-muted-foreground" />Nama Pegawai</Label>
-                  <Input id="full_name" required value={formData.full_name} onChange={(e) => setFormData({ ...formData, full_name: e.target.value })} className="h-10 text-sm" placeholder="Nama lengkap pegawai" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="employee_code" className="flex items-center gap-2 text-xs font-medium"><BadgeCheck className="h-3.5 w-3.5 text-muted-foreground" />Kode Pegawai</Label>
-                  <Input id="employee_code" value="Akan dibuat otomatis saat disimpan" readOnly className="h-10 text-sm bg-muted/40" />
-                  <p className="text-xs text-muted-foreground">Format kode mengikuti pola harian sistem, misalnya `EMP-20260412-0001`.</p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="nik_number" className="text-xs font-medium">NIK</Label>
-                  <Input id="nik_number" value={formData.nik_number} onChange={(e) => setFormData({ ...formData, nik_number: e.target.value })} className="h-10 text-sm" placeholder="16 digit NIK" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="nip_number" className="text-xs font-medium">NIP</Label>
-                  <Input id="nip_number" value={formData.nip_number} onChange={(e) => setFormData({ ...formData, nip_number: e.target.value })} className="h-10 text-sm" placeholder="NIP pegawai" />
-                </div>
+        <div className="space-y-4">
+          <div className="space-y-2.5">
+            <div className="border-b border-border/60 pb-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Identitas Pegawai</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="full_name" className="text-xs font-medium">Nama Pegawai *</Label>
+                <Input
+                  id="full_name"
+                  required
+                  value={formData.full_name}
+                  onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                  className="h-9 text-xs rounded-none"
+                  placeholder="Nama lengkap pegawai"
+                />
               </div>
-            </section>
-
-            <section className="space-y-4 rounded-lg border border-border/80 p-5">
-              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="profession" className="flex items-center gap-2 text-xs font-medium"><Briefcase className="h-3.5 w-3.5 text-muted-foreground" />Profesi</Label>
-                  <SearchableSelect
-                    options={EMPLOYEE_PROFESSION_OPTIONS}
-                    value={formData.profession}
-                    onValueChange={handleProfessionChange}
-                    placeholder="Pilih profesi..."
-                    searchPlaceholder="Cari profesi..."
-                    noneLabel="Pilih profesi"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="license_number" className="text-xs font-medium">Nomor Izin/STR/SIP</Label>
-                  <Input id="license_number" value={formData.license_number} onChange={(e) => setFormData({ ...formData, license_number: e.target.value })} className="h-10 text-sm" placeholder="Opsional sesuai profesi" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone" className="flex items-center gap-2 text-xs font-medium"><Phone className="h-3.5 w-3.5 text-muted-foreground" />Telepon</Label>
-                  <Input id="phone" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} className="h-10 text-sm" placeholder="08xxxxxxxxxx" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="satusehat_practitioner_id" className="text-xs font-medium">Practitioner ID SATUSEHAT</Label>
-                  <Input id="satusehat_practitioner_id" value={formData.satusehat_practitioner_id} onChange={(e) => setFormData({ ...formData, satusehat_practitioner_id: e.target.value })} className="h-10 text-sm" placeholder="IHS number pegawai bila sudah tersedia" />
-                  <p className="text-xs text-muted-foreground">Dipakai sebagai performer/requester SATUSEHAT untuk modul farmasi, laboratorium, radiologi, atau tindakan sesuai konteks pegawai.</p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="user_id" className="flex items-center gap-2 text-xs font-medium"><Mail className="h-3.5 w-3.5 text-muted-foreground" />Akun User</Label>
-                  <SearchableSelect
-                    options={userOptions}
-                    value={formData.user_id}
-                    onValueChange={(value) => setFormData({ ...formData, user_id: value })}
-                    placeholder="Pilih akun user..."
-                    searchPlaceholder="Cari user..."
-                    noneLabel="Tanpa akun"
-                  />
-                  {availableUsers.length === 0 ? <p className="text-xs text-muted-foreground">Semua akun sudah tertaut ke master pegawai lain.</p> : null}
-                </div>
+              <div className="space-y-1">
+                <Label htmlFor="nik_number" className="text-xs font-medium">NIK (16 Digit)</Label>
+                <Input
+                  id="nik_number"
+                  value={formData.nik_number}
+                  onChange={(e) => setFormData({ ...formData, nik_number: e.target.value })}
+                  className="h-9 text-xs rounded-none font-mono"
+                  placeholder="16 digit NIK"
+                  maxLength={16}
+                />
               </div>
+              <div className="space-y-1">
+                <Label htmlFor="nip_number" className="text-xs font-medium">NIP</Label>
+                <Input
+                  id="nip_number"
+                  value={formData.nip_number}
+                  onChange={(e) => setFormData({ ...formData, nip_number: e.target.value })}
+                  className="h-9 text-xs rounded-none font-mono"
+                  placeholder="NIP pegawai"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="phone" className="text-xs font-medium">Nomor Telepon / WA</Label>
+                <Input
+                  id="phone"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  className="h-9 text-xs rounded-none font-mono"
+                  placeholder="08xxxxxxxxxx"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="user_id" className="text-xs font-medium">Tautan Akun User</Label>
+                <SearchableSelect
+                  options={userOptions}
+                  value={formData.user_id}
+                  onValueChange={(value) => setFormData({ ...formData, user_id: value })}
+                  placeholder="Pilih akun user..."
+                  searchPlaceholder="Cari user..."
+                  noneLabel="Tanpa akun"
+                  square
+                  className="h-9 text-xs rounded-none"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="employee_code" className="text-xs font-medium">Kode Pegawai</Label>
+                <Input
+                  id="employee_code"
+                  value="Otomatis saat disimpan"
+                  readOnly
+                  className="h-9 text-xs bg-muted/40 text-muted-foreground font-mono rounded-none"
+                />
+              </div>
+            </div>
+          </div>
 
-              <div className="flex items-center justify-between rounded-md border p-4">
-                <div className="space-y-0.5">
+          <div className="space-y-2.5">
+            <div className="border-b border-border/60 pb-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Profesi & Integrasi</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="profession" className="text-xs font-medium">Profesi *</Label>
+                <SearchableSelect
+                  options={EMPLOYEE_PROFESSION_OPTIONS}
+                  value={formData.profession}
+                  onValueChange={handleProfessionChange}
+                  placeholder="Pilih profesi..."
+                  searchPlaceholder="Cari profesi..."
+                  noneLabel="Pilih profesi"
+                  square
+                  className="h-9 text-xs rounded-none"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="license_number" className="text-xs font-medium">Nomor Izin / STR / SIP</Label>
+                <Input
+                  id="license_number"
+                  value={formData.license_number}
+                  onChange={(e) => setFormData({ ...formData, license_number: e.target.value })}
+                  className="h-9 text-xs rounded-none"
+                  placeholder="Nomor STR / SIP"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="satusehat_practitioner_id" className="text-xs font-medium">Practitioner ID SATUSEHAT</Label>
+                <Input
+                  id="satusehat_practitioner_id"
+                  value={formData.satusehat_practitioner_id}
+                  onChange={(e) => setFormData({ ...formData, satusehat_practitioner_id: e.target.value })}
+                  className="h-9 text-xs rounded-none font-mono"
+                  placeholder="IHS number pegawai"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+              <div className="flex items-center justify-between border border-border/70 p-2.5 bg-muted/10">
+                <div>
                   <Label htmlFor="requires_satusehat" className="cursor-pointer text-xs font-medium">Perlu SATUSEHAT</Label>
-                  <p className="text-xs text-muted-foreground">Aktifkan bila pegawai ini perlu disiapkan untuk integrasi SATUSEHAT.</p>
+                  <p className="text-[11px] text-muted-foreground">Aktifkan untuk sinkronisasi antrean & rekam medis SATUSEHAT</p>
                 </div>
                 <Switch id="requires_satusehat" checked={formData.requires_satusehat} onCheckedChange={(checked) => setFormData({ ...formData, requires_satusehat: checked })} />
               </div>
 
-              <div className="flex items-center justify-between rounded-md border p-4">
-                <div className="space-y-0.5">
+              <div className="flex items-center justify-between border border-border/70 p-2.5 bg-muted/10">
+                <div>
                   <Label htmlFor="is_active" className="cursor-pointer text-xs font-medium">Status Aktif</Label>
-                  <p className="text-xs text-muted-foreground">{formData.is_active ? 'Pegawai aktif' : 'Pegawai tidak aktif'}</p>
+                  <p className="text-[11px] text-muted-foreground">{formData.is_active ? 'Pegawai aktif operasional' : 'Pegawai nonaktif'}</p>
                 </div>
                 <Switch id="is_active" checked={formData.is_active} onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })} />
               </div>
-
-              {selectedUser ? (
-                <div className="rounded-md border border-dashed border-border/70 p-4 text-sm text-muted-foreground">
-                  Akun tertaut: <span className="font-medium text-foreground">{selectedUser.full_name || selectedUser.username}</span> · Role <span className="font-medium text-foreground">{selectedUser.role?.name || '-'}</span>
-                </div>
-              ) : null}
-            </section>
+            </div>
           </div>
-        </MasterDataLegacySections>
+        </div>
       </MasterDataPageShell>
     </form>
   );

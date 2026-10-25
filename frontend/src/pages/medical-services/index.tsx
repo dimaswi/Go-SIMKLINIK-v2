@@ -87,9 +87,6 @@ export default function MedicalServicesPage() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 Layanan Medis
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Kelola master layanan medis dan tarif tindakan klinik ({filteredData.length} layanan)
-              </p>
             </div>
           </div>
 

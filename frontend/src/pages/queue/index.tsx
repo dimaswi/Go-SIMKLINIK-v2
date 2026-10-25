@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Dialog,
   DialogContent,
@@ -12,23 +14,32 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { SearchableSelect } from '@/components/ui/searchable-select';
-import { queueApi, registrationQueueApi, visitsApi, type Polyclinic, type RegistrationQueueItem, type Visit } from '@/lib/api';
+import { DataTable } from '@/components/ui/data-table';
+import type { ColumnDef } from '@tanstack/react-table';
+import { doctorsApi, queueApi, registrationQueueApi, visitsApi, type Doctor, type Polyclinic, type RegistrationQueueItem, type Visit } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import {
   ArrowUpRight,
+  Building2,
   Clock3,
+  Edit,
+  ExternalLink,
   FileText,
+  Globe,
   Loader2,
   Monitor,
+  PhoneCall,
   Printer,
   RefreshCw,
   Siren,
+  Stethoscope,
   Ticket,
   Trash2,
+  User,
   Users,
 } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
-import { getLocalISODate } from '@/lib/utils';
+import { cn, getLocalISODate } from '@/lib/utils';
 import { openPdfDocumentInNewWindow } from '../emr/print-document';
 
 type QueueBuckets = {
@@ -137,94 +148,7 @@ function Lane({
   );
 }
 
-function RegistrationTicketRow({
-  item,
-  onPrint,
-  onDelete,
-  printing,
-  deleting,
-}: {
-  item: RegistrationQueueItem;
-  onPrint: (item: RegistrationQueueItem) => Promise<void>;
-  onDelete?: (item: RegistrationQueueItem) => void;
-  printing: boolean;
-  deleting: boolean;
-}) {
-  const isActive = item.status === 'called' || item.status === 'processing';
 
-  return (
-    <div className={`border px-3 py-3 ${isActive ? 'border-primary/30 bg-primary/5' : 'border-border/70 bg-background'}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-lg font-black leading-none text-foreground">{String(item.ticket_number).padStart(3, '0')}</p>
-          <p className="mt-1 text-xs text-muted-foreground">Diambil {formatShortTime(item.created_at)}</p>
-        </div>
-        <div className="flex min-w-[118px] flex-col items-end gap-2">
-          <Badge variant="outline" className="rounded-none shadow-none">
-            {REGISTRATION_STATUS_LABEL[item.status] || item.status}
-          </Badge>
-          <div className="flex w-full items-center justify-end gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 w-8 rounded-none p-0 shadow-none"
-              onClick={() => void onPrint(item)}
-              disabled={printing || deleting}
-              title="Cetak PDF"
-              aria-label="Cetak PDF"
-            >
-              {printing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}
-            </Button>
-            {onDelete ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 w-8 rounded-none p-0 text-destructive shadow-none hover:text-destructive"
-                onClick={() => onDelete(item)}
-                disabled={printing || deleting}
-                title="Hapus antrian"
-                aria-label="Hapus antrian"
-              >
-                {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-        <p>Dipanggil: {formatShortTime(item.called_at)}</p>
-        <p>Diproses: {formatShortTime(item.processing_started_at)}</p>
-      </div>
-    </div>
-  );
-}
-
-function RegistrationLane({
-  title,
-  count,
-  children,
-}: {
-  title: string;
-  count: number;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="flex min-h-[260px] flex-col overflow-hidden border border-border/70 bg-background">
-      <div className="border-b border-border/70 px-4 py-2.5">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</p>
-          <span className="inline-flex h-6 min-w-6 items-center justify-center border border-border/70 bg-muted/40 px-2 text-xs font-semibold text-foreground">
-            {count}
-          </span>
-        </div>
-      </div>
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-3">{children}</div>
-    </section>
-  );
-}
 
 export default function QueueDashboard() {
   const navigate = useNavigate();
@@ -235,16 +159,28 @@ export default function QueueDashboard() {
   const [selectedPoli, setSelectedPoli] = useState('');
   const [queueData, setQueueData] = useState<QueueBuckets>(EMPTY_QUEUE);
   const [registrationTickets, setRegistrationTickets] = useState<RegistrationQueueItem[]>([]);
+  const [registrationStatusFilter, setRegistrationStatusFilter] = useState<'all' | 'waiting' | 'in_service' | 'completed' | 'cancelled'>('all');
+  const [registrationSearch, setRegistrationSearch] = useState('');
+  const [refreshingRegistration, setRefreshingRegistration] = useState(false);
   const [loading, setLoading] = useState(false);
   const [callingNext, setCallingNext] = useState(false);
   const [takingRegistrationTicket, setTakingRegistrationTicket] = useState(false);
-  const [callingRegistrationTicket, setCallingRegistrationTicket] = useState(false);
+  const [processingRegistrationTicketId, setProcessingRegistrationTicketId] = useState<number | null>(null);
   const [printingRegistrationTicketId, setPrintingRegistrationTicketId] = useState<number | null>(null);
   const [deletingRegistrationTicketId, setDeletingRegistrationTicketId] = useState<number | null>(null);
   const [registrationDeleteTarget, setRegistrationDeleteTarget] = useState<RegistrationQueueItem | null>(null);
   const [displayPickerOpen, setDisplayPickerOpen] = useState(false);
   const [displayTargetPoli, setDisplayTargetPoli] = useState('');
   const [activeTab, setActiveTab] = useState<'pendaftaran' | 'poli' | 'all'>('pendaftaran');
+  const [takeTicketDialogOpen, setTakeTicketDialogOpen] = useState(false);
+  const [allDoctors, setAllDoctors] = useState<Doctor[]>([]);
+  const [ticketForm, setTicketForm] = useState({
+    nik: '',
+    patient_name: '',
+    phone: '',
+    polyclinic_id: '',
+    doctor_id: '',
+  });
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -260,6 +196,10 @@ export default function QueueDashboard() {
       setPolyclinicsLoaded(true);
       toast({ variant: 'destructive', title: 'Error!', description: 'Gagal memuat opsi poliklinik untuk dashboard antrian.' });
     });
+
+    doctorsApi.getAll('is_active=true').then((res) => {
+      setAllDoctors(res.data.data || []);
+    }).catch(() => {});
   }, [toast]);
 
   useEffect(() => {
@@ -293,11 +233,14 @@ export default function QueueDashboard() {
   }, [selectedPoli, toast]);
 
   const fetchRegistrationQueue = useCallback(async () => {
+    setRefreshingRegistration(true);
     try {
       const response = await registrationQueueApi.getAll(`date=${getLocalISODate()}`);
       setRegistrationTickets(response.data.data || []);
     } catch {
       toast({ variant: 'destructive', title: 'Error!', description: 'Gagal memuat antrian pendaftaran.' });
+    } finally {
+      setRefreshingRegistration(false);
     }
   }, [toast]);
 
@@ -372,18 +315,73 @@ export default function QueueDashboard() {
     }
   }, [printingRegistrationTicketId, toast]);
 
-  const takeRegistrationTicket = async () => {
+  const takeRegistrationTicketWithData = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanNik = ticketForm.nik.trim();
+    const cleanName = ticketForm.patient_name.trim();
+    const cleanPhone = ticketForm.phone.trim();
+
+    if (!cleanNik || !cleanName || !cleanPhone) {
+      toast({
+        variant: 'destructive',
+        title: 'Data belum lengkap',
+        description: 'Mohon lengkapi NIK (16 digit), Nama Lengkap, dan Nomor HP/WA.',
+      });
+      return;
+    }
+
+    if (cleanNik.length !== 16 || !/^\d+$/.test(cleanNik)) {
+      toast({
+        variant: 'destructive',
+        title: 'NIK tidak valid',
+        description: 'NIK harus berupa 16 digit angka.',
+      });
+      return;
+    }
+
+    setTakingRegistrationTicket(true);
+    try {
+      const response = await registrationQueueApi.create({
+        nik: cleanNik,
+        patient_name: cleanName,
+        phone: cleanPhone,
+        polyclinic_id: ticketForm.polyclinic_id ? Number(ticketForm.polyclinic_id) : undefined,
+        doctor_id: ticketForm.doctor_id ? Number(ticketForm.doctor_id) : undefined,
+      });
+      const item = response.data.data;
+      setTakeTicketDialogOpen(false);
+      setTicketForm({ nik: '', patient_name: '', phone: '', polyclinic_id: '', doctor_id: '' });
+      toast({
+        variant: 'success',
+        title: `Tiket No. ${String(item.ticket_number).padStart(3, '0')} Berhasil Dibuat`,
+        description: item.is_new_patient
+          ? `Pasien Baru dibuat dengan No. RM: ${item.patient?.medical_record_number || '-'}`
+          : `Pasien Lama: ${item.patient?.full_name || cleanName}`,
+      });
+      void fetchRegistrationQueue();
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Gagal membuat tiket',
+        description: error.response?.data?.error || 'Tiket pendaftaran tidak berhasil dibuat.',
+      });
+    } finally {
+      setTakingRegistrationTicket(false);
+    }
+  };
+
+  const takeQuickRegistrationTicket = async () => {
     setTakingRegistrationTicket(true);
     try {
       const response = await registrationQueueApi.create();
       const item = response.data.data;
+      setTakeTicketDialogOpen(false);
       toast({
         variant: 'success',
         title: 'Tiket pendaftaran dibuat',
         description: `Nomor ${String(item.ticket_number).padStart(3, '0')} masuk ke antrian pendaftaran.`,
       });
       void fetchRegistrationQueue();
-      await printRegistrationTicket(item);
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Gagal membuat tiket', description: error.response?.data?.error || 'Tiket pendaftaran tidak berhasil dibuat.' });
     } finally {
@@ -391,22 +389,34 @@ export default function QueueDashboard() {
     }
   };
 
-  const callNextRegistrationTicket = async () => {
-    setCallingRegistrationTicket(true);
+  const handleProcessRegistrationTicket = async (item: RegistrationQueueItem) => {
+    setProcessingRegistrationTicketId(item.id);
     try {
-      const response = await registrationQueueApi.callNext();
-      const item = response.data.data;
+      const targetStatus = item.status === 'processing' ? 'processing' : (item.status === 'completed' ? 'completed' : 'called');
+      const payload: { status: 'waiting' | 'cancelled' | 'completed' | 'called' | 'processing'; visit_id?: number } = { status: targetStatus };
+      if (item.status === 'completed' && item.visit_id) {
+        payload.visit_id = item.visit_id;
+      }
+      await registrationQueueApi.updateStatus(item.id, payload);
       toast({
-        title: `Panggil tiket ${String(item.ticket_number).padStart(3, '0')}`,
-        description: 'Tiket ini siap diproses di halaman pendaftaran.',
+        variant: 'success',
+        title: `Tiket ${String(item.ticket_number).padStart(3, '0')} Dipanggil`,
+        description: item.status === 'waiting'
+          ? 'Antrian telah dimasukkan ke pendaftaran dan siap diproses.'
+          : `Nomor antrian ${String(item.ticket_number).padStart(3, '0')} berhasil dipanggil kembali.`,
       });
       void fetchRegistrationQueue();
     } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Tidak ada antrian pendaftaran', description: error.response?.data?.error || 'Belum ada tiket pendaftaran yang menunggu.' });
+      toast({
+        variant: 'destructive',
+        title: 'Gagal memanggil antrian',
+        description: error.response?.data?.error || 'Tidak dapat memanggil antrian pendaftaran.',
+      });
     } finally {
-      setCallingRegistrationTicket(false);
+      setProcessingRegistrationTicketId(null);
     }
   };
+
 
   const deleteRegistrationTicket = async () => {
     if (!registrationDeleteTarget) {
@@ -438,6 +448,339 @@ export default function QueueDashboard() {
     () => registrationTickets.filter((item) => item.status === 'called' || item.status === 'processing'),
     [registrationTickets]
   );
+  const completedRegistrationTickets = useMemo(
+    () => registrationTickets.filter((item) => item.status === 'completed'),
+    [registrationTickets]
+  );
+  const cancelledRegistrationTickets = useMemo(
+    () => registrationTickets.filter((item) => item.status === 'cancelled'),
+    [registrationTickets]
+  );
+
+  const filteredRegistrationTickets = useMemo(() => {
+    let list = registrationTickets;
+    if (registrationStatusFilter === 'waiting') list = waitingRegistrationTickets;
+    else if (registrationStatusFilter === 'in_service') list = inServiceRegistrationTickets;
+    else if (registrationStatusFilter === 'completed') list = completedRegistrationTickets;
+    else if (registrationStatusFilter === 'cancelled') list = cancelledRegistrationTickets;
+
+    const q = registrationSearch.trim().toLowerCase();
+    if (!q) return list;
+
+    return list.filter((item) => {
+      const ticketNum = String(item.ticket_number);
+      const ticketPadded = ticketNum.padStart(3, '0');
+      const isAnon = !item.patient_id && !item.patient?.id && !item.patient_name && !item.nik;
+      const patientType = isAnon ? 'anonim' : item.is_new_patient ? 'baru' : 'lama';
+      const patientName = (item.patient?.full_name || item.patient_name || '').toLowerCase();
+      const mrn = (item.patient?.medical_record_number || '').toLowerCase();
+      const nik = (item.patient?.nik || item.nik || '').toLowerCase();
+      const phone = (item.patient?.phone || item.phone || '').toLowerCase();
+      const poli = (item.polyclinic?.name || '').toLowerCase();
+      const doctor = (item.doctor?.full_name || '').toLowerCase();
+      const statusLabel = (REGISTRATION_STATUS_LABEL[item.status] || '').toLowerCase();
+
+      return (
+        ticketNum.includes(q) ||
+        ticketPadded.includes(q) ||
+        patientType.includes(q) ||
+        patientName.includes(q) ||
+        mrn.includes(q) ||
+        nik.includes(q) ||
+        phone.includes(q) ||
+        poli.includes(q) ||
+        doctor.includes(q) ||
+        statusLabel.includes(q)
+      );
+    });
+  }, [
+    registrationSearch,
+    registrationStatusFilter,
+    registrationTickets,
+    waitingRegistrationTickets,
+    inServiceRegistrationTickets,
+    completedRegistrationTickets,
+    cancelledRegistrationTickets,
+  ]);
+
+  const registrationColumns = useMemo<ColumnDef<RegistrationQueueItem>[]>(
+    () => [
+      {
+        id: 'ticket_number',
+        header: 'No. Tiket',
+        accessorFn: (row) => `${row.ticket_number} ${String(row.ticket_number).padStart(3, '0')} ${(!row.patient_id && !row.patient?.id && !row.patient_name && !row.nik) ? 'anonim' : row.is_new_patient ? 'baru' : 'lama'}`,
+        cell: ({ row }) => {
+          const item = row.original;
+          const isAnonymous = !item.patient_id && !item.patient?.id && !item.patient_name && !item.nik;
+          return (
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-base font-bold text-foreground">
+                {String(item.ticket_number).padStart(3, '0')}
+              </span>
+              <div className="flex flex-col gap-0.5">
+                {isAnonymous ? (
+                  <Badge variant="outline" className="rounded-none border-zinc-400/60 bg-muted/40 text-muted-foreground shadow-none text-[9px] px-1 py-0 h-4 font-normal leading-none inline-flex items-center">
+                    Anonim
+                  </Badge>
+                ) : item.is_new_patient ? (
+                  <Badge className="rounded-none bg-emerald-600 hover:bg-emerald-700 text-white shadow-none text-[9px] px-1 py-0 h-4 font-normal leading-none inline-flex items-center">
+                    Pasien Baru
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="rounded-none border-blue-300 bg-blue-50/70 text-blue-700 shadow-none text-[9px] px-1 py-0 h-4 font-normal leading-none inline-flex items-center">
+                    Pasien Lama
+                  </Badge>
+                )}
+                <span className="text-[10px] text-muted-foreground font-mono">
+                  {formatShortTime(item.created_at)}
+                </span>
+              </div>
+            </div>
+          );
+        },
+      },
+      {
+        id: 'patient',
+        header: 'Data Pasien',
+        accessorFn: (row) =>
+          `${row.patient_name || ''} ${row.patient?.full_name || ''} ${row.nik || ''} ${row.patient?.nik || ''} ${row.patient?.medical_record_number || ''} ${row.phone || ''} ${row.patient?.phone || ''}`,
+        cell: ({ row }) => {
+          const item = row.original;
+          const isAnonymous = !item.patient_id && !item.patient?.id && !item.patient_name && !item.nik;
+          const patientName = item.patient_name || item.patient?.full_name;
+          const mrn = item.patient?.medical_record_number;
+          const patientId = item.patient_id || item.patient?.id;
+          const patientNik = item.nik || item.patient?.nik;
+          const patientPhone = item.phone || item.patient?.phone;
+
+          if (isAnonymous) {
+            return (
+              <div className="py-0.5 text-xs">
+                <span className="text-muted-foreground italic text-xs">Belum diisi (Tiket Anonim)</span>
+              </div>
+            );
+          }
+
+          return (
+            <div className="space-y-0.5 text-xs py-0.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-semibold text-foreground">{patientName || '-'}</span>
+                {mrn && patientId ? (
+                  <Link
+                    to={`/patients/${patientId}/edit`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-0.5 font-mono text-[10px] font-bold text-primary hover:underline bg-primary/10 px-1 py-0"
+                    title="Buka form edit data pasien"
+                  >
+                    RM: {mrn} <ExternalLink className="h-2 w-2" />
+                  </Link>
+                ) : (
+                  patientName ? <span className="font-mono text-[10px] text-muted-foreground">RM: -</span> : null
+                )}
+              </div>
+              {(patientNik || patientPhone) ? (
+                <div className="flex flex-wrap items-center gap-x-2 text-[10px] text-muted-foreground font-mono">
+                  {patientNik && <span>NIK: <span className="text-foreground">{patientNik}</span></span>}
+                  {patientNik && patientPhone && <span>•</span>}
+                  {patientPhone && <span>HP: <span className="text-foreground">{patientPhone}</span></span>}
+                </div>
+              ) : null}
+            </div>
+          );
+        },
+      },
+      {
+        id: 'destination',
+        header: 'Tujuan Layanan',
+        accessorFn: (row) => `${row.polyclinic?.name || ''} ${row.doctor?.full_name || ''}`,
+        cell: ({ row }) => {
+          const item = row.original;
+          if (!item.polyclinic && !item.doctor) {
+            return <span className="text-xs text-muted-foreground">-</span>;
+          }
+          return (
+            <div className="space-y-0.5 text-xs py-0.5">
+              {item.polyclinic ? (
+                <div className="flex items-center gap-1.5 font-medium text-foreground">
+                  <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
+                  <span className="truncate max-w-[200px]">{item.polyclinic.name}</span>
+                </div>
+              ) : null}
+              {item.doctor ? (
+                <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Stethoscope className="h-3 w-3 shrink-0" />
+                  <span className="truncate max-w-[200px]">{item.doctor.full_name}</span>
+                </div>
+              ) : null}
+            </div>
+          );
+        },
+      },
+      {
+        id: 'status',
+        header: 'Status & Waktu',
+        accessorFn: (row) => `${row.status} ${REGISTRATION_STATUS_LABEL[row.status] || ''}`,
+        cell: ({ row }) => {
+          const item = row.original;
+          const statusBadge = () => {
+            switch (item.status) {
+              case 'waiting':
+                return <Badge variant="outline" className="rounded-none border-amber-300 bg-amber-50 text-amber-700 shadow-none text-[10px] px-1.5 py-0">Menunggu</Badge>;
+              case 'called':
+                return <Badge variant="outline" className="rounded-none border-blue-300 bg-blue-50 text-blue-700 shadow-none text-[10px] px-1.5 py-0">Dipanggil</Badge>;
+              case 'processing':
+                return <Badge variant="outline" className="rounded-none border-violet-300 bg-violet-50 text-violet-700 shadow-none text-[10px] px-1.5 py-0">Diproses</Badge>;
+              case 'completed':
+                return <Badge variant="outline" className="rounded-none border-emerald-300 bg-emerald-50 text-emerald-700 shadow-none text-[10px] px-1.5 py-0">Selesai</Badge>;
+              case 'cancelled':
+                return <Badge variant="outline" className="rounded-none border-red-300 bg-red-50 text-red-700 shadow-none text-[10px] px-1.5 py-0">Dibatalkan</Badge>;
+              default:
+                return <Badge variant="outline" className="rounded-none shadow-none text-[10px] px-1.5 py-0">{item.status}</Badge>;
+            }
+          };
+
+          const latestTime = item.completed_at
+            ? { label: 'Selesai', time: formatShortTime(item.completed_at) }
+            : item.processing_started_at
+            ? { label: 'Diproses', time: formatShortTime(item.processing_started_at) }
+            : item.called_at
+            ? { label: 'Dipanggil', time: formatShortTime(item.called_at) }
+            : null;
+
+          return (
+            <div className="space-y-0.5 py-0.5">
+              <div>{statusBadge()}</div>
+              {latestTime ? (
+                <p className="text-[10px] text-muted-foreground font-mono">
+                  {latestTime.label}: {latestTime.time}
+                </p>
+              ) : null}
+            </div>
+          );
+        },
+      },
+      {
+        id: 'actions',
+        header: 'Aksi',
+        cell: ({ row }) => {
+          const item = row.original;
+          const isInService = item.status === 'called' || item.status === 'processing';
+          const isCompleted = item.status === 'completed';
+          const isProcessingThis = processingRegistrationTicketId === item.id;
+          const isPrintingThis = printingRegistrationTicketId === item.id;
+          const isDeletingThis = deletingRegistrationTicketId === item.id;
+          const disabled = isProcessingThis || isPrintingThis || isDeletingThis;
+
+          return (
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              {item.status !== 'cancelled' && (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+                  onClick={() => void handleProcessRegistrationTicket(item)}
+                  disabled={disabled}
+                  title={item.status === 'waiting' ? "Panggil dan masukan antrian ke pendaftaran" : "Panggil antrian"}
+                >
+                  {isProcessingThis ? <Loader2 className="h-4 w-4 animate-spin" /> : <PhoneCall className="h-4 w-4" />}
+                </Button>
+              )}
+
+              {isInService && (
+                <>
+                  {item.is_new_patient && (item.patient_id || item.patient?.id) ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 w-8 p-0 rounded-none border-emerald-500/60 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-100/70 shadow-none shrink-0"
+                      onClick={() => window.open(`/patients/${item.patient_id || item.patient?.id}/edit`, '_blank')}
+                      title="Lengkapi data pasien baru"
+                    >
+                      <Edit className="h-4 w-4 text-emerald-600" />
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+                    onClick={() =>
+                      navigate(
+                        `/registration/create?ticket_id=${item.id}&patient_id=${item.patient_id || item.patient?.id || ''}&polyclinic_id=${item.polyclinic_id || ''}&doctor_id=${item.doctor_id || ''}&mode=existing`
+                      )
+                    }
+                    title="Daftarkan langsung ke poli kunjungan"
+                  >
+                    <User className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
+
+              {isCompleted && item.visit_id ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+                    onClick={() => navigate(`/registration/${item.visit_id}`)}
+                    title="Buka Detail Pendaftaran"
+                  >
+                    <FileText className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+                    onClick={() => navigate(`/emr/${item.visit_id}`)}
+                    title="Buka EMR Kunjungan"
+                  >
+                    <ArrowUpRight className="h-4 w-4" />
+                  </Button>
+                </>
+              ) : null}
+
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 w-8 rounded-none p-0 shadow-none shrink-0"
+                onClick={() => void printRegistrationTicket(item)}
+                disabled={disabled}
+                title="Cetak Tiket PDF"
+                aria-label="Cetak Tiket PDF"
+              >
+                {isPrintingThis ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}
+              </Button>
+
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 w-8 rounded-none p-0 text-destructive shadow-none hover:text-destructive shrink-0"
+                onClick={() => setRegistrationDeleteTarget(item)}
+                disabled={disabled}
+                title="Hapus antrian"
+                aria-label="Hapus antrian"
+              >
+                {isDeletingThis ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              </Button>
+            </div>
+          );
+        },
+      },
+    ],
+    [
+      processingRegistrationTicketId,
+      printingRegistrationTicketId,
+      deletingRegistrationTicketId,
+      handleProcessRegistrationTicket,
+      printRegistrationTicket,
+      navigate,
+    ]
+  );
 
   const currentPolyclinic = polyclinics.find((item) => String(item.id) === selectedPoli) || null;
   const currentCall = queueData.in_consultation[0] || null;
@@ -454,9 +797,9 @@ export default function QueueDashboard() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 md:h-[calc(100vh-var(--app-header-height))] lg:p-4">
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden border border-border/70 bg-background">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden border border-border/70 bg-card shadow-none">
         {/* Unified Compact Header */}
-        <div className="border-b border-border/70 px-3 py-2">
+        <div className="border-b border-border/70 px-3 py-2 bg-card">
           <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
             {/* Tabs */}
             <div className="flex items-center gap-1 border border-border/70 bg-muted/40 p-0.5">
@@ -532,18 +875,35 @@ export default function QueueDashboard() {
               </Button>
 
               {(activeTab === 'pendaftaran' || activeTab === 'all') && (
-                <Button type="button" size="sm" className="h-8 rounded-none shadow-none" onClick={() => void takeRegistrationTicket()} disabled={takingRegistrationTicket}>
-                  {takingRegistrationTicket ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Ticket className="mr-1.5 h-3.5 w-3.5" />}
-                  Ambil Antrian
-                </Button>
+                <>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 rounded-none shadow-none"
+                    onClick={() => {
+                      setTicketForm({ nik: '', patient_name: '', phone: '', polyclinic_id: '', doctor_id: '' });
+                      setTakeTicketDialogOpen(true);
+                    }}
+                    disabled={takingRegistrationTicket}
+                  >
+                    {takingRegistrationTicket ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Ticket className="mr-1.5 h-3.5 w-3.5" />}
+                    Ambil Antrian
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 rounded-none shadow-none"
+                    onClick={() => window.open('/antrian', '_blank')}
+                    title="Buka Website Antrian Mandiri Pasien"
+                  >
+                    <Globe className="mr-1.5 h-3.5 w-3.5" />
+                    Kiosk Publik
+                  </Button>
+                </>
               )}
 
-              {(activeTab === 'pendaftaran' || activeTab === 'all') && (
-                <Button type="button" variant="outline" size="sm" className="h-8 rounded-none shadow-none" onClick={() => void callNextRegistrationTicket()} disabled={callingRegistrationTicket}>
-                  {callingRegistrationTicket ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Users className="mr-1.5 h-3.5 w-3.5" />}
-                  Panggil Berikutnya
-                </Button>
-              )}
+              {/* Panggil Berikutnya hanya untuk antrian Poli */}
 
               {(activeTab === 'poli' || activeTab === 'all') && (
                 <Button type="button" size="sm" className="h-8 rounded-none shadow-none" onClick={() => void callNext()} disabled={callingNext || !selectedPoli}>
@@ -562,42 +922,105 @@ export default function QueueDashboard() {
         </div>
 
         {/* Content Body */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className={`flex min-h-0 flex-1 flex-col ${activeTab === 'pendaftaran' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           {(activeTab === 'pendaftaran' || activeTab === 'all') && (
-            <div className={`grid min-h-0 gap-3 p-3 lg:grid-cols-2 ${activeTab === 'pendaftaran' ? 'flex-1' : ''}`}>
-              <RegistrationLane title="Menunggu Dipanggil" count={waitingRegistrationTickets.length}>
-                {waitingRegistrationTickets.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-muted-foreground">Belum ada tiket yang menunggu dipanggil.</p>
-                ) : waitingRegistrationTickets.map((item) => (
-                  <RegistrationTicketRow
-                    key={item.id}
-                    item={item}
-                    onPrint={printRegistrationTicket}
-                    onDelete={setRegistrationDeleteTarget}
-                    printing={printingRegistrationTicketId === item.id}
-                    deleting={deletingRegistrationTicketId === item.id}
-                  />
-                ))}
-              </RegistrationLane>
+            <div className={`flex min-h-0 flex-col ${activeTab === 'pendaftaran' ? 'flex-1 overflow-hidden' : 'border-b border-border/70'}`}>
+              {activeTab === 'all' && (
+                <div className="px-4 py-2 font-semibold text-xs uppercase tracking-wider text-muted-foreground bg-muted/20 border-b border-border/70">
+                  Antrian Pendaftaran
+                </div>
+              )}
 
-              <RegistrationLane title="Masuk Ke Pendaftaran" count={inServiceRegistrationTickets.length}>
-                {inServiceRegistrationTickets.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-muted-foreground">Belum ada tiket yang sedang dipanggil atau diproses.</p>
-                ) : inServiceRegistrationTickets.map((item) => (
-                  <div key={item.id} className="space-y-2">
-                    <RegistrationTicketRow
-                      item={item}
-                      onPrint={printRegistrationTicket}
-                      onDelete={setRegistrationDeleteTarget}
-                      printing={printingRegistrationTicketId === item.id}
-                      deleting={deletingRegistrationTicketId === item.id}
-                    />
-                    <Button type="button" variant="outline" className="w-full rounded-none shadow-none" onClick={() => navigate('/registration')}>
-                      Proses Di Halaman Pendaftaran
+              {/* Table Toolbar / Header matching the standard SIMKLINIK table design */}
+              <div className="flex flex-col gap-2.5 border-b border-border/70 bg-card p-3 sm:px-4 sm:py-2.5 xl:flex-row xl:items-center xl:justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={registrationSearch}
+                    onChange={(e) => setRegistrationSearch(e.target.value)}
+                    placeholder="Cari no. tiket, nama pasien, NIK, No. RM, poli..."
+                    className="h-8 w-64 sm:w-80 rounded-none text-xs focus:ring-inset"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-1 border border-border/70 bg-muted/30 p-0.5">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={registrationStatusFilter === 'all' ? 'default' : 'ghost'}
+                      className="h-7 rounded-none px-2.5 text-xs shadow-none"
+                      onClick={() => setRegistrationStatusFilter('all')}
+                    >
+                      Semua ({registrationTickets.length})
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={registrationStatusFilter === 'waiting' ? 'default' : 'ghost'}
+                      className="h-7 rounded-none px-2.5 text-xs shadow-none"
+                      onClick={() => setRegistrationStatusFilter('waiting')}
+                    >
+                      Menunggu ({waitingRegistrationTickets.length})
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={registrationStatusFilter === 'in_service' ? 'default' : 'ghost'}
+                      className="h-7 rounded-none px-2.5 text-xs shadow-none"
+                      onClick={() => setRegistrationStatusFilter('in_service')}
+                    >
+                      Masuk Pendaftaran ({inServiceRegistrationTickets.length})
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={registrationStatusFilter === 'completed' ? 'default' : 'ghost'}
+                      className="h-7 rounded-none px-2.5 text-xs shadow-none"
+                      onClick={() => setRegistrationStatusFilter('completed')}
+                    >
+                      Selesai ({completedRegistrationTickets.length})
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={registrationStatusFilter === 'cancelled' ? 'default' : 'ghost'}
+                      className="h-7 rounded-none px-2.5 text-xs shadow-none"
+                      onClick={() => setRegistrationStatusFilter('cancelled')}
+                    >
+                      Batal ({cancelledRegistrationTickets.length})
                     </Button>
                   </div>
-                ))}
-              </RegistrationLane>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 rounded-none px-2.5 text-xs shadow-none shrink-0"
+                    onClick={() => void fetchRegistrationQueue()}
+                    disabled={refreshingRegistration}
+                    title="Muat ulang antrian pendaftaran"
+                  >
+                    <RefreshCw className={cn('mr-1.5 h-3.5 w-3.5', refreshingRegistration && 'animate-spin')} />
+                    Segarkan
+                  </Button>
+                </div>
+              </div>
+
+              <div className="p-0 flex-1 min-h-0 overflow-auto">
+                <DataTable
+                  columns={registrationColumns}
+                  data={filteredRegistrationTickets}
+                  showSearch={false}
+                  showColumnVisibility={false}
+                  showSelectionSummary={false}
+                  pageSize={10}
+                  emptyMessage={
+                    <div className="py-12 text-center text-sm text-muted-foreground">
+                      Tidak ada antrian pendaftaran untuk kategori ini.
+                    </div>
+                  }
+                />
+              </div>
             </div>
           )}
 
@@ -790,6 +1213,142 @@ export default function QueueDashboard() {
         cancelText="Batal"
         variant="destructive"
       />
+
+      {/* Dialog Ambil Antrian Pendaftaran oleh Petugas */}
+      <Dialog open={takeTicketDialogOpen} onOpenChange={setTakeTicketDialogOpen}>
+        <DialogContent className="max-w-md rounded-none border-border/70">
+          <DialogHeader>
+            <DialogTitle className="text-base flex items-center gap-2">
+              <Ticket className="h-5 w-5 text-primary" />
+              Ambil Antrian Pendaftaran
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Masukkan identitas pasien untuk mengambil nomor antrian. Sistem otomatis memeriksa data NIK pasien.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={takeRegistrationTicketWithData} className="space-y-2.5 py-2">
+            <div className="space-y-1">
+              <Label className="text-xs font-medium">NIK (16 Digit) *</Label>
+              <Input
+                value={ticketForm.nik}
+                onChange={(e) => setTicketForm((prev) => ({ ...prev, nik: e.target.value.replace(/\D/g, '').slice(0, 16) }))}
+                placeholder="3201xxxxxxxxxxxx"
+                className="h-9 text-xs rounded-none font-mono"
+                maxLength={16}
+                required
+              />
+              <p className="text-[10px] text-muted-foreground">
+                {ticketForm.nik.length}/16 digit. Jika NIK baru, sistem otomatis membuat No. RM baru.
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-medium">Nama Lengkap Pasien *</Label>
+              <Input
+                value={ticketForm.patient_name}
+                onChange={(e) => setTicketForm((prev) => ({ ...prev, patient_name: e.target.value }))}
+                placeholder="Nama sesuai KTP"
+                className="h-9 text-xs rounded-none"
+                required
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-medium">Nomor WhatsApp / HP *</Label>
+              <Input
+                value={ticketForm.phone}
+                onChange={(e) => setTicketForm((prev) => ({ ...prev, phone: e.target.value }))}
+                placeholder="08xxxxxxxxxx"
+                className="h-9 text-xs rounded-none font-mono"
+                required
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-medium">Poliklinik Tujuan (Opsional)</Label>
+              <div className="mt-1">
+                <SearchableSelect
+                  options={polyclinics.map((p) => ({ value: String(p.id), label: p.name }))}
+                  value={ticketForm.polyclinic_id}
+                  onValueChange={(val) => setTicketForm((prev) => ({ ...prev, polyclinic_id: val, doctor_id: '' }))}
+                  placeholder="-- Pilih Poliklinik (Opsional) --"
+                  searchPlaceholder="Cari poliklinik..."
+                  noneLabel="-- Tidak Memilih / Umum --"
+                  square
+                  className="h-9 text-xs rounded-none"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs font-semibold">Dokter Tujuan (Opsional)</Label>
+              <div className="mt-1">
+                <SearchableSelect
+                  options={(ticketForm.polyclinic_id
+                    ? allDoctors.filter((doc) => doc.polyclinics?.some((poli) => String(poli.id) === ticketForm.polyclinic_id))
+                    : allDoctors
+                  ).map((doc) => ({
+                    value: String(doc.id),
+                    label: `${doc.full_name}${doc.specialization ? ` (${doc.specialization})` : ''}`,
+                  }))}
+                  value={ticketForm.doctor_id}
+                  onValueChange={(val) => setTicketForm((prev) => ({ ...prev, doctor_id: val }))}
+                  placeholder={ticketForm.polyclinic_id ? '-- Pilih Dokter di Poli Ini --' : '-- Pilih Dokter (Opsional) --'}
+                  searchPlaceholder="Cari dokter..."
+                  noneLabel="-- Dokter Yang Bertugas --"
+                  square
+                  className="h-9 text-xs rounded-none"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <Button
+                type="submit"
+                className="w-full rounded-none shadow-none text-xs"
+                disabled={takingRegistrationTicket}
+              >
+                {takingRegistrationTicket ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Ticket className="mr-2 h-4 w-4" />
+                )}
+                Cetak & Ambil Nomor Antrian
+              </Button>
+            </div>
+          </form>
+
+          <div className="border-t border-border/70 pt-3 flex flex-col gap-2">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>Keadaan darurat / tanpa data?</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-muted-foreground hover:text-foreground p-0 underline"
+                onClick={() => void takeQuickRegistrationTicket()}
+                disabled={takingRegistrationTicket}
+              >
+                Ambil Tiket Cepat (Anonim)
+              </Button>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full rounded-none text-xs shadow-none mt-1"
+              onClick={() => {
+                setTakeTicketDialogOpen(false);
+                window.open('/antrian', '_blank');
+              }}
+            >
+              <Globe className="mr-1.5 h-3.5 w-3.5" />
+              Buka Layar Kiosk Mandiri (/antrian)
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

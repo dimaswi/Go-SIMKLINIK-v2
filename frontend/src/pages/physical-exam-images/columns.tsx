@@ -2,7 +2,6 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { ArrowUpDown, Edit, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { createSelectColumn } from '@/components/ui/data-table';
 import { resolveAssetUrl, type PhysicalExamImageMaster } from '@/lib/api';
 
 type Props = {
@@ -19,7 +18,6 @@ export function createPhysicalExamImageColumns({
   hasDeletePermission,
 }: Props): ColumnDef<PhysicalExamImageMaster>[] {
   return [
-    createSelectColumn<PhysicalExamImageMaster>(),
     {
       accessorKey: 'name',
       header: ({ column }) => (

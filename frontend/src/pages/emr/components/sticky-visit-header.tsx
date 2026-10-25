@@ -2,12 +2,14 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { usePermission } from '@/hooks/usePermission';
 import { useToast } from '@/hooks/use-toast';
 import { satusehatApi, type SatusehatVisitAutoSyncResult, type Visit } from '@/lib/api';
-import { ChevronDown, ChevronRight, Eye, Loader2, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Eye, FileText, Loader2, RefreshCw, User } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { CORE_COMPLETION_TOTAL } from '../constants';
-import { compactAddress, formatDate, formatDateTime, getPatientAge } from '../utils';
+import { formatDateTime } from '../utils';
 import { SatusehatAutoSyncMonitorDialog } from './satusehat-auto-sync-monitor-dialog';
+import { PatientDetailDialog } from './patient-detail-dialog';
 
 type EncounterRequirement = {
   label: string;
@@ -108,25 +110,14 @@ export function StickyVisitHeader({
 }: StickyVisitHeaderProps) {
   const { toast } = useToast();
   const { hasAnyPermission } = usePermission();
-  const [isPatientInfoCollapsed, setIsPatientInfoCollapsed] = useState(true);
+  const [patientModalOpen, setPatientModalOpen] = useState(false);
   const [runningAutoSync, setRunningAutoSync] = useState(false);
   const [monitorDialogOpen, setMonitorDialogOpen] = useState(false);
   const [monitorAutoRefreshEnabled, setMonitorAutoRefreshEnabled] = useState(false);
   const [monitorResult, setMonitorResult] = useState<SatusehatVisitAutoSyncResult | null>(null);
   const [monitorMessage, setMonitorMessage] = useState('');
-  const patient = visit.patient;
-  const age = getPatientAge(patient?.birth_date);
-  const genderLabel = patient?.gender === 'L' ? 'Laki-laki' : patient?.gender === 'P' ? 'Perempuan' : '-';
-  const addressLabel = compactAddress([
-    patient?.address,
-    patient?.kelurahan,
-    patient?.kecamatan,
-    patient?.city,
-  ]) || '-';
-  const insuranceLabel = [patient?.insurance_type, patient?.insurance_number].filter(Boolean).join(' / ') || '-';
-  const emergencyLabel = [patient?.emergency_contact_name, patient?.emergency_contact_relation].filter(Boolean).join(' · ');
-  const allergyLabel = (allergyInfo || patient?.allergies || '').trim();
-  const ToggleIcon = isPatientInfoCollapsed ? ChevronRight : ChevronDown;
+
+  const allergyLabel = (allergyInfo || visit.patient?.allergies || '').trim();
   const stickyOffsetStyle = sticky ? { top: 0 } : undefined;
   const encounterRequirements = buildEncounterRequirements(visit);
   const encounterReadyCount = encounterRequirements.filter((item) => item.ready).length;
@@ -171,7 +162,6 @@ export function StickyVisitHeader({
 
   useEffect(() => {
     if (monitorDialogOpen && monitorAutoRefreshEnabled && isJobActive) {
-      // Start polling every 3 seconds
       pollIntervalRef.current = setInterval(fetchLatestSnapshot, 3000);
       return () => {
         if (pollIntervalRef.current) {
@@ -181,7 +171,6 @@ export function StickyVisitHeader({
       };
     }
 
-    // Clear interval when dialog closes or job completes
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current);
       pollIntervalRef.current = null;
@@ -217,7 +206,7 @@ export function StickyVisitHeader({
         onEncounterSynced?.();
       }
     }
-  }, [monitorResult?.job_status]);
+  }, [monitorResult?.job_status, monitorResult?.sent_count, monitorResult?.unsent_count, onEncounterSynced, toast]);
 
   useEffect(() => {
     const snapshot = loadStoredMonitorSnapshot(visit.id);
@@ -313,115 +302,129 @@ export function StickyVisitHeader({
         baselineResourceIds={baselineResourceIds}
       />
 
-      <div className={sticky ? 'sticky z-40 border-b border-border/60 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85' : 'border-b border-border/60 bg-background'} style={stickyOffsetStyle}>
-        <div className="px-4 py-2.5 lg:px-5">
-          <div className="flex flex-col gap-2.5 lg:flex-row lg:items-start lg:justify-between">
-            <button
+      <PatientDetailDialog
+        open={patientModalOpen}
+        onOpenChange={setPatientModalOpen}
+        visit={visit}
+        allergyInfo={allergyInfo}
+        encounterRequirements={encounterRequirements}
+      />
+
+      <div
+        className={cn(
+          'border-b border-border bg-card shadow-none',
+          sticky && 'sticky top-0 z-40'
+        )}
+        style={stickyOffsetStyle}
+      >
+        <div className="flex flex-col gap-3 p-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-start sm:items-center gap-3 min-w-0">
+            <Button
               type="button"
-              onClick={() => setIsPatientInfoCollapsed((current) => !current)}
-              aria-expanded={!isPatientInfoCollapsed}
-              className="w-full min-w-0 text-left lg:flex-1"
+              variant="outline"
+              size="sm"
+              className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+              onClick={onBack}
+              title="Kembali"
             >
-              <div className="flex flex-wrap items-center gap-1">
-                <Badge variant={isLocked ? 'default' : 'secondary'} className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div className="flex h-9 w-9 items-center justify-center border border-border bg-muted/20 shrink-0">
+              <FileText className="h-5 w-5 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-base font-bold text-foreground truncate">
+                  {visit.patient?.full_name || '-'}
+                </h1>
+                <Badge variant="outline" className="rounded-none font-mono text-xs shadow-none">
+                  RM: {visit.patient?.medical_record_number || '-'}
+                </Badge>
+                <Badge variant="outline" className="rounded-none text-xs shadow-none">
+                  #{visit.visit_number}
+                </Badge>
+                <Badge variant={isLocked ? 'default' : 'secondary'} className="rounded-none text-xs shadow-none uppercase">
                   {isLocked ? 'Kunjungan Final' : 'Workspace Aktif'}
                 </Badge>
-                <Badge variant="outline" className="h-5 rounded-none px-2 text-[10px] font-medium shadow-none">{visit.visit_number}</Badge>
-                <Badge variant="outline" className="hidden h-5 rounded-none px-2 text-[10px] font-medium shadow-none sm:inline-flex">{completedSections}/{CORE_COMPLETION_TOTAL} inti lengkap</Badge>
-                <Badge className={visit.satusehat_encounter_id ? 'h-5 rounded-none border-0 bg-emerald-600 px-2 text-[10px] uppercase tracking-wide text-white shadow-none' : encounterReady ? 'h-5 rounded-none border-0 bg-amber-500 px-2 text-[10px] uppercase tracking-wide text-white shadow-none' : 'h-5 rounded-none border-0 bg-slate-500 px-2 text-[10px] uppercase tracking-wide text-white shadow-none'}>
+                <Badge className={visit.satusehat_encounter_id ? 'rounded-none border-0 bg-emerald-600 px-2 text-xs uppercase tracking-wide text-white shadow-none' : encounterReady ? 'rounded-none border-0 bg-amber-500 px-2 text-xs uppercase tracking-wide text-white shadow-none' : 'rounded-none border-0 bg-slate-500 px-2 text-xs uppercase tracking-wide text-white shadow-none'}>
                   {visit.satusehat_encounter_id ? 'Encounter Sync' : `${encounterReadyCount}/4 Encounter`}
                 </Badge>
-                {sectionLabel ? <Badge variant="outline" className="hidden h-5 rounded-none px-2 text-[10px] font-medium shadow-none sm:inline-flex">Form {sectionLabel}</Badge> : null}
+                <Badge variant="outline" className="rounded-none text-xs shadow-none hidden sm:inline-flex">
+                  {completedSections}/{CORE_COMPLETION_TOTAL} inti lengkap
+                </Badge>
+                {sectionLabel ? (
+                  <Badge variant="outline" className="rounded-none text-xs shadow-none border-primary/40 bg-primary/5 text-primary">
+                    Form {sectionLabel}
+                  </Badge>
+                ) : null}
               </div>
-
-              <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <h1 className="text-[15px] font-semibold tracking-tight lg:text-base">{visit.patient?.full_name || '-'}</h1>
-                <span className="text-xs text-muted-foreground">RM {visit.patient?.medical_record_number || '-'}</span>
-                <span className="text-xs text-muted-foreground">{visit.polyclinic?.name || '-'}</span>
-                <span className="text-xs text-muted-foreground">dr. {visit.doctor?.full_name || '-'}</span>
-                <ToggleIcon className="h-4 w-4 text-muted-foreground" />
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">{visit.polyclinic?.name || '-'}</span>
+                <span>•</span>
+                <span>dr. {visit.doctor?.full_name || '-'}</span>
+                <span>•</span>
+                <span className="font-mono font-semibold">Antrian #{String(visit.queue_number).padStart(3, '0')}</span>
+                <span>•</span>
+                <span>{formatDateTime(visit.visit_date)}</span>
+                <span>•</span>
+                <span className="uppercase">{visit.payment_type || '-'}</span>
+                {allergyLabel ? (
+                  <>
+                    <span>•</span>
+                    <span className="font-semibold text-destructive">Alergi tercatat</span>
+                  </>
+                ) : null}
+                {statusNote ? (
+                  <>
+                    <span>•</span>
+                    {statusNote}
+                  </>
+                ) : null}
               </div>
-
-              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                <span>Tanggal {formatDateTime(visit.visit_date)}</span>
-                <span>Antrian {String(visit.queue_number).padStart(3, '0')}</span>
-                <span>Pembayaran {visit.payment_type || '-'}</span>
-                <span>Encounter {visit.satusehat_encounter_id ? 'tersinkron' : encounterReady ? 'siap sync' : 'belum siap'}</span>
-                {allergyLabel ? <span className="font-medium text-destructive">Alergi tercatat</span> : null}
-                {statusNote}
-              </div>
-
-              {!isPatientInfoCollapsed ? (
-                <>
-                  <div className="mt-2 grid gap-x-4 gap-y-1 border-t border-border/60 pt-2 text-[11px] text-muted-foreground md:grid-cols-2 xl:grid-cols-4">
-                    <span>
-                      JK / Usia: <span className="font-medium text-foreground">{genderLabel}{age !== null ? `, ${age} th` : ''}</span>
-                    </span>
-                    <span>
-                      Lahir: <span className="font-medium text-foreground">{patient?.birth_place || '-'}{patient?.birth_date ? `, ${formatDate(patient.birth_date)}` : ''}</span>
-                    </span>
-                    <span>
-                      Telepon: <span className="font-medium text-foreground">{patient?.phone || '-'}</span>
-                    </span>
-                    <span>
-                      Gol. darah: <span className="font-medium text-foreground">{patient?.blood_type || '-'}</span>
-                    </span>
-                    <span className="md:col-span-2 xl:col-span-2">
-                      Alamat: <span className="font-medium text-foreground">{addressLabel}</span>
-                    </span>
-                    <span>
-                      Penjamin: <span className="font-medium text-foreground">{insuranceLabel}</span>
-                    </span>
-                    <span>
-                      Encounter SATUSEHAT: <span className="font-medium text-foreground">{visit.satusehat_encounter_id || (encounterReady ? 'Siap sync' : 'Lengkapi patient, practitioner, organization, location')}</span>
-                    </span>
-                    <span>
-                      Alergi: <span className={allergyLabel ? 'font-medium text-destructive' : 'font-medium text-foreground'}>{allergyLabel || 'Tidak tercatat'}</span>
-                    </span>
-                    <span className="md:col-span-2 xl:col-span-2">
-                      Kontak darurat: <span className="font-medium text-foreground">{emergencyLabel || '-'}{patient?.emergency_contact_phone ? ` (${patient.emergency_contact_phone})` : ''}</span>
-                    </span>
-                  </div>
-
-                  <div className="mt-2 grid gap-2 border-t border-border/60 pt-2 md:grid-cols-2 xl:grid-cols-4">
-                    {encounterRequirements.map((item) => (
-                      <div key={item.label} className="border border-border/60 bg-muted/[0.03] px-3 py-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{item.label}</p>
-                          <Badge variant={item.ready ? 'default' : 'outline'} className="rounded-none px-1.5 text-[10px]">
-                            {item.ready ? 'Ready' : 'Missing'}
-                          </Badge>
-                        </div>
-                        <p className="mt-1 break-words text-[11px] leading-5 text-foreground/90">{item.value}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  <p className="mt-1.5 text-[11px] text-muted-foreground">
-                    Sync terakhir Encounter: <span className="font-medium text-foreground">{formatDateTime(visit.satusehat_synced_at)}</span>
-                  </p>
-
-                  <p className="mt-1.5 line-clamp-2 text-[11px] text-muted-foreground">
-                    Keluhan awal: <span className="text-foreground/90">{visit.complaint || 'Belum ada keluhan pendaftaran.'}</span>
-                  </p>
-                </>
-              ) : null}
-            </button>
-
-            <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:justify-end">
-              <Button variant="outline" className="rounded-none shadow-none" onClick={onBack}>Kembali</Button>
-              {canMonitorAutoSync ? (
-                <Button variant="outline" className="gap-1.5 rounded-none shadow-none" onClick={handleOpenMonitor} title="Pantau hasil Auto Sync SATUSEHAT" disabled={!visit.id}>
-                  <Eye className="h-4 w-4" />
-                </Button>
-              ) : null}
-              {canRunAutoSync ? (
-                <Button variant="outline" className="gap-1.5 rounded-none shadow-none" onClick={() => void handleRunAutoSync()} disabled={runningAutoSync} title="Jalankan Auto Sync SATUSEHAT untuk encounter ini">
-                  {runningAutoSync ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                </Button>
-              ) : null}
-              {actions}
             </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+              onClick={() => setPatientModalOpen(true)}
+              title="Data Pasien & Kunjungan"
+            >
+              <User className="h-4 w-4 text-primary" />
+            </Button>
+
+            {canMonitorAutoSync ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+                onClick={handleOpenMonitor}
+                title="Pantau hasil Auto Sync SATUSEHAT"
+                disabled={!visit.id}
+              >
+                <Eye className="h-4 w-4" />
+              </Button>
+            ) : null}
+
+            {canRunAutoSync ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+                onClick={() => void handleRunAutoSync()}
+                disabled={runningAutoSync}
+                title="Jalankan Auto Sync SATUSEHAT untuk encounter ini"
+              >
+                {runningAutoSync ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              </Button>
+            ) : null}
+
+            {actions}
           </div>
         </div>
       </div>

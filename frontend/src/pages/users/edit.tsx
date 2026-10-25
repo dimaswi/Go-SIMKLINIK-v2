@@ -7,9 +7,9 @@ import { Switch } from '@/components/ui/switch';
 import { usersApi, rolesApi } from '@/lib/api';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, User, Shield } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
-import { MasterDataAsideSection, MasterDataAsideStack, MasterDataLegacySections, MasterDataPageShell } from '@/pages/master-data/shared';
+import { MasterDataPageShell } from '@/pages/master-data/shared';
 
 export default function UserEdit() {
   const navigate = useNavigate();
@@ -87,47 +87,40 @@ export default function UserEdit() {
     );
   }
 
-  const selectedRole = roles.find((role: any) => String(role.id) === formData.role_id);
-
   return (
-    <form id="user-edit-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <form id="user-edit-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <MasterDataPageShell
         title="Edit User"
-        subtitle="Adjust role assignment and account status for this user."
+        subtitle="Perbarui role akses dan status akun pengguna."
         onBack={() => navigate('/users')}
-        actions={<Button type="submit" form="user-edit-form" disabled={loading} className="rounded-none shadow-none">{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Update User</Button>}
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Ringkasan" helper="Preview perubahan utama pada akun user.">
-                <div className="space-y-1 text-sm">
-                  <p className="font-medium">{formData.full_name || '-'}</p>
-                  <p className="text-muted-foreground">Role: {selectedRole?.name || '-'}</p>
-                  <p className="text-muted-foreground">Status: {formData.is_active ? 'Aktif' : 'Nonaktif'}</p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
+        actions={
+          <Button type="submit" form="user-edit-form" disabled={loading} size="sm" className="h-8 px-4 text-xs rounded-none shadow-none">
+            {loading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            Update User
+          </Button>
         }
       >
-        <MasterDataLegacySections>
-          <div className="space-y-6">
-            <section className="space-y-5 rounded-lg border border-border/80 p-5">
-              <div className="space-y-2">
-                <Label htmlFor="full_name" className="text-xs font-medium flex items-center gap-2">
-                  <User className="h-3.5 w-3.5 text-muted-foreground" />
-                  Nama Lengkap
-                </Label>
-                <Input id="full_name" required placeholder="Masukkan nama lengkap" value={formData.full_name} onChange={(e) => setFormData({ ...formData, full_name: e.target.value })} className="h-10 text-sm" />
-              </div>
-            </section>
+        <div className="space-y-4">
+          <div className="space-y-2.5">
+            <div className="border-b border-border/60 pb-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Informasi Akun & Hak Akses</span>
+            </div>
 
-            <section className="space-y-5 rounded-lg border border-border/80 p-5">
-              <div className="space-y-2">
-                <Label htmlFor="role_id" className="text-xs font-medium flex items-center gap-2">
-                  <Shield className="h-3.5 w-3.5 text-muted-foreground" />
-                  Role
-                </Label>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="full_name" className="text-xs font-medium">Nama Lengkap *</Label>
+                <Input
+                  id="full_name"
+                  required
+                  placeholder="Masukkan nama lengkap"
+                  value={formData.full_name}
+                  onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                  className="h-9 text-xs rounded-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="role_id" className="text-xs font-medium">Role Akses *</Label>
                 <SearchableSelect
                   options={roles.map((role: any) => ({ value: String(role.id), label: role.name }))}
                   value={formData.role_id}
@@ -135,19 +128,21 @@ export default function UserEdit() {
                   placeholder="Pilih role..."
                   searchPlaceholder="Cari role..."
                   emptyText="Role tidak ditemukan."
+                  square
+                  className="h-9 text-xs rounded-none"
                 />
               </div>
+            </div>
 
-              <div className="flex items-center justify-between rounded-md border p-4">
-                <div className="space-y-0.5">
-                  <Label htmlFor="is_active" className="cursor-pointer text-xs font-medium">Status Akun</Label>
-                  <p className="text-xs text-muted-foreground">{formData.is_active ? 'Akun aktif' : 'Akun tidak aktif'}</p>
-                </div>
-                <Switch id="is_active" checked={formData.is_active} onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })} />
+            <div className="flex items-center justify-between border border-border/70 p-2.5 bg-muted/10">
+              <div>
+                <Label htmlFor="is_active" className="cursor-pointer text-xs font-medium">Status Akun</Label>
+                <p className="text-[11px] text-muted-foreground">{formData.is_active ? 'Akun aktif dan dapat login' : 'Akun dinonaktifkan'}</p>
               </div>
-            </section>
+              <Switch id="is_active" checked={formData.is_active} onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })} />
+            </div>
           </div>
-        </MasterDataLegacySections>
+        </div>
       </MasterDataPageShell>
     </form>
   );

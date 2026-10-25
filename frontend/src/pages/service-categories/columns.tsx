@@ -1,14 +1,12 @@
 import type { ColumnDef } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
 import { Eye, Edit, Trash2, ArrowUpDown } from "lucide-react"
-import { createSelectColumn } from "@/components/ui/data-table"
 import type { ServiceCategory } from "@/lib/api"
 
 interface Props { onView: (id: number) => void; onEdit: (id: number) => void; onDelete: (id: number) => void; hasViewPermission: boolean; hasEditPermission: boolean; hasDeletePermission: boolean }
 
 export function createServiceCategoryColumns({ onView, onEdit, onDelete, hasViewPermission, hasEditPermission, hasDeletePermission }: Props): ColumnDef<ServiceCategory>[] {
   return [
-    createSelectColumn<ServiceCategory>(),
     {
       accessorKey: "name",
       header: ({ column }) => <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} className="h-8 p-0 hover:bg-transparent">Nama Kategori<ArrowUpDown className="ml-2 h-4 w-4" /></Button>,

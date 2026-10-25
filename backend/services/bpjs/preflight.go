@@ -148,7 +148,7 @@ func TestConnection(ctx context.Context, config Config) (ConnectionTestResult, e
 			},
 			ResponseBody: previewText,
 		})
-		return result, fmt.Errorf(result.Message)
+		return result, fmt.Errorf("%s", result.Message)
 	}
 
 	result.Message = fmt.Sprintf("endpoint %s dapat dijangkau (HTTP %d)", parsedURL.Host, response.StatusCode)

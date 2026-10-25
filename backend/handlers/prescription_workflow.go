@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -28,9 +29,9 @@ const (
 )
 
 type PrescriptionCompoundIngredientRequest struct {
-	MedicineID uint   `json:"medicine_id" binding:"required"`
-	Quantity   int    `json:"quantity" binding:"required"`
-	Notes      string `json:"notes"`
+	MedicineID uint    `json:"medicine_id" binding:"required"`
+	Quantity   float64 `json:"quantity" binding:"required"`
+	Notes      string  `json:"notes"`
 }
 
 type PrescriptionCompoundRequest struct {
@@ -348,10 +349,14 @@ func AddPrescriptionCompound(c *gin.Context) {
 			return
 		}
 
+		qty := int(math.Ceil(item.Quantity))
+		if qty < 1 {
+			qty = 1
+		}
 		compoundItem := models.PrescriptionCompoundItem{
 			PrescriptionCompoundID: compound.ID,
 			MedicineID:             item.MedicineID,
-			Quantity:               item.Quantity,
+			Quantity:               qty,
 			Notes:                  item.Notes,
 		}
 		if err := tx.Create(&compoundItem).Error; err != nil {
@@ -603,11 +608,24 @@ func PreparePrescriptionOrder(c *gin.Context) {
 		return
 	}
 
+	var req struct {
+		PrescriptionReviewInitial string `json:"prescription_review_initial"`
+	}
+	_ = c.ShouldBindJSON(&req)
+
+	// Simpan snapshot resep dokter asli saat resep pertama kali diterima/diproses farmasi
+	_ = ensureDoctorPrescriptionSnapshot(&record, nil)
+
 	now := time.Now()
-	if err := database.DB.Model(&models.MedicalRecord{}).Where("id = ?", record.ID).Updates(map[string]interface{}{
+	updates := map[string]interface{}{
 		"prescription_workflow_status": prescriptionWorkflowStatusPreparing,
 		"prescription_ordered_at":      gorm.Expr("COALESCE(prescription_ordered_at, ?)", now),
-	}).Error; err != nil {
+	}
+	if strings.TrimSpace(req.PrescriptionReviewInitial) != "" {
+		updates["prescription_review_initial"] = strings.TrimSpace(req.PrescriptionReviewInitial)
+	}
+
+	if err := database.DB.Model(&models.MedicalRecord{}).Where("id = ?", record.ID).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -787,6 +805,19 @@ func DispensePrescriptionOrder(c *gin.Context) {
 		return
 	}
 
+	var req struct {
+		PrescriptionReviewFinal string                   `json:"prescription_review_final"`
+		CompoundDeductions      []CompoundDeductionInput `json:"compound_deductions"`
+	}
+	_ = c.ShouldBindJSON(&req)
+
+	compoundDeductionMap := make(map[uint]int)
+	for _, cd := range req.CompoundDeductions {
+		if cd.CompoundItemID > 0 && cd.Quantity >= 0 {
+			compoundDeductionMap[cd.CompoundItemID] = cd.Quantity
+		}
+	}
+
 	userID := getAuthenticatedUserID(c)
 	now := time.Now()
 	tx := database.DB.Begin()
@@ -851,18 +882,36 @@ func DispensePrescriptionOrder(c *gin.Context) {
 
 	for _, compound := range record.PrescriptionCompounds {
 		for _, ingredient := range compound.Items {
-			if _, err := dispenseMedicineStockTx(
-				tx,
-				ingredient.MedicineID,
-				ingredient.Quantity,
-				"prescription_compound",
-				compound.ID,
-				fmt.Sprintf("Dispensing racikan %s - %s", fallbackText(compound.Name), fallbackText(record.Patient.FullName)),
-				userID,
-			); err != nil {
-				tx.Rollback()
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
+			qtyToDeduct := ingredient.Quantity
+			if customQty, found := compoundDeductionMap[ingredient.ID]; found {
+				qtyToDeduct = customQty
+			}
+
+			// Update kuantitas riil di item racikan bila farmasi mengubahnya
+			if qtyToDeduct != ingredient.Quantity {
+				if err := tx.Model(&models.PrescriptionCompoundItem{}).
+					Where("id = ?", ingredient.ID).
+					Update("quantity", qtyToDeduct).Error; err != nil {
+					tx.Rollback()
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+			}
+
+			if qtyToDeduct > 0 {
+				if _, err := dispenseMedicineStockTx(
+					tx,
+					ingredient.MedicineID,
+					qtyToDeduct,
+					"prescription_compound",
+					compound.ID,
+					fmt.Sprintf("Dispensing racikan %s (%d dipotong) - %s", fallbackText(compound.Name), qtyToDeduct, fallbackText(record.Patient.FullName)),
+					userID,
+				); err != nil {
+					tx.Rollback()
+					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
 			}
 		}
 
@@ -890,12 +939,17 @@ func DispensePrescriptionOrder(c *gin.Context) {
 		}
 	}
 
-	if err := tx.Model(&models.MedicalRecord{}).Where("id = ?", record.ID).Updates(map[string]interface{}{
+	recordUpdates := map[string]interface{}{
 		"prescription_workflow_status": prescriptionWorkflowStatusDispensed,
 		"prescription_ordered_at":      gorm.Expr("COALESCE(prescription_ordered_at, ?)", now),
 		"prescription_processed_at":    &now,
 		"prescription_processed_by":    userID,
-	}).Error; err != nil {
+	}
+	if strings.TrimSpace(req.PrescriptionReviewFinal) != "" {
+		recordUpdates["prescription_review_final"] = strings.TrimSpace(req.PrescriptionReviewFinal)
+	}
+
+	if err := tx.Model(&models.MedicalRecord{}).Where("id = ?", record.ID).Updates(recordUpdates).Error; err != nil {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -913,4 +967,124 @@ func DispensePrescriptionOrder(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": updatedRecord, "message": "Dispensing resep berhasil diproses"})
+}
+
+type CompoundDeductionInput struct {
+	CompoundItemID uint `json:"compound_item_id"`
+	Quantity       int  `json:"quantity"`
+}
+
+type UpdateCompoundDeductionsRequest struct {
+	Items []CompoundDeductionInput `json:"items"`
+}
+
+func UpdatePrescriptionCompoundDeductions(c *gin.Context) {
+	recordID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	record, err := loadPrescriptionRecord(uint(recordID))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Rekam medis tidak ditemukan"})
+		return
+	}
+
+	if message, ok := ensurePrescriptionRecordProcessable(record); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": message})
+		return
+	}
+
+	workflowStatus := normalizePrescriptionWorkflowStatus(record.PrescriptionWorkflowStatus)
+	if workflowStatus == prescriptionWorkflowStatusDispensed {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Order resep ini sudah selesai diproses (dispensed)"})
+		return
+	}
+
+	var req UpdateCompoundDeductionsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Format data pengurangan stok tidak valid"})
+		return
+	}
+
+	tx := database.DB.Begin()
+	if tx.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": tx.Error.Error()})
+		return
+	}
+
+	for _, item := range req.Items {
+		if item.CompoundItemID == 0 || item.Quantity < 0 {
+			continue
+		}
+		if err := tx.Model(&models.PrescriptionCompoundItem{}).
+			Where("id = ?", item.CompoundItemID).
+			Update("quantity", item.Quantity).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	updatedRecord, err := loadPrescriptionRecord(record.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": updatedRecord, "message": "Jumlah pemotongan bahan racikan berhasil diperbarui"})
+}
+
+type UpdatePrescriptionReviewRequest struct {
+	PrescriptionReviewInitial *string `json:"prescription_review_initial"`
+	PrescriptionReviewFinal   *string `json:"prescription_review_final"`
+}
+
+func UpdatePrescriptionReview(c *gin.Context) {
+	recordID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	record, err := loadPrescriptionRecord(uint(recordID))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Rekam medis tidak ditemukan"})
+		return
+	}
+
+	var req UpdatePrescriptionReviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	updates := map[string]interface{}{}
+	if req.PrescriptionReviewInitial != nil {
+		updates["prescription_review_initial"] = strings.TrimSpace(*req.PrescriptionReviewInitial)
+	}
+	if req.PrescriptionReviewFinal != nil {
+		updates["prescription_review_final"] = strings.TrimSpace(*req.PrescriptionReviewFinal)
+	}
+
+	if len(updates) > 0 {
+		if err := database.DB.Model(&models.MedicalRecord{}).Where("id = ?", record.ID).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	updatedRecord, err := loadPrescriptionRecord(record.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": updatedRecord, "message": "Telaah resep berhasil disimpan"})
 }

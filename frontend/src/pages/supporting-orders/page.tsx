@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { AxiosError } from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   CheckCircle2,
   Download,
   ExternalLink,
+  FileText,
   FlaskConical,
   Loader2,
   RefreshCw,
@@ -18,7 +19,7 @@ import { Input } from '@/components/ui/input';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { usePermission } from '@/hooks/usePermission';
 import { useToast } from '@/hooks/use-toast';
-import { cn } from '@/lib/utils';
+import { cn, getLocalISODate } from '@/lib/utils';
 import { downloadBlobResponse } from '../../lib/blob-download';
 import {
   laboratoryApi,
@@ -89,6 +90,7 @@ export default function SupportingOrdersPage({
   const [search, setSearch] = useState('');
   const [polyclinicFilter, setPolyclinicFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState(getLocalISODate());
   const [preparingRecordId, setPreparingRecordId] = useState<number | null>(null);
   const [downloadingRecordId, setDownloadingRecordId] = useState<number | null>(null);
 
@@ -195,11 +197,17 @@ export default function SupportingOrdersPage({
 
   const filteredOrders = useMemo(() => {
     let result = filterSupportingOrders(orders, search, polyclinicFilter, unitType);
+    if (dateFilter) {
+      result = result.filter((record) => {
+        const orderDate = (getSupportingOrderedAt(record, unitType) || record.record_date || record.visit?.visit_date || '')?.slice(0, 10);
+        return orderDate === dateFilter;
+      });
+    }
     if (statusFilter !== 'all') {
       result = result.filter((record) => getSupportingWorkflowStatus(record, unitType) === statusFilter);
     }
     return result;
-  }, [orders, polyclinicFilter, search, statusFilter, unitType]);
+  }, [dateFilter, orders, polyclinicFilter, search, statusFilter, unitType]);
 
   const columns = useMemo<ColumnDef<MedicalRecord>[]>(() => {
     return [
@@ -259,7 +267,7 @@ export default function SupportingOrdersPage({
       },
       {
         id: 'actions',
-        header: 'Aksi',
+        header: () => <div className="text-right pr-2">Aksi</div>,
         cell: ({ row }) => {
           const record = row.original;
           const status = getSupportingWorkflowStatus(record, unitType);
@@ -267,17 +275,18 @@ export default function SupportingOrdersPage({
           const isDownloading = downloadingRecordId === record.id;
 
           return (
-            <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+            <div className="flex items-center justify-end gap-1 whitespace-nowrap">
               {status === 'ordered' && canManage ? (
                 <Button
                   type="button"
                   size="sm"
-                  className="h-7 px-2.5 text-xs rounded-none shadow-none"
+                  variant="default"
+                  className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
                   onClick={() => void handlePrepare(record)}
                   disabled={isPreparing}
+                  title="Terima Order"
                 >
-                  {isPreparing ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="mr-1 h-3.5 w-3.5" />}
-                  Terima Order
+                  {isPreparing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 </Button>
               ) : null}
 
@@ -285,28 +294,47 @@ export default function SupportingOrdersPage({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-7 px-2.5 text-xs rounded-none shadow-none"
+                className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
                 onClick={() => navigate(`${unit.rootPath}/${record.id}`)}
+                title={status === 'completed' ? 'Lihat Hasil' : 'Detail / Proses Order'}
               >
-                <ExternalLink className="mr-1 h-3.5 w-3.5" />
-                {status === 'completed' ? 'Lihat Hasil' : 'Detail / Proses'}
+                <ExternalLink className="h-4 w-4" />
               </Button>
+
+              {record.visit_id && (
+                <Button
+                  asChild
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+                  title="Buka EMR"
+                >
+                  <Link to={`/emr/${record.visit_id}`}>
+                    <FileText className="h-4 w-4" />
+                  </Link>
+                </Button>
+              )}
 
               {status === 'completed' ? (
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-7 px-2 text-xs rounded-none shadow-none"
+                  className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
                   onClick={() => void handleDownloadResult(record)}
                   disabled={isDownloading}
                   title="Cetak Hasil PDF"
                 >
-                  {isDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                  {isDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                 </Button>
               ) : null}
             </div>
           );
+        },
+        meta: {
+          headerClassName: 'text-right pr-4 whitespace-nowrap',
+          cellClassName: 'text-right pr-4 whitespace-nowrap',
         },
       },
     ];
@@ -321,7 +349,7 @@ export default function SupportingOrdersPage({
   }
 
   return (
-    <div className="p-6">
+    <div className="p-4 md:p-6 space-y-4">
       <div className="border border-border bg-card shadow-none">
         <div className="flex flex-col gap-3 p-4 border-b border-border xl:flex-row xl:items-center xl:justify-between">
           <div className="flex items-center gap-2.5 shrink-0">
@@ -332,9 +360,6 @@ export default function SupportingOrdersPage({
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 {unit.title}
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Kelola order dan hasil pemeriksaan {unit.label} ({filteredOrders.length} order)
-              </p>
             </div>
           </div>
 
@@ -344,6 +369,14 @@ export default function SupportingOrdersPage({
               onChange={(event) => setSearch(event.target.value)}
               placeholder={`Cari pasien / RM / ${unit.label}...`}
               className="h-9 w-48 sm:w-56 rounded-none text-xs focus:ring-inset"
+            />
+
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="h-9 w-36 border border-border bg-background px-2.5 text-xs outline-none focus:ring-1 focus:ring-ring shrink-0"
+              title={`Filter tanggal order ${unit.label}`}
             />
 
             <SearchableSelect

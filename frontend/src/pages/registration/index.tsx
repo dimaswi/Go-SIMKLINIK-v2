@@ -12,19 +12,19 @@ import { getLocalISODate } from '@/lib/utils';
 import { createColumns } from './columns';
 
 const STATUS_OPTIONS = [
+  { value: 'waiting', label: 'Menunggu' },
   { value: 'called', label: 'Dipanggil' },
   { value: 'processing', label: 'Diproses' },
   { value: 'completed', label: 'Selesai' },
+  { value: 'cancelled', label: 'Dibatalkan' },
 ];
-
-
 
 export default function RegistrationIndex() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [data, setData] = useState<RegistrationQueueItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('called');
+  const [statusFilter, setStatusFilter] = useState('');
   const [dateFilter, setDateFilter] = useState(getLocalISODate());
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [cancelId, setCancelId] = useState<number | null>(null);
@@ -77,7 +77,7 @@ export default function RegistrationIndex() {
 
 
   const visibleData = useMemo(
-    () => data.filter((item) => item.status === 'called' || item.status === 'processing' || item.status === 'completed'),
+    () => data,
     [data]
   );
 
@@ -103,26 +103,26 @@ export default function RegistrationIndex() {
   }
 
   return (
-    <div className="p-6">
-      <div className="border border-border bg-card shadow-none">
-        <div className="flex flex-col gap-3 p-4 border-b border-border xl:flex-row xl:items-center xl:justify-between">
+    <div className="p-4 md:p-6">
+      <div className="border border-border/70 bg-card shadow-none">
+        <div className="flex flex-col gap-3 p-4 border-b border-border/70 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex items-center gap-2.5 shrink-0">
-            <div className="flex h-9 w-9 items-center justify-center border border-border bg-muted/20">
-              <CalendarDays className="h-5 w-5 text-primary" />
+            <div className="flex h-9 w-9 items-center justify-center border border-border/70 bg-muted/20">
+              <CalendarDays className="h-4 w-4 text-primary" />
             </div>
             <div>
-              <h1 className="text-base font-semibold tracking-tight text-foreground">
+              <h1 className="text-sm sm:text-base font-bold tracking-tight text-foreground">
                 Pendaftaran Pasien
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Antrean pendaftaran dan front office ({visibleData.length} tiket)
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Daftar antrian tiket yang siap diproses pendaftaran kunjungan poli.
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             {activeTicket ? (
-              <div className="flex items-center gap-1.5 border border-border bg-muted/30 px-2.5 py-1 text-xs">
+              <div className="flex items-center gap-1.5 border border-border/70 bg-muted/30 px-2.5 py-1 text-xs">
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Aktif:</span>
                 <span className="font-bold text-foreground">#{String(activeTicket.ticket_number).padStart(3, '0')}</span>
                 <span className="text-[11px] text-muted-foreground">({STATUS_OPTIONS.find((item) => item.value === activeTicket.status)?.label || activeTicket.status})</span>
@@ -133,7 +133,7 @@ export default function RegistrationIndex() {
               type="date"
               value={dateFilter}
               onChange={(event) => setDateFilter(event.target.value)}
-              className="h-9 w-36 border border-border bg-background px-2.5 text-xs outline-none focus:ring-1 focus:ring-ring"
+              className="h-9 w-36 border border-border/70 bg-background px-2.5 text-xs outline-none focus:ring-1 focus:ring-ring"
             />
 
             <SearchableSelect
@@ -166,6 +166,7 @@ export default function RegistrationIndex() {
             showSearch={false}
             showColumnVisibility={false}
             showSelectionSummary={false}
+            borderless
             pageSize={10}
             emptyMessage="Belum ada tiket yang dipanggil dari halaman antrian."
           />

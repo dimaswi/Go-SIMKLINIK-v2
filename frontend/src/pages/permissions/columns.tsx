@@ -1,7 +1,6 @@
 import type { ColumnDef } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
 import { Eye, Edit, Trash2, ArrowUpDown } from "lucide-react"
-import { createSelectColumn } from "@/components/ui/data-table"
 
 interface Permission {
   id: number;
@@ -27,7 +26,6 @@ export function createPermissionColumns({
   hasDeletePermission,
 }: PermissionColumnsProps): ColumnDef<Permission>[] {
   return [
-    createSelectColumn<Permission>(),
     {
       accessorKey: "name",
       header: ({ column }) => {

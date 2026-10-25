@@ -58,10 +58,40 @@ function parseFilename(contentDisposition?: string): string | null {
   }
 }
 
+export function openBlobResponse(response: BlobDownloadResponse, _fallbackFileName?: string) {
+  const contentType = getHeaderValue(response.headers, 'content-type') || 'application/pdf';
+  const blob = response.data instanceof Blob
+    ? response.data
+    : new Blob([response.data], { type: contentType });
+  const objectUrl = URL.createObjectURL(blob);
+  
+  const opened = window.open(objectUrl, '_blank');
+  if (!opened) {
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.target = '_blank';
+    link.rel = 'noopener,noreferrer';
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
+}
+
 export function downloadBlobResponse(response: BlobDownloadResponse, fallbackFileName: string) {
   const contentDisposition = getHeaderValue(response.headers, 'content-disposition');
   const contentType = getHeaderValue(response.headers, 'content-type') || 'application/pdf';
   const fileName = parseFilename(contentDisposition) || fallbackFileName;
+
+  // Jika dokumen PDF / cetakan, buka blob di tab baru dan jangan download file
+  const isPdf = contentType.toLowerCase().includes('pdf') || fileName.toLowerCase().endsWith('.pdf');
+  if (isPdf) {
+    openBlobResponse(response, fallbackFileName);
+    return;
+  }
+
   const blob = response.data instanceof Blob
     ? response.data
     : new Blob([response.data], { type: contentType });

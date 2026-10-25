@@ -16,7 +16,8 @@ export function getRadiologyCompletedParameterCount(item?: RadiologyOrderItem | 
 export function isRadiologyOrderItemCompleted(item?: RadiologyOrderItem | null) {
   if (!item) return false;
 
-  if (getRadiologyOrderParameterCount(item) > 0) {
+  const parameterCount = getRadiologyOrderParameterCount(item);
+  if (parameterCount > 0) {
     return (item.parameter_results || [])
       .filter((parameter) => parameter.is_required !== false)
       .every((parameter) => isRadiologyParameterResultFilled(parameter));
@@ -63,3 +64,4 @@ export function getRadiologyOrderItemResultPreview(item?: RadiologyOrderItem | n
     item.recommendation ? `Saran: ${item.recommendation}` : '',
   ].filter(Boolean).join(' · ') || '-';
 }
+

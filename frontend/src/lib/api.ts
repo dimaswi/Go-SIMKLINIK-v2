@@ -1285,6 +1285,16 @@ export interface RegistrationQueueItem {
   cancelled_at?: string;
   visit_id?: number;
   visit?: Visit;
+  nik?: string;
+  patient_name?: string;
+  phone?: string;
+  patient_id?: number;
+  patient?: Patient;
+  polyclinic_id?: number;
+  polyclinic?: Polyclinic;
+  doctor_id?: number;
+  doctor?: Doctor;
+  is_new_patient?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -1319,6 +1329,7 @@ export const visitsApi = {
   getAll: (params?: string) => api.get(`/visits${params ? `?${params}` : ''}`),
   getControlSchedules: () => api.get<{ data: ControlScheduleItem[] }>('/visits/control-schedules'),
   getToday: (params?: string) => api.get(`/visits/today${params ? `?${params}` : ''}`),
+  getActiveByPatient: (patientId: number | string) => api.get<{ data: Visit | null }>(`/visits/active-patient/${patientId}`),
   getById: (id: number) => api.get(`/visits/${id}`),
   syncSatusehatEncounter: (id: number) => api.post<{ data: { visit: Visit }; message: string }>(`${satusehatApiBasePath}/encounters/${id}/sync`),
   create: (data: any) => api.post('/visits', data),
@@ -1339,7 +1350,14 @@ export const registrationQueueApi = {
   getAll: (params?: string) => api.get<{ data: RegistrationQueueItem[] }>(`/registration-queue${params ? `?${params}` : ''}`),
   getById: (id: number) => api.get<{ data: RegistrationQueueItem }>(`/registration-queue/${id}`),
   print: (id: number) => api.get(`/registration-queue/${id}/print`, { responseType: 'blob' }),
-  create: () => api.post<{ data: RegistrationQueueItem }>('/registration-queue'),
+  create: (data?: { nik?: string; patient_name?: string; phone?: string; polyclinic_id?: number; doctor_id?: number }) =>
+    api.post<{ data: RegistrationQueueItem }>('/registration-queue', data),
+  createPublic: (data: { nik: string; patient_name: string; phone: string; polyclinic_id?: number; doctor_id?: number }) =>
+    api.post<{ data: RegistrationQueueItem }>('/public/registration-queue', data),
+  getTodayPublic: () => api.get<{ data: RegistrationQueueItem[] }>('/public/registration-queue/today'),
+  getPolyclinicsPublic: () => api.get<{ data: Polyclinic[] }>('/public/polyclinics'),
+  getDoctorsPublic: (polyclinicId?: number) =>
+    api.get<{ data: Doctor[] }>(`/public/doctors?is_active=true${polyclinicId ? `&polyclinic_id=${polyclinicId}` : ''}`),
   callNext: () => api.post<{ data: RegistrationQueueItem }>('/registration-queue/call-next'),
   updateStatus: (id: number, data: { status: RegistrationQueueItem['status']; visit_id?: number }) =>
     api.patch<{ data: RegistrationQueueItem }>(`/registration-queue/${id}/status`, data),
@@ -1795,6 +1813,8 @@ export interface MedicalRecord {
   prescription_ordered_at?: string;
   prescription_processed_at?: string;
   prescription_processed_by?: number;
+  prescription_review_initial?: string;
+  prescription_review_final?: string;
   laboratory_workflow_status: '' | 'draft' | 'ordered' | 'preparing' | 'completed';
   laboratory_ordered_at?: string;
   laboratory_processed_at?: string;
@@ -1971,13 +1991,28 @@ export const medicalRecordsApi = {
   deletePrescriptionCompound: (id: number, compoundId: number) => api.delete(`/medical-records/${id}/prescription-compounds/${compoundId}`),
   submitPrescriptionOrder: (id: number) => api.post(`/medical-records/${id}/prescriptions/submit`),
   cancelPrescriptionOrder: (id: number) => api.post(`/medical-records/${id}/prescriptions/cancel`),
-  preparePrescriptionOrder: (id: number) => api.post(`/medical-records/${id}/prescriptions/prepare`),
+  preparePrescriptionOrder: (id: number, data?: { prescription_review_initial?: string }) =>
+    api.post(`/medical-records/${id}/prescriptions/prepare`, data),
   readyPrescriptionOrder: (id: number) => api.post(`/medical-records/${id}/prescriptions/ready`),
-  dispensePrescriptionOrder: (id: number) => api.post(`/medical-records/${id}/prescriptions/dispense`),
+  dispensePrescriptionOrder: (
+    id: number,
+    data?: {
+      prescription_review_final?: string;
+      compound_deductions?: Array<{ compound_item_id: number; quantity: number }>;
+    }
+  ) => api.post(`/medical-records/${id}/prescriptions/dispense`, data),
+  updatePrescriptionCompoundDeductions: (
+    id: number,
+    items: Array<{ compound_item_id: number; quantity: number }>
+  ) => api.put(`/medical-records/${id}/pharmacy/compounds/deductions`, { items }),
+  updatePrescriptionReview: (
+    id: number,
+    data: { prescription_review_initial?: string; prescription_review_final?: string }
+  ) => api.put(`/medical-records/${id}/prescriptions/review`, data),
   printPharmacyTicket: (id: number) => api.get(`/medical-records/${id}/print/pharmacy-ticket`, {
     responseType: 'blob',
   }),
-  printPrescriptionOrder: (id: number) => api.get(`/medical-records/${id}/print/prescription`, {
+  printPrescriptionOrder: (id: number, source?: 'doctor' | 'pharmacy') => api.get(`/medical-records/${id}/print/prescription${source ? `?source=${source}` : ''}`, {
     responseType: 'blob',
   }),
   // Laboratory Orders
@@ -2039,6 +2074,7 @@ export const odontogramApi = {
 export const pharmacyApi = {
   getPrescriptionOrders: (params?: string) => api.get<PaginatedResponse<MedicalRecord>>(`/pharmacy/prescription-orders${params ? `?${params}` : ''}`),
   addPrescription: (id: number, data: any) => api.post(`/medical-records/${id}/pharmacy/prescriptions`, data),
+  updatePrescription: (id: number, prescriptionId: number, data: any) => api.put(`/medical-records/${id}/pharmacy/prescriptions/${prescriptionId}`, data),
   deletePrescription: (id: number, prescriptionId: number) => api.delete(`/medical-records/${id}/pharmacy/prescriptions/${prescriptionId}`),
   returnOrder: (id: number) => api.post(`/medical-records/${id}/prescriptions/return`),
 };
@@ -2314,7 +2350,12 @@ export const billingApi = {
   syncVisit: (visitId: number) => api.post<{ data: Invoice; message: string }>(`/invoices/visit/${visitId}/sync`),
   update: (id: number, data: { discount: number; discount_type: string; tax: number; notes: string }) => api.put(`/invoices/${id}`, data),
   pay: (id: number, data: { payment_method_id: number; amount: number; reference_number?: string; notes?: string }) => api.post<{ data: Payment; status: string; message: string }>(`/invoices/${id}/pay`, data),
-  print: (id: number) => api.get(`/invoices/${id}/print`, { responseType: 'blob' }),
+  cancelPayment: (invoiceId: number, paymentId: number) =>
+    api.delete<{ message: string; status: string }>(`/invoices/${invoiceId}/payments/${paymentId}`),
+  cancelAllPayments: (invoiceId: number) =>
+    api.post<{ message: string; status: string }>(`/invoices/${invoiceId}/cancel-payment`),
+  print: (id: number, format: 'a4' | 'a5' | 'thermal' = 'a4') =>
+    api.get(`/invoices/${id}/print?format=${format}`, { responseType: 'blob' }),
   getQueue: (date?: string, search?: string) => {
     const params = new URLSearchParams();
     if (date) params.append('date', date);

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CalendarClock, CheckCircle2, FileCheck2, Loader2 } from 'lucide-react';
+import { AlertCircle, CalendarClock, CheckCircle2, FileCheck2, Loader2, Sparkles } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -42,76 +42,52 @@ type InstructionTemplate = {
   value: string;
 };
 
-type ExpandableTextareaField =
-  | 'discharge_condition'
-  | 'referral_destination'
-  | 'referral_reason'
-  | 'follow_up_instruction'
-  | 'notes';
-
 const EMPTY_ERRORS: FormErrors = {};
+
+const DISCHARGE_CONDITION_PRESETS = [
+  'Kondisi umum membaik, sadar penuh, tanda vital stabil',
+  'Keluhan berkurang, kondisi klinis stabil, rawat jalan',
+  'Perbaikan klinis awal, boleh pulang dengan terapi obat',
+  'Gejala mereda, tanda bahaya tidak ditemukan',
+];
 
 function getDispositionMeta(disposition: string) {
   switch (disposition) {
     case 'kontrol':
       return {
-        label: 'Kontrol ulang',
-        tone: 'border-amber-300 bg-amber-50 text-amber-900',
-        panelClass: 'border-amber-200 bg-amber-50/80',
-        iconClass: 'border-amber-200 bg-amber-100 text-amber-700',
-        summary: 'Pasien pulang dengan jadwal kontrol yang harus ditentukan.',
-        focusNote: 'Lengkapi jadwal kontrol dan instruksi evaluasi terapi sebelum kunjungan dikunci.',
+        label: 'Kontrol Ulang',
+        tone: 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
         instructionLabel: 'Instruksi Kontrol',
       };
     case 'rujuk':
       return {
         label: 'Rujuk',
-        tone: 'border-rose-300 bg-rose-50 text-rose-900',
-        panelClass: 'border-rose-200 bg-rose-50/80',
-        iconClass: 'border-rose-200 bg-rose-100 text-rose-700',
-        summary: 'Lengkapi tujuan dan alasan rujukan sebelum finalisasi.',
-        focusNote: 'Rujukan harus menjelaskan tujuan layanan dan alasan klinis secara ringkas.',
+        tone: 'border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-700 dark:bg-rose-950/40 dark:text-rose-300',
         instructionLabel: 'Instruksi Sebelum Rujuk',
       };
     case 'observasi':
       return {
         label: 'Observasi',
-        tone: 'border-sky-300 bg-sky-50 text-sky-900',
-        panelClass: 'border-sky-200 bg-sky-50/80',
-        iconClass: 'border-sky-200 bg-sky-100 text-sky-700',
-        summary: 'Pasien membutuhkan observasi lanjutan atau pemantauan khusus.',
-        focusNote: 'Jelaskan observasi lanjutan dan tanda bahaya yang harus dipantau setelah pulang.',
+        tone: 'border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-700 dark:bg-sky-950/40 dark:text-sky-300',
         instructionLabel: 'Instruksi Observasi',
       };
     case 'rawat_inap':
       return {
         label: 'Rawat Inap',
-        tone: 'border-violet-300 bg-violet-50 text-violet-900',
-        panelClass: 'border-violet-200 bg-violet-50/80',
-        iconClass: 'border-violet-200 bg-violet-100 text-violet-700',
-        summary: 'Kunjungan rawat jalan ditutup dengan tindak lanjut rawat inap.',
-        focusNote: 'Pastikan outcome menjelaskan alasan alih rawat dan rencana tindak lanjut awal.',
+        tone: 'border-violet-300 bg-violet-50 text-violet-800 dark:border-violet-700 dark:bg-violet-950/40 dark:text-violet-300',
         instructionLabel: 'Catatan Tindak Lanjut',
       };
     case 'rawat_jalan':
       return {
         label: 'Pulang / Rawat Jalan',
-        tone: 'border-emerald-300 bg-emerald-50 text-emerald-900',
-        panelClass: 'border-emerald-200 bg-emerald-50/80',
-        iconClass: 'border-emerald-200 bg-emerald-100 text-emerald-700',
-        summary: 'Pasien dapat dipulangkan dan menerima instruksi perawatan lanjutan.',
-        focusNote: 'Tuliskan kondisi pulang, edukasi obat, dan instruksi tindak lanjut yang mudah dipahami.',
+        tone: 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
         instructionLabel: 'Instruksi Pulang',
       };
     default:
       return {
-        label: 'Belum dipilih',
+        label: 'Belum Dipilih',
         tone: 'border-border bg-muted text-muted-foreground',
-        panelClass: 'border-border bg-muted/30',
-        iconClass: 'border-border bg-background text-muted-foreground',
-        summary: 'Pilih disposition untuk menyesuaikan isian pemulangan pasien.',
-        focusNote: 'Pilih disposition lebih dulu agar instruksi dan validasi finalisasi menyesuaikan alur pasien.',
-        instructionLabel: 'Instruksi Pulang atau Tindak Lanjut',
+        instructionLabel: 'Instruksi Pulang / Edukasi',
       };
   }
 }
@@ -136,8 +112,8 @@ function getInstructionTemplates(disposition: string): InstructionTemplate[] {
           value: 'Pasien dirujuk untuk penanganan lanjutan. Kondisi pasien dijelaskan, dokumen rujukan disiapkan, dan pasien atau keluarga diedukasi untuk segera menuju fasilitas tujuan.',
         },
         {
-          title: 'Rujukan karena keterbatasan fasilitas',
-          value: 'Pasien dirujuk karena membutuhkan pemeriksaan atau tindakan yang tidak tersedia di fasilitas saat ini. Edukasi diberikan mengenai urgensi tindak lanjut dan pentingnya membawa dokumen pendukung.',
+          title: 'Rujukan keterbatasan fasilitas',
+          value: 'Pasien dirujuk karena membutuhkan pemeriksaan atau tindakan yang tidak tersedia di fasilitas saat ini. Edukasi diberikan mengenai urgensi tindak lanjut dan membawa dokumen pendukung.',
         },
       ];
     case 'observasi':
@@ -147,14 +123,14 @@ function getInstructionTemplates(disposition: string): InstructionTemplate[] {
           value: 'Pasien memerlukan observasi lanjutan. Instruksi diberikan untuk pemantauan gejala, pembatasan aktivitas tertentu, dan kembali segera bila terjadi perburukan kondisi.',
         },
         {
-          title: 'Observasi gejala',
+          title: 'Observasi gejala di rumah',
           value: 'Pasien dipulangkan dengan anjuran observasi mandiri di rumah. Pasien atau keluarga telah diedukasi mengenai tanda bahaya, penggunaan obat, dan kapan harus kembali ke fasilitas kesehatan.',
         },
       ];
     case 'rawat_inap':
       return [
         {
-          title: 'Alih ke rawat inap',
+          title: 'Alih rawat inap',
           value: 'Kunjungan ditutup dan pasien direncanakan melanjutkan perawatan rawat inap. Kondisi klinis, hasil evaluasi, dan kebutuhan observasi lanjutan telah dijelaskan kepada pasien atau keluarga.',
         },
       ];
@@ -224,21 +200,6 @@ function getOutcomeNoteTemplates(disposition: string): InstructionTemplate[] {
   }
 }
 
-function formatPreviewDateTime(value: string) {
-  if (!value) return '';
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-
-  return date.toLocaleString('id-ID', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
 export function FinalizeVisitDialog({
   open,
   onOpenChange,
@@ -252,7 +213,7 @@ export function FinalizeVisitDialog({
     return {
       follow_up_instruction: draft.follow_up_instruction,
       follow_up_at: draft.follow_up_at,
-      disposition: draft.disposition,
+      disposition: draft.disposition || 'rawat_jalan',
       discharge_condition: draft.discharge_condition,
       referral_destination: draft.referral_destination,
       referral_reason: draft.referral_reason,
@@ -264,57 +225,12 @@ export function FinalizeVisitDialog({
   const [errors, setErrors] = useState<FormErrors>(EMPTY_ERRORS);
   const [selectedInstructionTemplate, setSelectedInstructionTemplate] = useState('');
   const [selectedOutcomeTemplate, setSelectedOutcomeTemplate] = useState('');
-  const [activeTextarea, setActiveTextarea] = useState<ExpandableTextareaField | null>(null);
+
   const dispositionMeta = useMemo(() => getDispositionMeta(form.disposition), [form.disposition]);
   const instructionTemplates = useMemo(() => getInstructionTemplates(form.disposition), [form.disposition]);
   const outcomeNoteTemplates = useMemo(() => getOutcomeNoteTemplates(form.disposition), [form.disposition]);
   const showFollowUpAt = form.disposition === 'kontrol';
   const showReferralFields = form.disposition === 'rujuk';
-  const resumePreview = useMemo(() => {
-    const parts = [
-      form.disposition ? `Disposition: ${dispositionMeta.label}.` : '',
-      form.discharge_condition ? `Kondisi akhir: ${form.discharge_condition.trim()}.` : '',
-      showFollowUpAt && form.follow_up_at ? `Kontrol ulang pada ${formatPreviewDateTime(form.follow_up_at)}.` : '',
-      showReferralFields && form.referral_destination ? `Tujuan rujukan: ${form.referral_destination.trim()}.` : '',
-      showReferralFields && form.referral_reason ? `Alasan rujukan: ${form.referral_reason.trim()}.` : '',
-      form.follow_up_instruction ? `Instruksi: ${form.follow_up_instruction.trim()}.` : '',
-      form.notes ? `Catatan outcome: ${form.notes.trim()}.` : '',
-    ].filter(Boolean);
-
-    return parts.join(' ');
-  }, [dispositionMeta.label, form, showFollowUpAt, showReferralFields]);
-  const previewRows = useMemo(() => ([
-    { label: 'Disposition', value: dispositionMeta.label },
-    { label: 'Kondisi akhir', value: form.discharge_condition.trim() || '-' },
-    { label: 'Kontrol', value: showFollowUpAt ? (form.follow_up_at ? formatPreviewDateTime(form.follow_up_at) : '-') : 'Tidak ada kontrol' },
-    { label: 'Instruksi', value: form.follow_up_instruction.trim() || 'Belum ada instruksi tambahan.' },
-  ]), [dispositionMeta.label, form.discharge_condition, form.follow_up_at, form.follow_up_instruction, showFollowUpAt]);
-  const completionRows = useMemo(() => ([
-    {
-      label: 'Disposition',
-      detail: form.disposition.trim() ? dispositionMeta.label : 'Belum dipilih',
-      complete: Boolean(form.disposition.trim()),
-    },
-    {
-      label: 'Kondisi akhir',
-      detail: form.discharge_condition.trim() ? 'Sudah diisi' : 'Masih kosong',
-      complete: Boolean(form.discharge_condition.trim()),
-    },
-    {
-      label: 'Jadwal kontrol',
-      detail: showFollowUpAt
-        ? (form.follow_up_at.trim() ? formatPreviewDateTime(form.follow_up_at) : 'Masih kosong')
-        : 'Tidak diperlukan',
-      complete: showFollowUpAt ? Boolean(form.follow_up_at.trim()) : true,
-    },
-    {
-      label: 'Data rujukan',
-      detail: showReferralFields
-        ? (form.referral_destination.trim() && form.referral_reason.trim() ? 'Sudah lengkap' : 'Belum lengkap')
-        : 'Tidak diperlukan',
-      complete: showReferralFields ? Boolean(form.referral_destination.trim() && form.referral_reason.trim()) : true,
-    },
-  ]), [dispositionMeta.label, form.discharge_condition, form.disposition, form.follow_up_at, form.referral_destination, form.referral_reason, showFollowUpAt, showReferralFields]);
 
   useEffect(() => {
     if (open) {
@@ -322,7 +238,6 @@ export function FinalizeVisitDialog({
       setErrors(EMPTY_ERRORS);
       setSelectedInstructionTemplate('');
       setSelectedOutcomeTemplate('');
-      setActiveTextarea(null);
     }
   }, [initialDraft, open]);
 
@@ -379,40 +294,47 @@ export function FinalizeVisitDialog({
     setForm((current) => ({ ...current, notes: template.value }));
   };
 
-  const getTextareaClassName = (field: ExpandableTextareaField, compactHeight: string, expandedHeight: string) => {
-    return cn(
-      'rounded-none resize-none transition-[min-height] duration-150',
-      activeTextarea === field ? expandedHeight : compactHeight,
-    );
-  };
+  // Readiness evaluation for clean footer indicator
+  const isFormReady = Boolean(
+    form.disposition.trim() &&
+    form.discharge_condition.trim() &&
+    (!showFollowUpAt || form.follow_up_at.trim()) &&
+    (!showReferralFields || (form.referral_destination.trim() && form.referral_reason.trim()))
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[min(1120px,calc(100vw-24px))] max-w-7xl overflow-hidden rounded-none border border-border/70 p-0">
-        <div className="border-b border-border/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(255,255,255,1))] px-4 py-2.5">
-          <DialogHeader className="space-y-2 text-left">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="space-y-1">
-                <DialogTitle className="text-lg font-semibold tracking-tight">Finalisasi Kunjungan</DialogTitle>
-                <DialogDescription className="text-xs leading-5 text-muted-foreground">
-                  Lengkapi form pemulangan pasien sebelum kunjungan dikunci sebagai rekam medis final.
-                </DialogDescription>
+      <DialogContent className="w-[min(1280px,96vw)] sm:max-w-[1280px] max-w-[1280px] p-0 rounded-none overflow-hidden border border-border/70 shadow-2xl">
+        {/* Header: Clean & Modern */}
+        <div className="border-b border-border/70 bg-muted/20 px-5 py-3">
+          <DialogHeader className="p-0 text-left">
+            <div className="flex flex-wrap items-center justify-between gap-3 pr-8">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <DialogTitle className="text-base font-semibold tracking-tight text-foreground">
+                  Finalisasi Kunjungan
+                </DialogTitle>
+                <Badge
+                  variant="outline"
+                  className={cn('rounded-none px-2 py-0.5 text-[11px] font-mono uppercase tracking-wider', dispositionMeta.tone)}
+                >
+                  {dispositionMeta.label}
+                </Badge>
               </div>
-              <Badge variant="outline" className={cn('rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.14em]', dispositionMeta.tone)}>
-                {dispositionMeta.label}
-              </Badge>
             </div>
+            <DialogDescription className="sr-only">
+              Lengkapi form pemulangan pasien sebelum kunjungan dikunci sebagai rekam medis final.
+            </DialogDescription>
           </DialogHeader>
         </div>
 
-        <div className="px-4 py-3">
-          <div className="space-y-3">
+        {/* Content Body */}
+        <div className="p-5 max-h-[calc(90vh-120px)] overflow-y-auto space-y-4">
           {blockers.length > 0 && (
-            <Alert variant="destructive">
+            <Alert variant="destructive" className="rounded-none">
               <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Finalisasi belum bisa dilakukan</AlertTitle>
-              <AlertDescription>
-                <ul className="list-disc pl-4">
+              <AlertTitle className="text-xs font-semibold">Finalisasi belum bisa dilakukan</AlertTitle>
+              <AlertDescription className="text-xs mt-1">
+                <ul className="list-disc pl-4 space-y-0.5">
                   {blockers.map((blocker) => (
                     <li key={blocker}>{blocker}</li>
                   ))}
@@ -421,226 +343,252 @@ export function FinalizeVisitDialog({
             </Alert>
           )}
 
-          {blockers.length === 0 && (
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              {completionRows.map((item) => (
-                <div key={item.label} className={cn('border px-3 py-2', dispositionMeta.panelClass)}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{item.label}</p>
-                      <p className="mt-1 text-sm font-medium text-foreground/90">{item.detail}</p>
-                    </div>
-                    <div className={cn('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center border', item.complete ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700')}>
-                      <CheckCircle2 className="h-3 w-3" />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+            {/* Left Card: Status & Rencana Pemulangan */}
+            <div className="border border-border/70 bg-background shadow-none flex flex-col">
+              <div className="flex items-center gap-2 border-b border-border/70 bg-muted/15 px-3.5 py-2.5">
+                <CalendarClock className="h-4 w-4 text-primary shrink-0" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-foreground">
+                  Status & Rencana Pemulangan
+                </span>
+              </div>
 
-          <div className="grid gap-3 xl:grid-cols-2 xl:items-start">
-              <section className="border border-border/70 bg-background">
-                <div className="border-b border-border/70 bg-muted/10 px-3 py-2">
-                  <div className="flex items-start gap-2.5">
-                    <div className="flex h-7 w-7 items-center justify-center border border-border/70 bg-background text-foreground/75">
-                      <CalendarClock className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-semibold tracking-tight">Status Pemulangan</h3>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2.5 px-3 py-3">
-                  <div className="grid gap-2.5 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold uppercase tracking-[0.14em] text-foreground/80">Disposition</label>
-                      <SearchableSelect
-                        options={DISPOSITION_OPTIONS}
-                        value={form.disposition}
-                        onValueChange={(value) => setForm((current) => ({ ...current, disposition: value }))}
-                        placeholder="Pilih disposition"
-                      />
-                      {errors.disposition ? <p className="text-xs text-destructive">{errors.disposition}</p> : null}
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold uppercase tracking-[0.14em] text-foreground/80">Tanggal Kontrol</label>
-                      {showFollowUpAt ? (
-                        <>
-                          <Input
-                            type="datetime-local"
-                            value={form.follow_up_at}
-                            onChange={(event) => setForm((current) => ({ ...current, follow_up_at: event.target.value }))}
-                            className="h-10 rounded-none"
-                          />
-                          {errors.follow_up_at ? <p className="text-xs text-destructive">{errors.follow_up_at}</p> : null}
-                        </>
-                      ) : (
-                        <div className="flex h-10 items-center border border-dashed border-border/70 bg-muted/10 px-3 text-sm text-muted-foreground">
-                          Tidak diperlukan untuk disposition saat ini.
-                        </div>
-                      )}
-                    </div>
+              <div className="p-4 space-y-4">
+                {/* Disposition & Control Row */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+                      <span>Disposition</span>
+                      <span className="text-destructive font-mono text-[10px]">*Wajib</span>
+                    </label>
+                    <SearchableSelect
+                      options={DISPOSITION_OPTIONS}
+                      value={form.disposition}
+                      onValueChange={(value) => setForm((current) => ({ ...current, disposition: value }))}
+                      placeholder="Pilih disposition"
+                      square
+                    />
+                    {errors.disposition && <p className="text-[11px] text-destructive">{errors.disposition}</p>}
                   </div>
 
-                  <div className="grid gap-2.5 md:grid-cols-2">
-                    <div className="space-y-2 md:col-span-2">
-                      <label className="text-xs font-semibold uppercase tracking-[0.14em] text-foreground/80">Kondisi Akhir Kunjungan</label>
-                      <Textarea
-                        rows={2}
-                        value={form.discharge_condition}
-                        onChange={(event) => setForm((current) => ({ ...current, discharge_condition: event.target.value }))}
-                        onFocus={() => setActiveTextarea('discharge_condition')}
-                        onBlur={() => setActiveTextarea((current) => (current === 'discharge_condition' ? null : current))}
-                        placeholder="Contoh: kondisi umum membaik, sadar penuh, pasien boleh pulang"
-                        className={getTextareaClassName('discharge_condition', 'min-h-[52px]', 'min-h-[68px]')}
-                      />
-                      {errors.discharge_condition ? <p className="text-xs text-destructive">{errors.discharge_condition}</p> : null}
-                    </div>
-
-                    {showReferralFields && (
-                      <>
-                        <div className="space-y-2">
-                          <label className="text-xs font-semibold uppercase tracking-[0.14em] text-foreground/80">Tujuan Rujukan</label>
-                          <Textarea
-                            rows={2}
-                            value={form.referral_destination}
-                            onChange={(event) => setForm((current) => ({ ...current, referral_destination: event.target.value }))}
-                            onFocus={() => setActiveTextarea('referral_destination')}
-                            onBlur={() => setActiveTextarea((current) => (current === 'referral_destination' ? null : current))}
-                            placeholder="Fasilitas atau poli tujuan"
-                            className={getTextareaClassName('referral_destination', 'min-h-[52px]', 'min-h-[68px]')}
-                          />
-                          {errors.referral_destination ? <p className="text-xs text-destructive">{errors.referral_destination}</p> : null}
-                        </div>
-
-                        <div className="space-y-2">
-                          <label className="text-xs font-semibold uppercase tracking-[0.14em] text-foreground/80">Alasan Rujukan</label>
-                          <Textarea
-                            rows={2}
-                            value={form.referral_reason}
-                            onChange={(event) => setForm((current) => ({ ...current, referral_reason: event.target.value }))}
-                            onFocus={() => setActiveTextarea('referral_reason')}
-                            onBlur={() => setActiveTextarea((current) => (current === 'referral_reason' ? null : current))}
-                            placeholder="Alasan klinis atau kebutuhan lanjutan"
-                            className={getTextareaClassName('referral_reason', 'min-h-[52px]', 'min-h-[68px]')}
-                          />
-                          {errors.referral_reason ? <p className="text-xs text-destructive">{errors.referral_reason}</p> : null}
-                        </div>
-                      </>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+                      <span>Jadwal Kontrol</span>
+                      {showFollowUpAt && <span className="text-destructive font-mono text-[10px]">*Wajib</span>}
+                    </label>
+                    {showFollowUpAt ? (
+                      <div>
+                        <Input
+                          type="datetime-local"
+                          value={form.follow_up_at}
+                          onChange={(event) => setForm((current) => ({ ...current, follow_up_at: event.target.value }))}
+                          className="h-10 rounded-none text-xs font-mono"
+                        />
+                        {errors.follow_up_at && <p className="text-[11px] text-destructive mt-1">{errors.follow_up_at}</p>}
+                      </div>
+                    ) : (
+                      <div className="h-10 border border-dashed border-border/70 bg-muted/10 px-3 flex items-center text-xs text-muted-foreground">
+                        Tidak diperlukan kontrol
+                      </div>
                     )}
                   </div>
                 </div>
-              </section>
 
-              <section className="border border-border/70 bg-background">
-                <div className="border-b border-border/70 bg-muted/10 px-3 py-2">
-                  <div className="flex items-start gap-2.5">
-                    <div className="flex h-7 w-7 items-center justify-center border border-border/70 bg-background text-foreground/75">
-                      <FileCheck2 className="h-4 w-4" />
+                {/* Referral Details if Rujuk */}
+                {showReferralFields && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 border-t border-dashed border-border/70 pt-3.5">
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+                        <span>Tujuan Rujukan</span>
+                        <span className="text-destructive font-mono text-[10px]">*Wajib</span>
+                      </label>
+                      <Input
+                        value={form.referral_destination}
+                        onChange={(event) => setForm((current) => ({ ...current, referral_destination: event.target.value }))}
+                        placeholder="Contoh: RSUD / Poli Spesialis"
+                        className="h-10 rounded-none text-xs"
+                      />
+                      {errors.referral_destination && <p className="text-[11px] text-destructive">{errors.referral_destination}</p>}
                     </div>
-                    <div>
-                      <h3 className="text-sm font-semibold tracking-tight">Resume dan Tindak Lanjut</h3>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+                        <span>Alasan Rujukan</span>
+                        <span className="text-destructive font-mono text-[10px]">*Wajib</span>
+                      </label>
+                      <Input
+                        value={form.referral_reason}
+                        onChange={(event) => setForm((current) => ({ ...current, referral_reason: event.target.value }))}
+                        placeholder="Contoh: Kebutuhan CT-Scan / Rawat Lanjutan"
+                        className="h-10 rounded-none text-xs"
+                      />
+                      {errors.referral_reason && <p className="text-[11px] text-destructive">{errors.referral_reason}</p>}
+                    </div>
+                  </div>
+                )}
+
+                {/* Kondisi Akhir Kunjungan */}
+                <div className="space-y-1.5 border-t border-border/60 pt-3.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                      <span>Kondisi Akhir Kunjungan</span>
+                      <span className="text-destructive font-mono text-[10px]">*Wajib</span>
+                    </label>
+                  </div>
+                  <Textarea
+                    rows={3}
+                    value={form.discharge_condition}
+                    onChange={(event) => setForm((current) => ({ ...current, discharge_condition: event.target.value }))}
+                    placeholder="Tuliskan kondisi klinis akhir sebelum pasien pulang (tanda vital, kesadaran, perbaikan gejala)..."
+                    className="rounded-none resize-none text-xs leading-relaxed"
+                  />
+                  {errors.discharge_condition && <p className="text-[11px] text-destructive">{errors.discharge_condition}</p>}
+
+                  {/* Quick Preset Chips */}
+                  <div className="pt-1">
+                    <div className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground mb-1.5">
+                      <Sparkles className="h-3 w-3 text-amber-500" />
+                      <span>Preset Cepat:</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {DISCHARGE_CONDITION_PRESETS.map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setForm((c) => ({ ...c, discharge_condition: preset }))}
+                          className="border border-border/80 hover:border-primary/50 bg-muted/20 hover:bg-primary/5 px-2 py-1 text-[11px] text-foreground/90 transition-colors text-left"
+                        >
+                          {preset}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>
-
-                <div className="grid gap-2.5 px-3 py-3 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <label className="text-xs font-semibold uppercase tracking-[0.14em] text-foreground/80">{dispositionMeta.instructionLabel}</label>
-                      {instructionTemplates.length > 0 ? (
-                        <div className="w-[168px] shrink-0">
-                          <Select value={selectedInstructionTemplate} onValueChange={applyInstructionTemplate}>
-                            <SelectTrigger className="h-8 rounded-none text-xs shadow-none">
-                              <SelectValue placeholder="Template instruksi" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {instructionTemplates.map((template) => (
-                                <SelectItem key={template.title} value={template.title}>
-                                  {template.title}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ) : null}
-                    </div>
-                    <Textarea
-                      rows={3}
-                      value={form.follow_up_instruction}
-                      onChange={(event) => setForm((current) => ({ ...current, follow_up_instruction: event.target.value }))}
-                      onFocus={() => setActiveTextarea('follow_up_instruction')}
-                      onBlur={() => setActiveTextarea((current) => (current === 'follow_up_instruction' ? null : current))}
-                      placeholder="Instruksi obat, edukasi, atau tindak lanjut"
-                      className={getTextareaClassName('follow_up_instruction', 'min-h-[88px]', 'min-h-[110px]')}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <label className="text-xs font-semibold uppercase tracking-[0.14em] text-foreground/80">Catatan Outcome</label>
-                      {outcomeNoteTemplates.length > 0 ? (
-                        <div className="w-[168px] shrink-0">
-                          <Select value={selectedOutcomeTemplate} onValueChange={applyOutcomeTemplate}>
-                            <SelectTrigger className="h-8 rounded-none text-xs shadow-none">
-                              <SelectValue placeholder="Template outcome" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {outcomeNoteTemplates.map((template) => (
-                                <SelectItem key={template.title} value={template.title}>
-                                  {template.title}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ) : null}
-                    </div>
-                    <Textarea
-                      rows={3}
-                      value={form.notes}
-                      onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
-                      onFocus={() => setActiveTextarea('notes')}
-                      onBlur={() => setActiveTextarea((current) => (current === 'notes' ? null : current))}
-                      placeholder="Ringkasan hasil kunjungan untuk resume medis"
-                      className={getTextareaClassName('notes', 'min-h-[88px]', 'min-h-[110px]')}
-                    />
-                  </div>
-                </div>
-              </section>
-          </div>
-
-          <section className={cn('border px-3 py-3', dispositionMeta.panelClass)}>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))_minmax(0,1.6fr)] xl:items-start">
-              {previewRows.map((row) => (
-                <div key={row.label} className="border border-border/70 bg-background px-2.5 py-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{row.label}</p>
-                  <p className="mt-0.5 line-clamp-2 text-[12px] leading-4 text-foreground/90">{row.value}</p>
-                </div>
-              ))}
-
-              <div className="border border-border/70 bg-background px-2.5 py-2 sm:col-span-2 xl:col-span-1">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Preview Resume</p>
-                <p className="mt-1 line-clamp-4 text-[12px] leading-4 text-muted-foreground">
-                  {resumePreview || 'Ringkasan finalisasi akan tampil setelah form diisi.'}
-                </p>
               </div>
             </div>
-          </section>
+
+            {/* Right Card: Edukasi & Resume Medis */}
+            <div className="border border-border/70 bg-background shadow-none flex flex-col">
+              <div className="flex items-center gap-2 border-b border-border/70 bg-muted/15 px-3.5 py-2.5">
+                <FileCheck2 className="h-4 w-4 text-primary shrink-0" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-foreground">
+                  Edukasi & Resume Medis
+                </span>
+              </div>
+
+              <div className="p-4 space-y-4">
+                {/* Follow up / Discharge Instruction */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      {dispositionMeta.instructionLabel}
+                    </label>
+                    {instructionTemplates.length > 0 && (
+                      <div className="w-[170px]">
+                        <Select value={selectedInstructionTemplate} onValueChange={applyInstructionTemplate}>
+                          <SelectTrigger className="h-7 rounded-none text-[11px] shadow-none bg-muted/20">
+                            <SelectValue placeholder="Pilih Template" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {instructionTemplates.map((template) => (
+                              <SelectItem key={template.title} value={template.title} className="text-xs">
+                                {template.title}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                  <Textarea
+                    rows={4}
+                    value={form.follow_up_instruction}
+                    onChange={(event) => setForm((current) => ({ ...current, follow_up_instruction: event.target.value }))}
+                    placeholder="Instruksi pemakaian obat, anjuran istirahat, pantangan makanan, atau tanda bahaya yang harus diwaspadai..."
+                    className="rounded-none resize-none text-xs leading-relaxed"
+                  />
+                </div>
+
+                {/* Outcome Notes */}
+                <div className="space-y-1.5 border-t border-border/60 pt-3.5">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Catatan Outcome Kunjungan
+                    </label>
+                    {outcomeNoteTemplates.length > 0 && (
+                      <div className="w-[170px]">
+                        <Select value={selectedOutcomeTemplate} onValueChange={applyOutcomeTemplate}>
+                          <SelectTrigger className="h-7 rounded-none text-[11px] shadow-none bg-muted/20">
+                            <SelectValue placeholder="Pilih Template" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {outcomeNoteTemplates.map((template) => (
+                              <SelectItem key={template.title} value={template.title} className="text-xs">
+                                {template.title}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                  <Textarea
+                    rows={4}
+                    value={form.notes}
+                    onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
+                    placeholder="Ringkasan kesimpulan evaluasi akhir dokter untuk resume medis..."
+                    className="rounded-none resize-none text-xs leading-relaxed"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <DialogFooter className="border-t border-border/70 px-4 py-2.5">
-          <Button variant="outline" className="rounded-none shadow-none" onClick={() => onOpenChange(false)} disabled={submitting}>
-            Batal
-          </Button>
-          <Button onClick={() => void handleSubmit()} disabled={submitting || blockers.length > 0} className="gap-2 rounded-none shadow-none">
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Simpan dan Finalisasi
-          </Button>
+        {/* Footer: Clean & Informative */}
+        <DialogFooter className="border-t border-border/70 px-5 py-3 bg-muted/10 flex flex-row items-center justify-between gap-3">
+          <div>
+            {blockers.length === 0 && (
+              isFormReady ? (
+                <div className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 font-medium">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span>Form lengkap & siap difinalisasi</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                  <span>
+                    {!form.discharge_condition.trim()
+                      ? 'Kondisi akhir kunjungan wajib diisi'
+                      : showFollowUpAt && !form.follow_up_at.trim()
+                      ? 'Tanggal kontrol wajib ditentukan'
+                      : 'Lengkapi isian wajib'}
+                  </span>
+                </div>
+              )
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="rounded-none shadow-none h-9 text-xs"
+              onClick={() => onOpenChange(false)}
+              disabled={submitting}
+            >
+              Batal
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleSubmit()}
+              disabled={submitting || blockers.length > 0}
+              className="gap-2 rounded-none shadow-none h-9 text-xs px-4"
+            >
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Simpan dan Finalisasi
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

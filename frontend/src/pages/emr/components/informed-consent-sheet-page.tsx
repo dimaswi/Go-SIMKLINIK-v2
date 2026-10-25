@@ -207,7 +207,7 @@ export function InformedConsentSheetPage({
         prefetchedMonitorMessage={prefetchedMonitorMessage}
         statusNote={<span className="font-medium text-muted-foreground">{consents.length} consent</span>}
         actions={!workspaceLocked ? (
-          <Button className="gap-1.5 rounded-none shadow-none" onClick={() => setFinalizeOpen(true)} title='Final Kunjungan'>
+          <Button className="h-8 w-8 p-0 rounded-none shadow-none shrink-0" onClick={() => setFinalizeOpen(true)} title='Final Kunjungan'>
             <Lock className="h-4 w-4" />
           </Button>
         ) : visit.status === 'completed' ? (
@@ -221,7 +221,7 @@ export function InformedConsentSheetPage({
             printingMedicalResume={printingMedicalResume}
             onCancelFinalization={onCancelFinalization}
             cancelingFinalization={cancelingFinalization}
-            buttonClassName="rounded-none shadow-none"
+            buttonClassName="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
           />
         ) : undefined}
       />

@@ -8,13 +8,9 @@ import { Switch } from "@/components/ui/switch";
 import { useBpjsAntreanEnabled } from "@/hooks/use-bpjs-antrean-enabled";
 import { polyclinicsApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Building2, Palette } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { setPageTitle } from "@/lib/page-title";
-import { MasterDataAsideSection, MasterDataAsideStack, MasterDataLegacySections, MasterDataPageShell } from '@/pages/master-data/shared';
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value || 0);
-}
+import { MasterDataPageShell } from '@/pages/master-data/shared';
 
 export default function PolyclinicCreate() {
   const navigate = useNavigate();
@@ -55,76 +51,134 @@ export default function PolyclinicCreate() {
   };
 
   return (
-    <form id="polyclinic-create-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <form id="polyclinic-create-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <MasterDataPageShell
         title="Tambah Poliklinik"
-        subtitle="Atur unit poliklinik yang dipakai pada pendaftaran, EMR, dan penjadwalan dokter."
+        subtitle="Atur unit poliklinik yang dipakai pada pendaftaran, EMR, dan antrean."
         onBack={() => navigate('/polyclinics')}
-        actions={<Button type="submit" form="polyclinic-create-form" disabled={loading} className="rounded-none shadow-none">{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Poliklinik</Button>}
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Ringkasan" helper="Preview unit poliklinik sebelum disimpan.">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2"><div className="h-4 w-4 rounded" style={{ backgroundColor: formData.color || '#6B7280' }} /><p className="truncate font-medium">{formData.name || 'Nama belum diisi'}</p></div>
-                  <p className="text-muted-foreground">Status: {formData.is_active ? 'Aktif' : 'Nonaktif'}</p>
-                  <p className="text-muted-foreground">Admin: {formatCurrency(Number(formData.admin_fee) || 0)}</p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
+        actions={
+          <Button type="submit" form="polyclinic-create-form" disabled={loading} size="sm" className="h-8 px-4 text-xs rounded-none shadow-none">
+            {loading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            Simpan Poliklinik
+          </Button>
         }
       >
-        <MasterDataLegacySections>
-          <div className="space-y-6">
-            <section className="space-y-4 rounded-lg border border-border/80 p-5">
-              <div className="space-y-2">
-                <Label htmlFor="name" className="text-xs font-medium flex items-center gap-2"><Building2 className="h-3.5 w-3.5 text-muted-foreground" />Nama Poliklinik</Label>
-                <Input id="name" required placeholder="Contoh: Poli Umum" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="h-10 text-sm" />
+        <div className="space-y-4">
+          <div className="space-y-2.5">
+            <div className="border-b border-border/60 pb-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Detail Poliklinik</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="name" className="text-xs font-medium">Nama Poliklinik *</Label>
+                <Input
+                  id="name"
+                  required
+                  placeholder="Contoh: Poli Umum"
+                  value={formData.name}
+                  onChange={e => setFormData({ ...formData, name: e.target.value })}
+                  className="h-9 text-xs rounded-none"
+                />
               </div>
-              <div className="space-y-2">
+
+              <div className="space-y-1">
+                <Label htmlFor="admin_fee" className="text-xs font-medium">Biaya Administrasi (Rp)</Label>
+                <Input
+                  id="admin_fee"
+                  type="number"
+                  min="0"
+                  step="1000"
+                  value={formData.admin_fee}
+                  onChange={e => setFormData({ ...formData, admin_fee: Number(e.target.value) })}
+                  className="h-9 text-xs font-mono rounded-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="sort_order" className="text-xs font-medium">Urutan Tampilan</Label>
+                <Input
+                  id="sort_order"
+                  type="number"
+                  min="0"
+                  value={formData.sort_order}
+                  onChange={e => setFormData({ ...formData, sort_order: Number(e.target.value) })}
+                  className="h-9 text-xs font-mono rounded-none"
+                />
+              </div>
+
+              <div className="space-y-1">
                 <Label htmlFor="description" className="text-xs font-medium">Deskripsi</Label>
-                <Input id="description" placeholder="Deskripsi poliklinik" value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} className="h-10 text-sm" />
+                <Input
+                  id="description"
+                  placeholder="Deskripsi poliklinik"
+                  value={formData.description}
+                  onChange={e => setFormData({ ...formData, description: e.target.value })}
+                  className="h-9 text-xs rounded-none"
+                />
               </div>
-              <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
-                <div className="space-y-2">
-                  <Label htmlFor="admin_fee" className="text-xs font-medium">Biaya Administrasi</Label>
-                  <Input id="admin_fee" type="number" min="0" step="1000" value={formData.admin_fee} onChange={e => setFormData({ ...formData, admin_fee: Number(e.target.value) })} className="h-10 text-sm" />
-                  <p className="text-xs text-muted-foreground">Invoice otomatis dibuat saat pendaftaran menggunakan tarif ini.</p>
+
+              <div className="space-y-1">
+                <Label htmlFor="color" className="text-xs font-medium">Warna Label</Label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    id="color"
+                    value={formData.color}
+                    onChange={e => setFormData({ ...formData, color: e.target.value })}
+                    className="h-9 w-10 border border-border/70 cursor-pointer shrink-0 p-0.5 bg-background rounded-none"
+                  />
+                  <Input
+                    value={formData.color}
+                    onChange={e => setFormData({ ...formData, color: e.target.value })}
+                    className="h-9 text-xs font-mono flex-1 rounded-none uppercase"
+                  />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="color" className="text-xs font-medium flex items-center gap-2"><Palette className="h-3.5 w-3.5 text-muted-foreground" />Warna</Label>
-                  <div className="flex gap-2">
-                    <input type="color" id="color" value={formData.color} onChange={e => setFormData({ ...formData, color: e.target.value })} className="h-10 w-12 rounded border cursor-pointer" />
-                    <Input value={formData.color} onChange={e => setFormData({ ...formData, color: e.target.value })} className="h-10 text-sm flex-1" />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="icon" className="text-xs font-medium">Icon</Label>
-                  <Input id="icon" placeholder="Contoh: stethoscope" value={formData.icon} onChange={e => setFormData({ ...formData, icon: e.target.value })} className="h-10 text-sm" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="sort_order" className="text-xs font-medium">Urutan</Label>
-                  <Input id="sort_order" type="number" min="0" value={formData.sort_order} onChange={e => setFormData({ ...formData, sort_order: Number(e.target.value) })} className="h-10 text-sm" />
-                </div>
-                {bpjsAntreanEnabled ? (
-                  <div className="space-y-2 md:col-span-2 xl:col-span-2">
-                    <Label htmlFor="bpjs_poli_code" className="text-xs font-medium">Kode Poli BPJS</Label>
-                    <Input id="bpjs_poli_code" placeholder="Contoh: 001" value={formData.bpjs_poli_code} onChange={e => setFormData({ ...formData, bpjs_poli_code: e.target.value })} className="h-10 text-sm" />
-                    <BpjsReferencePicker type="poli" value={formData.bpjs_poli_code} onValueChange={(value) => setFormData({ ...formData, bpjs_poli_code: value })} disabled={loading} />
-                  </div>
-                ) : null}
               </div>
-              <div className="flex items-center justify-between rounded-md border p-4">
-                <div className="space-y-0.5">
-                  <Label htmlFor="is_active" className="text-xs font-medium cursor-pointer">Status Aktif</Label>
-                  <p className="text-xs text-muted-foreground">{formData.is_active ? 'Poliklinik aktif' : 'Poliklinik tidak aktif'}</p>
+
+              <div className="space-y-1">
+                <Label htmlFor="icon" className="text-xs font-medium">Icon (Opsional)</Label>
+                <Input
+                  id="icon"
+                  placeholder="Contoh: stethoscope, heart"
+                  value={formData.icon}
+                  onChange={e => setFormData({ ...formData, icon: e.target.value })}
+                  className="h-9 text-xs rounded-none"
+                />
+              </div>
+            </div>
+
+            {bpjsAntreanEnabled ? (
+              <div className="space-y-1 pt-1">
+                <Label htmlFor="bpjs_poli_code" className="text-xs font-medium">Kode Poli BPJS</Label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <Input
+                    id="bpjs_poli_code"
+                    placeholder="Contoh: 001"
+                    value={formData.bpjs_poli_code}
+                    onChange={e => setFormData({ ...formData, bpjs_poli_code: e.target.value })}
+                    className="h-9 text-xs font-mono rounded-none"
+                  />
+                  <BpjsReferencePicker
+                    type="poli"
+                    value={formData.bpjs_poli_code}
+                    onValueChange={(value) => setFormData({ ...formData, bpjs_poli_code: value })}
+                    disabled={loading}
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            <div className="pt-1">
+              <div className="flex items-center justify-between border border-border/70 p-2.5 bg-muted/10">
+                <div>
+                  <Label htmlFor="is_active" className="cursor-pointer text-xs font-medium">Status Aktif</Label>
+                  <p className="text-[11px] text-muted-foreground">{formData.is_active ? 'Poliklinik aktif dan dapat dipilih di pendaftaran' : 'Poliklinik dinonaktifkan'}</p>
                 </div>
                 <Switch id="is_active" checked={formData.is_active} onCheckedChange={checked => setFormData({ ...formData, is_active: checked })} />
               </div>
-            </section>
+            </div>
           </div>
-        </MasterDataLegacySections>
+        </div>
       </MasterDataPageShell>
     </form>
   );

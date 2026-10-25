@@ -2,7 +2,6 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Eye, Edit, Trash2, ArrowUpDown, RefreshCw, Search } from "lucide-react"
-import { createSelectColumn } from "@/components/ui/data-table"
 import type { Doctor } from "@/lib/api"
 
 interface DoctorColumnsProps {
@@ -79,7 +78,6 @@ export function createDoctorColumns({
   previewingDoctorId, syncingDoctorId,
 }: DoctorColumnsProps): ColumnDef<Doctor>[] {
   return [
-    createSelectColumn<Doctor>(),
     {
       accessorKey: "full_name",
       header: ({ column }) => (

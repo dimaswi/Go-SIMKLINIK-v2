@@ -8,7 +8,7 @@ import { usePermission } from '@/hooks/usePermission';
 import { useToast } from '@/hooks/use-toast';
 import { employeesApi, satusehatApi, type Employee } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
-import { MasterDataAsideSection, MasterDataAsideStack, MasterDataDetailItem, MasterDataPageShell, MasterDataSection, formatMasterDataDateTime } from '@/pages/master-data/shared';
+import { MasterDataDetailItem, MasterDataPageShell, MasterDataSection, formatMasterDataDateTime } from '@/pages/master-data/shared';
 import { getEmployeeProfessionLabel } from './options';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -211,42 +211,10 @@ export default function EmployeeShow() {
             {hasPermission('employees.delete') ? <Button variant="destructive" className="rounded-none shadow-none" onClick={() => setDeleteDialogOpen(true)} disabled={deleting}>{deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}Hapus</Button> : null}
           </>
         }
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Akun" helper="Tautan akun operasional untuk login dan approval.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Email: <span className="font-medium text-foreground">{data.user?.email || '-'}</span></p>
-                  <p>Username: <span className="font-medium text-foreground">{data.user?.username || '-'}</span></p>
-                  <p>Role: <span className="font-medium text-foreground">{data.user?.role?.name || '-'}</span></p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-            <div>
-              <MasterDataAsideSection title="Integrasi" helper="Penanda apakah pegawai ini perlu disiapkan untuk kebutuhan SATUSEHAT.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Kebutuhan SATUSEHAT: <span className="font-medium text-foreground">{satusehatRequired ? 'Perlu integrasi' : 'Tidak perlu integrasi'}</span></p>
-                  <p>Practitioner ID: <span className="font-medium break-all text-foreground">{data.satusehat_practitioner_id || '-'}</span></p>
-                  <p>Sync terakhir: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.satusehat_synced_at)}</span></p>
-                  <p>Status preview: <span className="font-medium text-foreground">{previewReady === null ? 'Belum dimuat' : previewReady ? 'Siap dikirim' : 'Perlu perhatian'}</span></p>
-                  {satusehatDisabledReason ? <p className="text-amber-700">{satusehatDisabledReason}</p> : null}
-                </div>
-              </MasterDataAsideSection>
-            </div>
-            <div>
-              <MasterDataAsideSection title="Metadata" helper="Riwayat pembuatan dan perubahan data.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Dibuat: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.created_at)}</span></p>
-                  <p>Terakhir diubah: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.updated_at)}</span></p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
-        }
       >
         <div className="divide-y divide-border/70">
           <MasterDataSection title="Identitas Pegawai" helper="Master pegawai pusat untuk seluruh profesi operasional klinik.">
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               <MasterDataDetailItem label="Nama Lengkap" value={data.full_name} />
               <MasterDataDetailItem label="Profesi" value={getEmployeeProfessionLabel(data.profession)} />
               <MasterDataDetailItem label="Kode Pegawai" value={data.employee_code || '-'} />
@@ -258,6 +226,11 @@ export default function EmployeeShow() {
               <MasterDataDetailItem label="Practitioner ID SATUSEHAT" value={data.satusehat_practitioner_id || '-'} />
               <MasterDataDetailItem label="Sync SATUSEHAT Terakhir" value={formatMasterDataDateTime(data.satusehat_synced_at)} />
               <MasterDataDetailItem label="Status" value={data.is_active ? 'Aktif' : 'Nonaktif'} />
+              <MasterDataDetailItem label="Akun Email" value={data.user?.email || '-'} />
+              <MasterDataDetailItem label="Akun Username" value={data.user?.username || '-'} />
+              <MasterDataDetailItem label="Role Akun" value={data.user?.role?.name || '-'} />
+              <MasterDataDetailItem label="Waktu Dibuat" value={formatMasterDataDateTime(data.created_at)} />
+              <MasterDataDetailItem label="Terakhir Diubah" value={formatMasterDataDateTime(data.updated_at)} />
             </div>
           </MasterDataSection>
 

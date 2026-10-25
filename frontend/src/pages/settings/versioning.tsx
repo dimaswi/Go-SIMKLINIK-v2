@@ -340,7 +340,7 @@ export default function VersioningPage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <MasterDataPageShell
         title="Versioning"
         subtitle="Daftar cakupan fitur SIMKLINIK yang sudah aktif pada versi saat ini. Halaman ini dibuat sebagai inventaris produk berjalan, bukan roadmap dan bukan history release penuh."

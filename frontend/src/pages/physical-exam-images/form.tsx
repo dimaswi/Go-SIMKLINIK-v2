@@ -6,9 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
 import { resolveAssetUrl } from '@/lib/api';
-import { MasterDataAsideSection, MasterDataAsideStack, MasterDataLegacySections, MasterDataPageShell } from '@/pages/master-data/shared';
+import { MasterDataPageShell } from '@/pages/master-data/shared';
 
 export type PhysicalExamImageFormData = {
   name: string;
@@ -76,7 +75,6 @@ export function PhysicalExamImageForm({
     if (formData.file) {
       return URL.createObjectURL(formData.file);
     }
-
     return resolveAssetUrl(formData.imageUrl);
   }, [formData.file, formData.imageUrl]);
 
@@ -84,95 +82,66 @@ export function PhysicalExamImageForm({
     if (!previewUrl.startsWith('blob:')) {
       return undefined;
     }
-
     return () => {
       URL.revokeObjectURL(previewUrl);
     };
   }, [previewUrl]);
 
   return (
-    <form id={formId} onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <form id={formId} onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
       <MasterDataPageShell
         title={title}
         subtitle={description}
         onBack={onCancel}
-        actions={<Button type="submit" form={formId} disabled={loading} className="rounded-none shadow-none">{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{submitLabel}</Button>}
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Preview" helper="Gambar referensi yang akan dipakai pada pemeriksaan fisik.">
-                {previewUrl ? (
-                  <div className="overflow-hidden rounded-lg border bg-muted/20">
-                    <div className="aspect-[4/3]">
-                      <img src={previewUrl} alt={formData.name || 'Preview template'} className="h-full w-full object-contain" />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex aspect-[4/3] flex-col items-center justify-center rounded-lg border border-dashed bg-muted/10 text-center text-sm text-muted-foreground">
-                    <ImagePlus className="mb-2 h-5 w-5" />
-                    Belum ada gambar dipilih.
-                  </div>
-                )}
-
-                <div className="space-y-1">
-                  <p className="truncate font-medium">{formData.name || 'Nama template belum diisi'}</p>
-                  <p className="text-muted-foreground">{formData.location || 'Lokasi belum diisi'}</p>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {formData.category ? <Badge variant="outline">{formData.category}</Badge> : null}
-                  <Badge variant={formData.isActive ? 'default' : 'secondary'}>{formData.isActive ? 'Aktif' : 'Nonaktif'}</Badge>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
+        actions={
+          <Button type="submit" form={formId} disabled={loading} size="sm" className="h-8 px-4 text-xs rounded-none shadow-none">
+            {loading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            {submitLabel}
+          </Button>
         }
       >
-        <MasterDataLegacySections>
-          <div className="space-y-6">
-          <section className="space-y-4 rounded-lg border border-border/80 p-5">
-            <div>
-              <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
-              <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        <div className="space-y-4">
+          <div className="space-y-2.5">
+            <div className="border-b border-border/60 pb-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Detail Template Gambar</span>
             </div>
-
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="name" className="text-xs font-medium">Nama Template</Label>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="name" className="text-xs font-medium">Nama Template *</Label>
                 <Input
                   id="name"
                   required
                   value={formData.name}
                   onChange={(event) => setFormData((current) => ({ ...current, name: event.target.value }))}
                   placeholder="Contoh: Pemeriksaan Mulut"
-                  className="h-10 text-sm"
+                  className="h-9 text-xs rounded-none"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="category" className="text-xs font-medium">Kategori</Label>
+
+              <div className="space-y-1">
+                <Label htmlFor="category" className="text-xs font-medium">Kategori *</Label>
                 <Input
                   id="category"
                   required
                   value={formData.category}
                   onChange={(event) => setFormData((current) => ({ ...current, category: event.target.value }))}
                   placeholder="Contoh: Kepala Leher"
-                  className="h-10 text-sm"
+                  className="h-9 text-xs rounded-none"
                 />
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-              <div className="space-y-2">
+              <div className="space-y-1">
                 <Label htmlFor="location" className="text-xs font-medium">Lokasi / Area</Label>
                 <Input
                   id="location"
                   value={formData.location}
                   onChange={(event) => setFormData((current) => ({ ...current, location: event.target.value }))}
                   placeholder="Contoh: Mulut"
-                  className="h-10 text-sm"
+                  className="h-9 text-xs rounded-none"
                 />
               </div>
-              <div className="space-y-2">
+
+              <div className="space-y-1">
                 <Label htmlFor="sortOrder" className="text-xs font-medium">Urutan</Label>
                 <Input
                   id="sortOrder"
@@ -180,56 +149,72 @@ export function PhysicalExamImageForm({
                   min="0"
                   value={formData.sortOrder}
                   onChange={(event) => setFormData((current) => ({ ...current, sortOrder: event.target.value }))}
-                  className="h-10 text-sm"
+                  className="h-9 text-xs font-mono rounded-none"
                 />
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="description" className="text-xs font-medium">Deskripsi</Label>
-              <Textarea
-                id="description"
-                rows={5}
-                value={formData.description}
-                onChange={(event) => setFormData((current) => ({ ...current, description: event.target.value }))}
-                placeholder="Deskripsikan area atau tujuan template, misalnya dipakai untuk menandai lesi, nyeri tekan, atau area pemeriksaan tertentu."
-                className="text-sm"
-              />
-            </div>
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] gap-3 pt-1">
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <Label htmlFor="description" className="text-xs font-medium">Deskripsi</Label>
+                  <Textarea
+                    id="description"
+                    rows={3}
+                    value={formData.description}
+                    onChange={(event) => setFormData((current) => ({ ...current, description: event.target.value }))}
+                    placeholder="Deskripsi tujuan template..."
+                    className="text-xs rounded-none"
+                  />
+                </div>
 
-            <div className="flex items-center justify-between rounded-md border p-4">
-              <div className="space-y-0.5">
-                <Label htmlFor="is_active" className="cursor-pointer text-xs font-medium">Status Aktif</Label>
-                <p className="text-xs text-muted-foreground">
-                  {formData.isActive ? 'Template aktif dan bisa dipilih di EMR' : 'Template disembunyikan dari pilihan EMR baru'}
-                </p>
+                <div className="space-y-1">
+                  <Label htmlFor="file" className="text-xs font-medium">File Gambar</Label>
+                  <Input
+                    id="file"
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
+                    required={mode === 'create' && !formData.file && !formData.imageUrl}
+                    onChange={(event) => setFormData((current) => ({ ...current, file: event.target.files?.[0] || null }))}
+                    className="h-9 text-xs rounded-none cursor-pointer file:text-xs file:font-medium"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    {mode === 'edit'
+                      ? 'Kosongkan jika tidak mengganti gambar saat ini.'
+                      : 'Upload gambar anatomi atau bagan pemeriksaan.'}
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between border border-border/70 p-2.5 bg-muted/10">
+                  <div>
+                    <Label htmlFor="is_active" className="cursor-pointer text-xs font-medium">Status Aktif</Label>
+                    <p className="text-[11px] text-muted-foreground">
+                      {formData.isActive ? 'Template aktif di EMR' : 'Template disembunyikan dari pilihan baru'}
+                    </p>
+                  </div>
+                  <Switch
+                    id="is_active"
+                    checked={formData.isActive}
+                    onCheckedChange={(checked) => setFormData((current) => ({ ...current, isActive: checked }))}
+                  />
+                </div>
               </div>
-              <Switch
-                id="is_active"
-                checked={formData.isActive}
-                onCheckedChange={(checked) => setFormData((current) => ({ ...current, isActive: checked }))}
-              />
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="file" className="text-xs font-medium">File Gambar</Label>
-              <Input
-                id="file"
-                type="file"
-                accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
-                required={mode === 'create' && !formData.file && !formData.imageUrl}
-                onChange={(event) => setFormData((current) => ({ ...current, file: event.target.files?.[0] || null }))}
-                className="h-10 text-sm"
-              />
-              <p className="text-xs text-muted-foreground">
-                {mode === 'edit'
-                  ? 'Biarkan kosong jika tidak ingin mengganti gambar saat ini.'
-                  : 'Upload gambar anatomi, skema, atau area pemeriksaan yang akan dipakai sebagai template.'}
-              </p>
+              <div className="border border-border/70 p-2 bg-muted/10 flex flex-col items-center justify-center min-h-[140px]">
+                {previewUrl ? (
+                  <div className="w-full h-full max-h-[160px] flex items-center justify-center overflow-hidden">
+                    <img src={previewUrl} alt={formData.name || 'Preview template'} className="max-h-[150px] w-full object-contain" />
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center text-center p-3 text-muted-foreground">
+                    <ImagePlus className="h-6 w-6 mb-1 text-muted-foreground/60" />
+                    <span className="text-[11px]">Belum ada gambar</span>
+                  </div>
+                )}
+              </div>
             </div>
-          </section>
           </div>
-        </MasterDataLegacySections>
+        </div>
       </MasterDataPageShell>
     </form>
   );

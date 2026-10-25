@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Eye, Edit, Trash2, ArrowUpDown } from "lucide-react"
-import { createSelectColumn } from "@/components/ui/data-table"
 import type { Employee, User } from "@/lib/api"
 
 interface UserColumnsProps {
@@ -26,7 +25,6 @@ export function createUserColumns({
   getLinkedEmployee,
 }: UserColumnsProps): ColumnDef<User>[] {
   return [
-    createSelectColumn<User>(),
     {
       accessorKey: "full_name",
       header: ({ column }) => {

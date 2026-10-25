@@ -91,9 +91,6 @@ export default function MedicinesPage() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 Data Obat
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Kelola master data obat, sediaan, dan stok inventaris farmasi ({filteredData.length} obat)
-              </p>
             </div>
           </div>
 

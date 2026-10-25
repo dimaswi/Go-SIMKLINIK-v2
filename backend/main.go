@@ -25,7 +25,9 @@ func init() {
 func main() {
 	// Load .env file
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using default configuration")
+		if err := godotenv.Load("../.env"); err != nil {
+			log.Println("No .env file found, using default configuration")
+		}
 	}
 
 	// Load config
@@ -69,6 +71,10 @@ func main() {
 		api.POST("/auth/login", handlers.Login)
 		api.GET("/settings", handlers.GetSettings) // Public access to settings
 		api.POST("/tte/verify", handlers.VerifyTTESignature)
+		api.POST("/public/registration-queue", handlers.CreateRegistrationQueue)
+		api.GET("/public/registration-queue/today", handlers.GetRegistrationQueues)
+		api.GET("/public/polyclinics", handlers.GetPolyclinics)
+		api.GET("/public/doctors", handlers.GetDoctors)
 
 		registerBPJSWebhookRoutes(api, "/bpjs/webhook")
 
@@ -280,6 +286,7 @@ func main() {
 			protected.GET("/visits", middleware.RequirePermission("visits.view"), handlers.GetVisits)
 			protected.GET("/visits/control-schedules", middleware.RequirePermission("visits.view"), handlers.GetControlSchedules)
 			protected.GET("/visits/today", middleware.RequirePermission("visits.view"), handlers.GetTodayVisits)
+			protected.GET("/visits/active-patient/:patientId", middleware.RequireAnyPermission("visits.view", "visits.create"), handlers.GetActiveVisitByPatient)
 			protected.GET("/visits/:id", middleware.RequirePermission("visits.view"), handlers.GetVisit)
 			protected.POST("/visits", middleware.RequirePermission("visits.create"), handlers.CreateVisit)
 			protected.PUT("/visits/:id", middleware.RequirePermission("visits.update"), handlers.UpdateVisit)
@@ -342,7 +349,10 @@ func main() {
 			protected.POST("/medical-records/:id/prescriptions/return", middleware.RequireAnyPermission("pharmacy.process", "prescriptions.process", "prescriptions.update"), handlers.ReturnPrescriptionOrder)
 			protected.POST("/medical-records/:id/prescriptions/ready", middleware.RequireAnyPermission("pharmacy.process", "prescriptions.process", "prescriptions.update"), handlers.ReadyPrescriptionOrder)
 			protected.POST("/medical-records/:id/prescriptions/dispense", middleware.RequireAnyPermission("pharmacy.process", "prescriptions.process", "prescriptions.update"), handlers.DispensePrescriptionOrder)
+			protected.PUT("/medical-records/:id/pharmacy/compounds/deductions", middleware.RequireAnyPermission("pharmacy.process", "prescriptions.process", "prescriptions.update"), handlers.UpdatePrescriptionCompoundDeductions)
+			protected.PUT("/medical-records/:id/prescriptions/review", middleware.RequireAnyPermission("pharmacy.process", "prescriptions.process", "prescriptions.update"), handlers.UpdatePrescriptionReview)
 			protected.POST("/medical-records/:id/pharmacy/prescriptions", middleware.RequireAnyPermission("pharmacy.process", "prescriptions.process", "prescriptions.update"), handlers.AddPharmacyPrescription)
+			protected.PUT("/medical-records/:id/pharmacy/prescriptions/:prescriptionId", middleware.RequireAnyPermission("pharmacy.process", "prescriptions.process", "prescriptions.update"), handlers.UpdatePharmacyPrescription)
 			protected.DELETE("/medical-records/:id/pharmacy/prescriptions/:prescriptionId", middleware.RequireAnyPermission("pharmacy.process", "prescriptions.process", "prescriptions.update"), handlers.DeletePharmacyPrescription)
 			protected.GET("/medical-records/:id/print/pharmacy-ticket", middleware.RequireAnyPermission("medical_records.view", "pharmacy.view", "pharmacy.process", "prescriptions.view", "prescriptions.process"), handlers.PrintPharmacyTicket)
 			protected.GET("/medical-records/:id/print/prescription", middleware.RequireAnyPermission("medical_records.view", "pharmacy.view", "pharmacy.process", "prescriptions.view", "prescriptions.process"), handlers.PrintPrescriptionOrder)
@@ -390,6 +400,8 @@ func main() {
 			protected.GET("/invoices/:id/print", middleware.RequirePermission("invoices.view"), handlers.PrintInvoice)
 			protected.PUT("/invoices/:id", middleware.RequirePermission("invoices.update"), handlers.UpdateInvoice)
 			protected.POST("/invoices/:id/pay", middleware.RequirePermission("invoices.pay"), handlers.ProcessPayment)
+			protected.POST("/invoices/:id/cancel-payment", middleware.RequirePermission("invoices.pay"), handlers.CancelPayment)
+			protected.DELETE("/invoices/:id/payments/:paymentId", middleware.RequirePermission("invoices.pay"), handlers.CancelPayment)
 			protected.GET("/invoices/visit/:visitId", middleware.RequirePermission("invoices.view"), handlers.GetInvoiceByVisit)
 			protected.POST("/invoices/visit/:visitId/sync", middleware.RequirePermission("invoices.create"), handlers.SyncVisitInvoice)
 		}

@@ -50,6 +50,14 @@ var initialAssessmentPDFTextReplacer = strings.NewReplacer(
 	"‘", "'",
 	"’", "'",
 	"…", "...",
+	"×", "x",
+	"✕", "x",
+	"✖", "x",
+	"⨯", "x",
+	"±", "+/-",
+	"°", " deg ",
+	"µ", "u",
+	"μ", "u",
 )
 
 type initialAssessmentHospitalInfo struct {
@@ -2178,6 +2186,8 @@ func sanitizePDFText(value string) string {
 			return 'd'
 		case 'ß':
 			return 's'
+		case '×', '✕', '✖', '⨯':
+			return 'x'
 		}
 
 		if r >= 32 && r <= 126 {

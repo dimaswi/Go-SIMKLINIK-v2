@@ -1,7 +1,6 @@
 import type { ColumnDef } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
 import { Eye, Edit, Trash2, ArrowUpDown } from "lucide-react"
-import { createSelectColumn } from "@/components/ui/data-table"
 import type { MedicineCategory } from "@/lib/api"
 
 interface Props {
@@ -15,7 +14,6 @@ interface Props {
 
 export function createMedicineCategoryColumns({ onView, onEdit, onDelete, hasViewPermission, hasEditPermission, hasDeletePermission }: Props): ColumnDef<MedicineCategory>[] {
   return [
-    createSelectColumn<MedicineCategory>(),
     {
       accessorKey: "name",
       header: ({ column }) => (

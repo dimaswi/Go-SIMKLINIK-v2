@@ -56,6 +56,9 @@ type MedicalRecord struct {
 	PrescriptionOrderedBy          *uint                    `gorm:"index" json:"prescription_ordered_by"`
 	PrescriptionProcessedAt        *time.Time               `json:"prescription_processed_at"`
 	PrescriptionProcessedBy        *uint                    `gorm:"index" json:"prescription_processed_by"`
+	PrescriptionReviewInitial       string                   `gorm:"type:text" json:"prescription_review_initial"`
+	PrescriptionReviewFinal         string                   `gorm:"type:text" json:"prescription_review_final"`
+	PrescriptionDoctorOrderSnapshot string                   `gorm:"type:text" json:"prescription_doctor_order_snapshot"`
 	LaboratoryWorkflowStatus       string                   `gorm:"size:20;default:'draft'" json:"laboratory_workflow_status"`
 	LaboratoryOrderedAt            *time.Time               `json:"laboratory_ordered_at"`
 	LaboratoryOrderedBy            *uint                    `gorm:"index" json:"laboratory_ordered_by"`

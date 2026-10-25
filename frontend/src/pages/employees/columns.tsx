@@ -2,7 +2,6 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { ArrowUpDown, Edit, Eye, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { createSelectColumn } from '@/components/ui/data-table';
 import type { Employee } from '@/lib/api';
 import { getEmployeeProfessionLabel } from './options';
 
@@ -87,7 +86,6 @@ export function createEmployeeColumns({
   syncingEmployeeId,
 }: EmployeeColumnsProps): ColumnDef<Employee>[] {
   return [
-    createSelectColumn<Employee>(),
     {
       accessorKey: 'full_name',
       header: ({ column }) => (

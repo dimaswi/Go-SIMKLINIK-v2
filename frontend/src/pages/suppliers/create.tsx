@@ -6,9 +6,9 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { suppliersApi } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, User, Phone, Mail, MapPin } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
-import { MasterDataAsideSection, MasterDataAsideStack, MasterDataLegacySections, MasterDataPageShell } from '@/pages/master-data/shared';
+import { MasterDataPageShell } from '@/pages/master-data/shared';
 
 export default function SupplierCreate() {
   const navigate = useNavigate();
@@ -19,42 +19,106 @@ export default function SupplierCreate() {
   useEffect(() => { setPageTitle('Tambah Supplier'); }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); setLoading(true);
-    try { await suppliersApi.create(formData); toast({ variant: "success", title: "Berhasil!" }); setTimeout(() => navigate('/suppliers'), 400); }
-    catch (e: any) { toast({ variant: "destructive", title: "Error!", description: e.response?.data?.error || "Gagal." }); } finally { setLoading(false); }
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await suppliersApi.create(formData);
+      toast({ variant: "success", title: "Berhasil!", description: "Supplier berhasil dibuat." });
+      setTimeout(() => navigate('/suppliers'), 400);
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error!", description: e.response?.data?.error || "Gagal membuat supplier." });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <form id="supplier-create-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <form id="supplier-create-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <MasterDataPageShell
         title="Tambah Supplier"
-        subtitle="Simpan vendor atau pemasok yang dipakai pada pembelian, stok, dan manajemen pasokan klinik."
+        subtitle="Vendor dan pemasok logistik farmasi / klinik."
         onBack={() => navigate('/suppliers')}
-        actions={<Button type="submit" form="supplier-create-form" disabled={loading} className="rounded-none shadow-none">{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan</Button>}
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Ringkasan" helper="Preview pemasok yang akan ditambahkan.">
-                <div className="space-y-1"><p className="truncate font-medium">{formData.name || 'Nama belum diisi'}</p><p className="text-muted-foreground">{formData.contact_person || '-'}</p></div>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
+        actions={
+          <Button type="submit" form="supplier-create-form" disabled={loading} size="sm" className="h-8 px-4 text-xs rounded-none shadow-none">
+            {loading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            Simpan Supplier
+          </Button>
         }
       >
-        <MasterDataLegacySections>
-          <div className="space-y-6"><section className="space-y-4 rounded-lg border border-border/80 p-5">
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-              <div className="space-y-2"><Label htmlFor="name" className="text-xs font-medium">Nama Supplier</Label><Input id="name" required placeholder="PT Supplier" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="h-10 text-sm" /></div>
-              <div className="space-y-2"><Label htmlFor="contact_person" className="text-xs font-medium flex items-center gap-2"><User className="h-3.5 w-3.5 text-muted-foreground" />Contact Person</Label><Input id="contact_person" placeholder="John Doe" value={formData.contact_person} onChange={e => setFormData({ ...formData, contact_person: e.target.value })} className="h-10 text-sm" /></div>
+        <div className="space-y-4">
+          <div className="space-y-2.5">
+            <div className="border-b border-border/60 pb-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Informasi Pemasok / Vendor</span>
             </div>
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-              <div className="space-y-2"><Label htmlFor="phone" className="text-xs font-medium flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" />Telepon</Label><Input id="phone" placeholder="08xx" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} className="h-10 text-sm" /></div>
-              <div className="space-y-2"><Label htmlFor="email" className="text-xs font-medium flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" />Email</Label><Input id="email" type="email" placeholder="supplier@email.com" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className="h-10 text-sm" /></div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="name" className="text-xs font-medium">Nama Supplier *</Label>
+                <Input
+                  id="name"
+                  required
+                  placeholder="PT Kimia Farma / Vendor"
+                  value={formData.name}
+                  onChange={e => setFormData({ ...formData, name: e.target.value })}
+                  className="h-9 text-xs rounded-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="contact_person" className="text-xs font-medium">Contact Person</Label>
+                <Input
+                  id="contact_person"
+                  placeholder="Nama kontak PIC"
+                  value={formData.contact_person}
+                  onChange={e => setFormData({ ...formData, contact_person: e.target.value })}
+                  className="h-9 text-xs rounded-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="phone" className="text-xs font-medium">Telepon / WA</Label>
+                <Input
+                  id="phone"
+                  placeholder="08xxxxxxxxxx"
+                  value={formData.phone}
+                  onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                  className="h-9 text-xs rounded-none font-mono"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="email" className="text-xs font-medium">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="supplier@example.com"
+                  value={formData.email}
+                  onChange={e => setFormData({ ...formData, email: e.target.value })}
+                  className="h-9 text-xs rounded-none"
+                />
+              </div>
+
+              <div className="space-y-1 lg:col-span-2">
+                <Label htmlFor="address" className="text-xs font-medium">Alamat</Label>
+                <Input
+                  id="address"
+                  placeholder="Alamat kantor / gudang supplier"
+                  value={formData.address}
+                  onChange={e => setFormData({ ...formData, address: e.target.value })}
+                  className="h-9 text-xs rounded-none"
+                />
+              </div>
             </div>
-            <div className="space-y-2"><Label htmlFor="address" className="text-xs font-medium flex items-center gap-2"><MapPin className="h-3.5 w-3.5 text-muted-foreground" />Alamat</Label><Input id="address" placeholder="Jl. ..." value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} className="h-10 text-sm" /></div>
-            <div className="flex items-center justify-between rounded-md border p-4"><div className="space-y-0.5"><Label htmlFor="is_active" className="text-xs font-medium cursor-pointer">Status Aktif</Label><p className="text-xs text-muted-foreground">{formData.is_active ? 'Supplier aktif' : 'Supplier tidak aktif'}</p></div><Switch id="is_active" checked={formData.is_active} onCheckedChange={checked => setFormData({ ...formData, is_active: checked })} /></div>
-          </section></div>
-        </MasterDataLegacySections>
+
+            <div className="flex items-center justify-between border border-border/70 p-2.5 bg-muted/10">
+              <div>
+                <Label htmlFor="is_active" className="text-xs font-medium cursor-pointer">Status Aktif</Label>
+                <p className="text-[11px] text-muted-foreground">{formData.is_active ? 'Supplier aktif beroperasi' : 'Supplier nonaktif'}</p>
+              </div>
+              <Switch id="is_active" checked={formData.is_active} onCheckedChange={checked => setFormData({ ...formData, is_active: checked })} />
+            </div>
+          </div>
+        </div>
       </MasterDataPageShell>
     </form>
   );

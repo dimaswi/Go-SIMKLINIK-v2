@@ -9,8 +9,6 @@ import { paymentMethodsApi } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
 import { Edit, Loader2, Trash2 } from 'lucide-react';
 import {
-  MasterDataAsideSection,
-  MasterDataAsideStack,
   MasterDataDetailItem,
   MasterDataPageShell,
   MasterDataSection,
@@ -78,24 +76,13 @@ export default function PaymentMethodShow() {
             {hasPermission('payment_methods.delete') && <Button variant="destructive" className="rounded-none shadow-none" onClick={() => setDeleteDialogOpen(true)} disabled={deleting}>{deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}Hapus</Button>}
           </>
         }
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Metadata" helper="Status dan jejak perubahan metode pembayaran.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Status: <span className="font-medium text-foreground">{data.is_active ? 'Aktif' : 'Tidak aktif'}</span></p>
-                  <p>Dibuat: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.created_at)}</span></p>
-                  <p>Terakhir diubah: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.updated_at)}</span></p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
-        }
       >
         <div className="divide-y divide-border/70">
           <MasterDataSection title="Informasi Metode Pembayaran" helper="Data referensi yang dipakai saat memilih cara pembayaran pasien.">
             <div className="grid gap-4 md:grid-cols-2">
               <MasterDataDetailItem label="Nama" value={data.name} />
+              <MasterDataDetailItem label="Waktu Dibuat" value={formatMasterDataDateTime(data.created_at)} />
+              <MasterDataDetailItem label="Terakhir Diubah" value={formatMasterDataDateTime(data.updated_at)} />
             </div>
           </MasterDataSection>
         </div>

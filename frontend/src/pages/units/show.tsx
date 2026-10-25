@@ -9,8 +9,6 @@ import { unitsApi } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
 import { Edit, Loader2, Trash2 } from 'lucide-react';
 import {
-  MasterDataAsideSection,
-  MasterDataAsideStack,
   MasterDataDetailItem,
   MasterDataPageShell,
   MasterDataSection,
@@ -71,23 +69,13 @@ export default function UnitShow() {
             {hasPermission('units.delete') && <Button variant="destructive" className="rounded-none shadow-none" onClick={() => setDeleteDialogOpen(true)} disabled={deleting}>{deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}Hapus</Button>}
           </>
         }
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Metadata" helper="Waktu pencatatan dan perubahan terakhir.">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Dibuat: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.created_at)}</span></p>
-                  <p>Terakhir diubah: <span className="font-medium text-foreground">{formatMasterDataDateTime(data.updated_at)}</span></p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
-        }
       >
         <div className="divide-y divide-border/70">
           <MasterDataSection title="Informasi Satuan" helper="Nilai referensi sederhana yang dipakai lintas modul.">
             <div className="grid gap-4 md:grid-cols-2">
               <MasterDataDetailItem label="Nama" value={data.name} />
+              <MasterDataDetailItem label="Waktu Dibuat" value={formatMasterDataDateTime(data.created_at)} />
+              <MasterDataDetailItem label="Terakhir Diubah" value={formatMasterDataDateTime(data.updated_at)} />
             </div>
           </MasterDataSection>
         </div>

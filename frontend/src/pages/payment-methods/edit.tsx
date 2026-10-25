@@ -8,7 +8,7 @@ import { paymentMethodsApi } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
-import { MasterDataAsideSection, MasterDataAsideStack, MasterDataLegacySections, MasterDataPageShell } from '@/pages/master-data/shared';
+import { MasterDataPageShell } from '@/pages/master-data/shared';
 
 export default function PaymentMethodEdit() {
   const navigate = useNavigate();
@@ -20,40 +20,70 @@ export default function PaymentMethodEdit() {
 
   useEffect(() => {
     setPageTitle('Edit Metode Pembayaran');
-    paymentMethodsApi.getById(Number(id)).then(r => { const d = r.data.data; setFormData({ name: d.name, is_active: d.is_active }); }).catch(() => toast({ variant: "destructive", title: "Error!" })).finally(() => setFetching(false));
+    paymentMethodsApi.getById(Number(id)).then(r => {
+      const d = r.data.data;
+      setFormData({ name: d.name, is_active: d.is_active });
+    }).catch(() => toast({ variant: "destructive", title: "Error!", description: "Gagal memuat data." })).finally(() => setFetching(false));
   }, [id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); setLoading(true);
-    try { await paymentMethodsApi.update(Number(id), formData); toast({ variant: "success", title: "Berhasil!" }); setTimeout(() => navigate('/payment-methods'), 500); }
-    catch (e: any) { toast({ variant: "destructive", title: "Error!", description: e.response?.data?.error || "Gagal." }); } finally { setLoading(false); }
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await paymentMethodsApi.update(Number(id), formData);
+      toast({ variant: "success", title: "Berhasil!", description: "Metode pembayaran berhasil diperbarui." });
+      setTimeout(() => navigate('/payment-methods'), 400);
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error!", description: e.response?.data?.error || "Gagal memperbarui metode pembayaran." });
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (fetching) return <div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
   return (
-    <form id="payment-method-edit-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <form id="payment-method-edit-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <MasterDataPageShell
         title="Edit Metode Pembayaran"
-        subtitle="Perbarui metode pembayaran aktif yang digunakan pada transaksi dan administrasi pasien."
+        subtitle="Perbarui metode pembayaran transaksi klinik."
         onBack={() => navigate('/payment-methods')}
-        actions={<Button type="submit" form="payment-method-edit-form" disabled={loading} className="rounded-none shadow-none">{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Update</Button>}
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Ringkasan" helper="Nama metode yang akan diperbarui.">
-                <p className="truncate font-medium">{formData.name || '-'}</p>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
+        actions={
+          <Button type="submit" form="payment-method-edit-form" disabled={loading} size="sm" className="h-8 px-4 text-xs rounded-none shadow-none">
+            {loading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            Update Metode
+          </Button>
         }
       >
-        <MasterDataLegacySections>
-          <div className="space-y-6"><section className="space-y-4 rounded-lg border border-border/80 p-5">
-            <div className="space-y-2"><Label htmlFor="name" className="text-xs font-medium">Nama Metode</Label><Input id="name" required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="h-10 text-sm" /></div>
-            <div className="flex items-center justify-between rounded-md border p-4"><div className="space-y-0.5"><Label htmlFor="is_active" className="text-xs font-medium cursor-pointer">Status Aktif</Label><p className="text-xs text-muted-foreground">{formData.is_active ? 'Aktif' : 'Tidak aktif'}</p></div><Switch id="is_active" checked={formData.is_active} onCheckedChange={checked => setFormData({ ...formData, is_active: checked })} /></div>
-          </section></div>
-        </MasterDataLegacySections>
+        <div className="space-y-4">
+          <div className="space-y-2.5">
+            <div className="border-b border-border/60 pb-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Informasi Metode Pembayaran</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="name" className="text-xs font-medium">Nama Metode *</Label>
+                <Input
+                  id="name"
+                  required
+                  placeholder="Nama metode pembayaran"
+                  value={formData.name}
+                  onChange={e => setFormData({ ...formData, name: e.target.value })}
+                  className="h-9 text-xs rounded-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between border border-border/70 p-2.5 bg-muted/10">
+              <div>
+                <Label htmlFor="is_active" className="text-xs font-medium cursor-pointer">Status Aktif</Label>
+                <p className="text-[11px] text-muted-foreground">{formData.is_active ? 'Metode pembayaran aktif digunakan' : 'Metode nonaktif'}</p>
+              </div>
+              <Switch id="is_active" checked={formData.is_active} onCheckedChange={checked => setFormData({ ...formData, is_active: checked })} />
+            </div>
+          </div>
+        </div>
       </MasterDataPageShell>
     </form>
   );

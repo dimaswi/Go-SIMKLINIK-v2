@@ -13,7 +13,15 @@ import { billingApi } from '@/lib/api';
 import type { CashierQueueItem, Invoice } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
 import { formatCurrency, formatDateTime } from './utils';
-import { ArrowRight, Eye, Loader2, Plus, Printer, Receipt, RefreshCw } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { ArrowRight, Eye, FileSpreadsheet, FileText, Loader2, Plus, Printer, Receipt, RefreshCw } from 'lucide-react';
 
 // ── Status helpers ─────────────────────────────────────────────────────────
 
@@ -53,9 +61,13 @@ export default function KasirIndexPage() {
     const [queueRes, invoiceParams] = await Promise.all([
       billingApi.getQueue(date, search),
       (() => {
-        const params = new URLSearchParams({ per_page: '10' });
+        const params = new URLSearchParams({ per_page: '50' });
         if (statusFilter) params.append('status', statusFilter);
         if (search) params.append('search', search);
+        if (date) {
+          params.append('date_from', date);
+          params.append('date_to', date);
+        }
         return billingApi.getAll(params.toString());
       })(),
     ]);
@@ -118,13 +130,13 @@ export default function KasirIndexPage() {
     }
   }, [loadData, navigate, toast]);
 
-  const handlePrint = useCallback(async (invoiceId: number) => {
+  const handlePrint = useCallback(async (invoiceId: number, format: 'a4' | 'a5' | 'thermal' = 'a4') => {
     try {
-      const res = await billingApi.print(invoiceId);
+      const res = await billingApi.print(invoiceId, format);
       const blob = new Blob([res.data as ArrayBuffer], { type: 'application/pdf' });
       window.open(URL.createObjectURL(blob), '_blank');
     } catch {
-      toast({ variant: 'destructive', title: 'Gagal mencetak invoice' });
+      toast({ variant: 'destructive', title: 'Gagal mencetak kwitansi' });
     }
   }, [toast]);
 
@@ -312,14 +324,36 @@ export default function KasirIndexPage() {
             <Eye className="mr-1.5 h-4 w-4" />
             {row.original.status === 'lunas' ? 'Lihat' : 'Proses'}
           </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-8 w-8 rounded-none shadow-none"
-            onClick={() => void handlePrint(row.original.id)}
-          >
-            <Printer className="h-4 w-4" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 rounded-none shadow-none"
+                title="Cetak Kwitansi"
+              >
+                <Printer className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52 rounded-none shadow-lg">
+              <DropdownMenuLabel className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Format Kwitansi
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => void handlePrint(row.original.id, 'a4')} className="gap-2.5 cursor-pointer py-1.5">
+                <FileText className="h-4 w-4 text-blue-600 shrink-0" />
+                <span className="text-xs">Kwitansi A4</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void handlePrint(row.original.id, 'a5')} className="gap-2.5 cursor-pointer py-1.5">
+                <FileSpreadsheet className="h-4 w-4 text-emerald-600 shrink-0" />
+                <span className="text-xs">Kwitansi A5</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void handlePrint(row.original.id, 'thermal')} className="gap-2.5 cursor-pointer py-1.5">
+                <Receipt className="h-4 w-4 text-amber-600 shrink-0" />
+                <span className="text-xs">Struk Thermal (80mm)</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       ),
     },
@@ -346,11 +380,6 @@ export default function KasirIndexPage() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 Kasir & Billing
               </h1>
-              <p className="text-xs text-muted-foreground">
-                {activeView === 'queue'
-                  ? `Antrean kasir rawat jalan (${queue.length} antrean)`
-                  : `Daftar riwayat invoice pembayaran (${invoices.length} invoice)`}
-              </p>
             </div>
           </div>
 
@@ -372,18 +401,16 @@ export default function KasirIndexPage() {
               </button>
             </div>
 
-            {activeView === 'queue' ? (
-              <Input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="h-9 w-36 rounded-none text-xs"
-              />
-            ) : null}
+            <Input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="h-9 w-36 rounded-none text-xs shrink-0"
+              title="Filter tanggal transaksi"
+            />
 
             <SearchableSelect
               options={[
-                { value: '', label: 'Semua Status' },
                 { value: 'belum_bayar', label: 'Belum Bayar' },
                 { value: 'sebagian', label: 'Bayar Sebagian' },
                 { value: 'lunas', label: 'Lunas' },

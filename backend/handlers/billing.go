@@ -120,6 +120,8 @@ func GetInvoices(c *gin.Context) {
 			paidAmount += p.Amount
 		}
 
+		inv.Items = enrichRacikanInvoiceItems(inv.Items)
+
 		items := make([]InvoiceItemDetail, len(inv.Items))
 		for i, item := range inv.Items {
 			items[i] = InvoiceItemDetail{
@@ -189,6 +191,14 @@ func GetInvoice(c *gin.Context) {
 	for _, p := range invoice.Payments {
 		paidAmount += p.Amount
 	}
+
+	if invoice.Status == "belum_bayar" && len(invoice.Payments) > 0 {
+		database.DB.Exec("DELETE FROM payments WHERE invoice_id = ?", invoice.ID)
+		invoice.Payments = nil
+		paidAmount = 0
+	}
+
+	invoice.Items = enrichRacikanInvoiceItems(invoice.Items)
 
 	items := make([]InvoiceItemDetail, len(invoice.Items))
 	for i, item := range invoice.Items {
@@ -263,6 +273,8 @@ func GetInvoiceByVisit(c *gin.Context) {
 		paidAmount += p.Amount
 	}
 
+	invoice.Items = enrichRacikanInvoiceItems(invoice.Items)
+
 	items := make([]InvoiceItemDetail, len(invoice.Items))
 	for i, item := range invoice.Items {
 		items[i] = InvoiceItemDetail{
@@ -314,7 +326,59 @@ func resolveVisitAdministrationFee(tx *gorm.DB, visit models.Visit) float64 {
 	return 0
 }
 
+func enrichRacikanInvoiceItems(items []models.InvoiceItem) []models.InvoiceItem {
+	var result []models.InvoiceItem
+	for _, item := range items {
+		isBundled := item.ItemType == "racikan" && item.ReferenceID > 0 &&
+			(strings.Contains(item.Description, " - Bahan: ") || (!strings.Contains(item.Description, "Racikan (") && strings.HasPrefix(item.Description, "Racikan:")))
+
+		if isBundled {
+			var comp models.PrescriptionCompound
+			if err := database.DB.Preload("Items.Medicine.Unit").First(&comp, item.ReferenceID).Error; err == nil && len(comp.Items) > 0 {
+				if item.ID > 0 {
+					database.DB.Delete(&models.InvoiceItem{}, item.ID)
+				}
+
+				compName := strings.TrimSpace(comp.Name)
+				if compName == "" {
+					compName = "Racikan"
+				}
+
+				for _, cItem := range comp.Items {
+					if cItem.Medicine.ID > 0 {
+						price := cItem.Medicine.SellingPrice
+						qty := cItem.Quantity
+						if qty <= 0 {
+							qty = 1
+						}
+						desc := fmt.Sprintf("Racikan (%s): %s", compName, cItem.Medicine.Name)
+						newItem := models.InvoiceItem{
+							InvoiceID:   item.InvoiceID,
+							ItemType:    "racikan",
+							ReferenceID: comp.ID,
+							Description: desc,
+							Quantity:    qty,
+							UnitPrice:   price,
+							Discount:    0,
+							TotalPrice:  price * float64(qty),
+						}
+						if item.InvoiceID > 0 {
+							database.DB.Create(&newItem)
+						}
+						result = append(result, newItem)
+					}
+				}
+				continue
+			}
+		}
+
+		result = append(result, item)
+	}
+	return result
+}
+
 func buildInvoiceResponse(invoice models.Invoice) InvoiceListResponse {
+	invoice.Items = enrichRacikanInvoiceItems(invoice.Items)
 	var paidAmount float64
 	for _, p := range invoice.Payments {
 		paidAmount += p.Amount
@@ -455,29 +519,55 @@ func buildVisitInvoiceItems(tx *gorm.DB, visit models.Visit, requireRegistration
 		}
 
 		var compounds []models.PrescriptionCompound
-		tx.Preload("Items").Preload("Items.Medicine").Where("medical_record_id = ?", mr.ID).Find(&compounds)
+		tx.Preload("Items.Medicine.Unit").Where("medical_record_id = ?", mr.ID).Find(&compounds)
 		for _, comp := range compounds {
 			if processedCompounds[comp.ID] {
 				continue
 			}
 			processedCompounds[comp.ID] = true
 
-			var compoundPrice float64
+			compName := strings.TrimSpace(comp.Name)
+			if compName == "" {
+				compName = "Racikan"
+			}
+
+			hasItems := false
 			for _, item := range comp.Items {
 				if item.Medicine.ID > 0 {
-					compoundPrice += item.Medicine.SellingPrice * float64(item.Quantity)
+					hasItems = true
+					price := item.Medicine.SellingPrice
+					qty := item.Quantity
+					if qty <= 0 {
+						qty = 1
+					}
+					desc := fmt.Sprintf("Racikan (%s): %s", compName, item.Medicine.Name)
+					items = append(items, models.InvoiceItem{
+						ItemType:    "racikan",
+						ReferenceID: comp.ID,
+						Description: desc,
+						Quantity:    qty,
+						UnitPrice:   price,
+						Discount:    0,
+						TotalPrice:  price * float64(qty),
+					})
 				}
 			}
 
-			items = append(items, models.InvoiceItem{
-				ItemType:    "racikan",
-				ReferenceID: comp.ID,
-				Description: fmt.Sprintf("Racikan: %s", comp.Name),
-				Quantity:    1,
-				UnitPrice:   compoundPrice,
-				Discount:    0,
-				TotalPrice:  compoundPrice,
-			})
+			if !hasItems {
+				outputQty := comp.OutputQuantity
+				if outputQty <= 0 {
+					outputQty = 1
+				}
+				items = append(items, models.InvoiceItem{
+					ItemType:    "racikan",
+					ReferenceID: comp.ID,
+					Description: fmt.Sprintf("Racikan: %s", compName),
+					Quantity:    outputQty,
+					UnitPrice:   0,
+					Discount:    0,
+					TotalPrice:  0,
+				})
+			}
 		}
 
 		var labItems []models.LaboratoryOrderItem
@@ -856,6 +946,91 @@ func ProcessPayment(c *gin.Context) {
 	})
 }
 
+// CancelPayment voids either a specific payment or all payments for an invoice
+func CancelPayment(c *gin.Context) {
+	id := c.Param("id")
+	paymentIDStr := c.Param("paymentId")
+
+	var invoice models.Invoice
+	if err := database.DB.Preload("Payments").First(&invoice, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Invoice tidak ditemukan"})
+		return
+	}
+
+	if len(invoice.Payments) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invoice belum memiliki data pembayaran untuk dibatalkan"})
+		return
+	}
+
+	tx := database.DB.Begin()
+
+	if paymentIDStr != "" {
+		paymentID, err := strconv.Atoi(paymentIDStr)
+		if err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ID pembayaran tidak valid"})
+			return
+		}
+
+		var payment models.Payment
+		if err := tx.Where("id = ? AND invoice_id = ?", paymentID, invoice.ID).First(&payment).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusNotFound, gin.H{"error": "Data pembayaran tidak ditemukan"})
+			return
+		}
+
+		if err := tx.Exec("DELETE FROM payments WHERE id = ? AND invoice_id = ?", paymentID, invoice.ID).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menghapus data pembayaran: " + err.Error()})
+			return
+		}
+	} else {
+		// Cancel all payments for this invoice
+		if err := tx.Exec("DELETE FROM payments WHERE invoice_id = ?", invoice.ID).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membatalkan pembayaran: " + err.Error()})
+			return
+		}
+	}
+
+	// Calculate remaining paid amount
+	var remainingPayments []models.Payment
+	if err := tx.Where("invoice_id = ?", invoice.ID).Find(&remainingPayments).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var newPaidAmount float64
+	for _, p := range remainingPayments {
+		newPaidAmount += p.Amount
+	}
+
+	newStatus := "belum_bayar"
+	if newPaidAmount >= invoice.TotalAmount && invoice.TotalAmount > 0 {
+		newStatus = "lunas"
+	} else if newPaidAmount > 0 {
+		newStatus = "sebagian"
+	}
+
+	if err := tx.Model(&invoice).Update("status", newStatus).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Pembayaran berhasil dibatalkan",
+		"status":  newStatus,
+	})
+}
+
+
 // GetCashierQueue returns visits ready for billing
 func GetCashierQueue(c *gin.Context) {
 	dateFilter := c.DefaultQuery("date", time.Now().Format("2006-01-02"))
@@ -1029,9 +1204,10 @@ func generateInvoiceNumber() string {
 	return fmt.Sprintf("%s%04d", prefix, sequence)
 }
 
-// PrintInvoice generates PDF receipt
+// PrintInvoice generates PDF receipt in A4, A5, or Thermal (80mm) format
 func PrintInvoice(c *gin.Context) {
 	id := c.Param("id")
+	format := strings.ToLower(strings.TrimSpace(c.DefaultQuery("format", "a4")))
 
 	var invoice models.Invoice
 	if err := database.DB.
@@ -1052,6 +1228,7 @@ func PrintInvoice(c *gin.Context) {
 
 	hospitalInfo := getInitialAssessmentHospitalInfo()
 	generatedAt := time.Now()
+	invoice.Items = enrichRacikanInvoiceItems(invoice.Items)
 	var totalPaid float64
 	for _, payment := range invoice.Payments {
 		totalPaid += payment.Amount
@@ -1061,58 +1238,825 @@ func PrintInvoice(c *gin.Context) {
 		remaining = 0
 	}
 
-	pdf := gofpdf.New("P", "mm", "A4", "")
+	var pdf *gofpdf.Fpdf
+	var err error
+
+	switch format {
+	case "thermal", "80mm":
+		pdf, err = renderInvoiceThermalPDF(invoice, hospitalInfo, generatedAt, totalPaid, remaining)
+	case "a5":
+		pdf, err = renderInvoiceSheetPDF(invoice, hospitalInfo, generatedAt, totalPaid, remaining, "A5")
+	default: // "a4"
+		pdf, err = renderInvoiceSheetPDF(invoice, hospitalInfo, generatedAt, totalPaid, remaining, "A4")
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat PDF: " + err.Error()})
+		return
+	}
+
+	c.Header("Content-Type", "application/pdf")
+	c.Header("Content-Disposition", fmt.Sprintf("inline; filename=kwitansi_%s_%s.pdf", invoice.InvoiceNumber, format))
+
+	if err := pdf.Output(c.Writer); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengirim PDF"})
+	}
+}
+
+func renderInvoiceSheetPDF(invoice models.Invoice, hospitalInfo initialAssessmentHospitalInfo, generatedAt time.Time, totalPaid float64, remaining float64, pageSize string) (*gofpdf.Fpdf, error) {
+	isA5 := pageSize == "A5"
+	pdf := gofpdf.New("P", "mm", pageSize, "")
 	defer clearInitialAssessmentPDFPageContentStartOverrides(pdf)
-	pdf.SetMargins(initialAssessmentPDFMarginLeft, initialAssessmentPDFMarginTop, initialAssessmentPDFMarginRight)
-	pdf.SetAutoPageBreak(true, initialAssessmentPDFMarginBottom)
+
+	margin := 12.0
+	if isA5 {
+		margin = 8.0
+	}
+	pdf.SetMargins(margin, margin, margin)
+	pdf.SetAutoPageBreak(true, margin)
 	pdf.AliasNbPages("")
 	pdf.SetTitle("Kwitansi Pembayaran", false)
 	pdf.SetCreator("SIMKLINIK", false)
-	pdf.SetHeaderFuncMode(func() {
-		addInitialAssessmentPDFHeader(pdf, hospitalInfo, "KWITANSI PEMBAYARAN", fallbackText(invoice.Visit.VisitNumber))
-	}, true)
+
 	pdf.SetFooterFunc(func() {
-		pdf.SetY(-7)
+		pdf.SetY(-6.5)
 		pdf.SetFont("Arial", "", 7)
-		pdf.SetTextColor(90, 90, 90)
-		pdf.CellFormat(0, 4, "Dicetak: "+formatDateTimeIndonesian(generatedAt), "", 0, "L", false, 0, "")
+		pdf.SetTextColor(100, 100, 100)
+		pdf.CellFormat(0, 4, "Dicetak: "+formatDateTimeIndonesian(generatedAt)+" | SIMKLINIK", "", 0, "L", false, 0, "")
 		pdf.SetTextColor(0, 0, 0)
 	})
+
 	pdf.AddPage()
-	drawInvoiceStatusWatermark(pdf, invoice.Status)
-	pdf.SetY(initialAssessmentPDFPageContentStartForPDF(pdf, pdf.PageNo()))
+	pageWidth, _ := pdf.GetPageSize()
+	contentWidth := pageWidth - (margin * 2)
 
-	addInvoiceCompactFieldSection(pdf, "Informasi Invoice", buildInvoiceDocumentFields(invoice), "")
-	addInvoiceCompactFieldSection(pdf, "Informasi Pasien", buildInvoicePatientFields(invoice), "")
-	addInvoiceItemSection(pdf, invoice)
-	addInvoiceSummaryBlock(pdf, buildInvoiceSummaryFields(invoice, totalPaid, remaining))
+	// Kop resmi klinik (Tanpa judul 'KWITANSI PEMBAYARAN' di bawah kop & jarak rapat langsung ke konten)
+	drawInvoiceKop(pdf, hospitalInfo, contentWidth, isA5)
 
-	if len(invoice.Payments) > 0 {
-		addInvoicePaymentSection(pdf, invoice.Payments)
-	}
+	// Watermark status 45 derajat presisi di tengah dokumen
+	drawInvoiceStatusWatermark(pdf, invoice.Status, isA5)
 
-	if strings.TrimSpace(invoice.Notes) != "" {
-		addInitialAssessmentSectionTitle(pdf, "Catatan")
-		addInitialAssessmentFullWidthRow(pdf, invoice.Notes, false)
-		addInitialAssessmentSectionSpacing(pdf)
-	}
+	// 1. Informasi Invoice (Hitam-Putih Box Standard)
+	addInvoiceCompactFieldSection(pdf, "Informasi Invoice", buildInvoiceDocumentFields(invoice), contentWidth, isA5)
 
-	addOrderPrintSignatureSection(
+	// 2. Informasi Pasien (Hitam-Putih Box Standard)
+	addInvoiceCompactFieldSection(pdf, "Informasi Pasien", buildInvoicePatientFields(invoice), contentWidth, isA5)
+
+	// 3. Rincian Tagihan (Hitam-Putih Table Grid Standard)
+	addInvoiceItemSection(pdf, invoice, contentWidth, isA5)
+
+	// 4. Ringkasan Pembayaran (Hitam-Putih Standard)
+	addInvoiceSummaryBlock(pdf, buildInvoiceSummaryFields(invoice, totalPaid, remaining), contentWidth, isA5)
+
+	// Riwayat Pembayaran TIDAK DITAMPILKAN sesuai permintaan user
+	// Catatan dan Riwayat Pembayaran TIDAK DITAMPILKAN sesuai instruksi user
+
+
+	// 6. Tanda Tangan Pasien & Petugas Kasir (Kompak agar muat 1 halaman tunggal)
+	addInvoiceSignatureSection(
 		pdf,
 		hospitalInfo,
 		generatedAt,
-		"Pasien",
+		"Pasien / Keluarga",
 		fallbackText(invoice.Patient.FullName),
 		"Petugas Kasir",
 		resolveInvoiceCashierSignatureName(invoice),
+		contentWidth,
+		isA5,
 	)
 
-	c.Header("Content-Type", "application/pdf")
-	c.Header("Content-Disposition", fmt.Sprintf("inline; filename=invoice_%s.pdf", invoice.InvoiceNumber))
+	return pdf, nil
+}
 
-	if err := pdf.Output(c.Writer); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat PDF"})
+func drawInvoiceKop(pdf *gofpdf.Fpdf, info initialAssessmentHospitalInfo, contentWidth float64, isA5 bool) {
+	left, top, _, _ := pdf.GetMargins()
+	pageWidth, _ := pdf.GetPageSize()
+
+	hasLogo := info.LogoPath != "" && info.LogoType != ""
+	logoSlotWidth := 0.0
+	logoGap := 0.0
+	logoMaxHeight := 20.0
+	logoMaxWidth := 22.0
+	if isA5 {
+		logoMaxHeight = 16.0
+		logoMaxWidth = 18.0
 	}
+	if hasLogo {
+		logoSlotWidth = 26.0
+		logoGap = 3.5
+		if isA5 {
+			logoSlotWidth = 20.0
+			logoGap = 2.5
+		}
+	}
+
+	textStartX := left
+	textWidth := contentWidth
+	if hasLogo {
+		symmetricReserve := logoSlotWidth + logoGap
+		textStartX = left + symmetricReserve
+		textWidth = contentWidth - (2 * symmetricReserve)
+		if textWidth < 100 {
+			textStartX = left + logoSlotWidth + logoGap
+			textWidth = contentWidth - logoSlotWidth - logoGap
+		}
+	}
+
+	nameSize := 14.0
+	addrSize := 8.0
+	lineHeight := 3.8
+	if isA5 {
+		nameSize = 11.5
+		addrSize = 7.0
+		lineHeight = 3.2
+	}
+
+	type kopLine struct {
+		text       string
+		fontStyle  string
+		fontSize   float64
+		lineHeight float64
+	}
+
+	lines := []kopLine{{
+		text:       strings.ToUpper(fallbackText(info.Name)),
+		fontStyle:  "B",
+		fontSize:   nameSize,
+		lineHeight: 5.5,
+	}}
+
+	addressParts := make([]string, 0, 2)
+	if trimmed := strings.TrimSpace(sanitizePDFText(info.Address)); trimmed != "" {
+		addressParts = append(addressParts, trimmed)
+	}
+	if trimmed := strings.TrimSpace(sanitizePDFText(info.City)); trimmed != "" {
+		addressParts = append(addressParts, trimmed)
+	}
+	if len(addressParts) > 0 {
+		lines = append(lines, kopLine{
+			text:       strings.Join(addressParts, ", "),
+			fontStyle:  "",
+			fontSize:   addrSize,
+			lineHeight: lineHeight,
+		})
+	}
+
+	contactParts := make([]string, 0, 4)
+	if trimmed := strings.TrimSpace(sanitizePDFText(info.Phone)); trimmed != "" {
+		contactParts = append(contactParts, "Telp: "+trimmed)
+	}
+	if trimmed := strings.TrimSpace(sanitizePDFText(info.Fax)); trimmed != "" {
+		contactParts = append(contactParts, "Fax: "+trimmed)
+	}
+	if trimmed := strings.TrimSpace(sanitizePDFText(info.Email)); trimmed != "" {
+		contactParts = append(contactParts, trimmed)
+	}
+	if len(contactParts) > 0 {
+		lines = append(lines, kopLine{
+			text:       strings.Join(contactParts, " | "),
+			fontStyle:  "",
+			fontSize:   addrSize,
+			lineHeight: lineHeight,
+		})
+	}
+
+	if trimmed := strings.TrimSpace(sanitizePDFText(info.Website)); trimmed != "" {
+		lines = append(lines, kopLine{
+			text:       trimmed,
+			fontStyle:  "",
+			fontSize:   addrSize,
+			lineHeight: lineHeight,
+		})
+	}
+
+	textBlockHeight := 0.0
+	for _, l := range lines {
+		textBlockHeight += l.lineHeight
+	}
+
+	logoWidth := 0.0
+	logoHeight := 0.0
+	if hasLogo {
+		logoWidth, logoHeight = measureInitialAssessmentHeaderLogo(info.LogoPath, logoMaxHeight, logoMaxWidth)
+	}
+
+	headerBlockHeight := maxFloat64(textBlockHeight, logoHeight)
+
+	// Gambar logo klinik di sisi kiri kop
+	if hasLogo {
+		logoX := left + ((logoSlotWidth - logoWidth) / 2)
+		logoY := top + ((headerBlockHeight - logoHeight) / 2)
+		drawInitialAssessmentHeaderLogo(pdf, info.LogoPath, info.LogoType, logoX, logoY, logoMaxHeight, logoMaxWidth)
+	}
+
+	// Teks kop klinik di tengah
+	curY := top
+	pdf.SetTextColor(0, 0, 0)
+	for _, l := range lines {
+		pdf.SetXY(textStartX, curY)
+		pdf.SetFont("Arial", l.fontStyle, l.fontSize)
+		pdf.CellFormat(textWidth, l.lineHeight, l.text, "", 1, "C", false, 0, "")
+		curY += l.lineHeight
+	}
+
+	// Garis ganda pembatas kop resmi
+	lineY := top + headerBlockHeight + 1.5
+	pdf.SetLineWidth(0.7)
+	pdf.Line(left, lineY, pageWidth-left, lineY)
+	pdf.SetLineWidth(0.2)
+	pdf.Line(left, lineY+0.8, pageWidth-left, lineY+0.8)
+
+	// Jarak rapat langsung ke konten (3.5 mm untuk A4, 2.5 mm untuk A5)
+	gap := 3.5
+	if isA5 {
+		gap = 2.5
+	}
+	pdf.SetY(lineY + 0.8 + gap)
+}
+
+func drawInvoiceStatusWatermark(pdf *gofpdf.Fpdf, status string, isA5 bool) {
+	label := resolveInvoiceStatusWatermarkText(status)
+	if label == "" {
+		return
+	}
+
+	pageWidth, pageHeight := pdf.GetPageSize()
+	cx := pageWidth / 2
+	cy := 115.0 // Berada tepat di tengah-tengah tabel & konten faktur
+	if isA5 {
+		cy = 84.0
+	}
+
+	// Warna watermark: Lunas = Hijau, Belum Lunas = Merah, Sebagian = Oranye, Batal = Abu-abu
+	var r, g, b int
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "lunas":
+		r, g, b = 40, 167, 69 // Hijau
+	case "sebagian":
+		r, g, b = 217, 119, 6 // Oranye / Amber
+	case "batal":
+		r, g, b = 156, 163, 175 // Abu-abu
+	default:
+		r, g, b = 220, 53, 69 // Merah (Belum Lunas)
+	}
+
+	fontSize := 46.0
+	boxHeight := 24.0
+	if isA5 {
+		fontSize = 32.0
+		boxHeight = 18.0
+	}
+
+	// Gunakan CreateTemplateCustom agar isolasi rotasi hanya berlaku untuk watermark dan TIDAK memutar seluruh halaman
+	template := pdf.CreateTemplateCustom(
+		gofpdf.PointType{X: 0, Y: 0},
+		gofpdf.SizeType{Wd: pageWidth, Ht: pageHeight},
+		func(tpl *gofpdf.Tpl) {
+			tpl.SetFont("Arial", "B", fontSize)
+			textWidth := tpl.GetStringWidth(label)
+			boxWidth := textWidth + 24.0
+			if boxWidth < 90.0 {
+				boxWidth = 90.0
+			}
+
+			boxX := cx - (boxWidth / 2)
+			boxY := cy - (boxHeight / 2)
+
+			tpl.TransformBegin()
+			// Rotasi 45 derajat (miring diagonal sempurna) berpusat tepat di cx, cy
+			tpl.TransformRotate(45, cx, cy)
+
+			// Bingkai luar watermark berwarna
+			tpl.SetLineWidth(0.8)
+			tpl.SetDrawColor(r, g, b)
+			tpl.RoundedRect(boxX, boxY, boxWidth, boxHeight, 2.2, "1234", "D")
+
+			// Bingkai dalam watermark berwarna
+			tpl.SetLineWidth(0.4)
+			tpl.RoundedRect(boxX+1.8, boxY+1.8, boxWidth-3.6, boxHeight-3.6, 1.4, "1234", "D")
+
+			// Teks status: presisi vertikal dan horizontal di tengah kotak
+			tpl.SetTextColor(r, g, b)
+			tpl.SetXY(boxX, boxY)
+			tpl.CellFormat(boxWidth, boxHeight, label, "", 0, "C", false, 0, "")
+
+			tpl.SetTextColor(0, 0, 0)
+			tpl.SetLineWidth(0.2)
+			tpl.TransformEnd()
+		},
+	)
+
+	pdf.UseTemplateScaled(template, gofpdf.PointType{X: 0, Y: 0}, gofpdf.SizeType{Wd: pageWidth, Ht: pageHeight})
+}
+
+func buildInvoiceDocumentFields(invoice models.Invoice) []initialAssessmentPrintField {
+	return []initialAssessmentPrintField{
+		{Label: "No. Invoice", Value: fallbackText(invoice.InvoiceNumber)},
+		{Label: "Tanggal Invoice", Value: formatDateTimeIndonesian(invoice.InvoiceDate)},
+		{Label: "No. Kunjungan", Value: fallbackText(invoice.Visit.VisitNumber)},
+		{Label: "Dokter", Value: fallbackText(invoice.Visit.Doctor.FullName)},
+		{Label: "Poliklinik", Value: fallbackText(invoice.Visit.Polyclinic.Name)},
+		{Label: "Status Tagihan", Value: resolveInvoiceStatusWatermarkText(invoice.Status)},
+	}
+}
+
+func buildInvoicePatientFields(invoice models.Invoice) []initialAssessmentPrintField {
+	return []initialAssessmentPrintField{
+		{Label: "No. Rekam Medis", Value: fallbackText(invoice.Patient.MedicalRecordNumber)},
+		{Label: "Nama Pasien", Value: fallbackText(invoice.Patient.FullName)},
+		{Label: "Jenis Kelamin", Value: fallbackText(genderLabelForPrint(invoice.Patient.Gender))},
+		{Label: "No. Telepon", Value: fallbackText(invoice.Patient.Phone)},
+		{Label: "Alamat", Value: formatPatientAddress(invoice.Patient)},
+	}
+}
+
+func buildInvoiceSummaryFields(invoice models.Invoice, totalPaid float64, remaining float64) []initialAssessmentPrintField {
+	fields := []initialAssessmentPrintField{
+		{Label: "Subtotal", Value: formatCurrency(invoice.SubTotal)},
+	}
+	if invoice.Discount > 0 {
+		fields = append(fields, initialAssessmentPrintField{Label: "Diskon", Value: "-" + formatCurrency(invoice.Discount)})
+	}
+	if invoice.Tax > 0 {
+		fields = append(fields, initialAssessmentPrintField{Label: "Pajak", Value: "+" + formatCurrency(invoice.Tax)})
+	}
+	fields = append(fields,
+		initialAssessmentPrintField{Label: "Total Tagihan", Value: formatCurrency(invoice.TotalAmount)},
+		initialAssessmentPrintField{Label: "Sudah Dibayar", Value: formatCurrency(totalPaid)},
+		initialAssessmentPrintField{Label: "Sisa Tagihan", Value: formatCurrency(remaining)},
+	)
+	return fields
+}
+
+func addInvoiceSectionTitle(pdf *gofpdf.Fpdf, title string, contentWidth float64, isA5 bool) {
+	titleHeight := 5.6
+	titleFont := 9.0
+	if isA5 {
+		titleHeight = 4.6
+		titleFont = 8.0
+	}
+	ensureInitialAssessmentPDFSpace(pdf, titleHeight+2)
+	pdf.SetFont("Arial", "B", titleFont)
+	pdf.SetDrawColor(120, 120, 120)
+	pdf.SetTextColor(0, 0, 0)
+	pdf.CellFormat(contentWidth, titleHeight, " "+strings.ToUpper(title), "1", 1, "L", false, 0, "")
+	pdf.SetFont("Arial", "", titleFont)
+}
+
+func addInvoiceCompactFieldSection(pdf *gofpdf.Fpdf, title string, fields []initialAssessmentPrintField, contentWidth float64, isA5 bool) {
+	addInvoiceSectionTitle(pdf, title, contentWidth, isA5)
+	if len(fields) == 0 {
+		pdf.CellFormat(contentWidth, 6, "Tidak ada data.", "1", 1, "C", false, 0, "")
+		pdf.SetY(pdf.GetY() + 1.5)
+		return
+	}
+
+	halfWidth := contentWidth / 2
+	labelWidth := halfWidth * 0.38
+	valueWidth := halfWidth - labelWidth
+	fontSize := 8.5
+	lineHeight := 4.0
+	rowHeight := 5.4
+	if isA5 {
+		fontSize = 7.5
+		lineHeight = 3.5
+		rowHeight = 4.4
+	}
+
+	pdf.SetDrawColor(120, 120, 120)
+	pdf.SetTextColor(0, 0, 0)
+
+	for i := 0; i < len(fields); {
+		field := fields[i]
+		// Jika Alamat atau field penutup ganjil, gunakan lebar penuh agar teks tidak tumpah/melewati border
+		isFullWidth := strings.EqualFold(field.Label, "Alamat") || (i == len(fields)-1 && i%2 == 0)
+
+		if isFullWidth {
+			fullValWidth := contentWidth - labelWidth
+			pdf.SetFont("Arial", "", fontSize)
+			lines := pdf.SplitLines([]byte(field.Value), fullValWidth-4)
+			lineCount := len(lines)
+			if lineCount < 1 {
+				lineCount = 1
+			}
+			curRowH := float64(lineCount)*lineHeight + 1.8
+			if curRowH < rowHeight {
+				curRowH = rowHeight
+			}
+
+			ensureInitialAssessmentPDFSpace(pdf, curRowH)
+			x := pdf.GetX()
+			y := pdf.GetY()
+
+			pdf.Rect(x, y, labelWidth, curRowH, "D")
+			pdf.Rect(x+labelWidth, y, fullValWidth, curRowH, "D")
+
+			pdf.SetFont("Arial", "", fontSize)
+			pdf.SetXY(x+1.5, y+0.8)
+			pdf.CellFormat(labelWidth-3, lineHeight, field.Label, "", 0, "L", false, 0, "")
+
+			pdf.SetXY(x+labelWidth+1.5, y+0.8)
+			pdf.MultiCell(fullValWidth-3, lineHeight, ": "+firstNonEmpty(field.Value, "-"), "", "L", false)
+
+			pdf.SetXY(x, y+curRowH)
+			i++
+			continue
+		}
+
+		// Field berpasangan 2 kolom
+		leftField := field
+		hasRight := i+1 < len(fields) && !strings.EqualFold(fields[i+1].Label, "Alamat")
+
+		ensureInitialAssessmentPDFSpace(pdf, rowHeight)
+		x := pdf.GetX()
+		y := pdf.GetY()
+
+		// Kolom Kiri
+		pdf.Rect(x, y, labelWidth, rowHeight, "D")
+		pdf.Rect(x+labelWidth, y, valueWidth, rowHeight, "D")
+		pdf.SetFont("Arial", "", fontSize)
+		pdf.SetXY(x+1.5, y+0.4)
+		pdf.CellFormat(labelWidth-3, rowHeight-0.8, leftField.Label, "", 0, "L", false, 0, "")
+		pdf.SetFont("Arial", "B", fontSize)
+		pdf.SetXY(x+labelWidth+1.5, y+0.4)
+		pdf.CellFormat(valueWidth-3, rowHeight-0.8, ": "+firstNonEmpty(leftField.Value, "-"), "", 0, "L", false, 0, "")
+
+		// Kolom Kanan
+		rx := x + halfWidth
+		if hasRight {
+			rightField := fields[i+1]
+			pdf.Rect(rx, y, labelWidth, rowHeight, "D")
+			pdf.Rect(rx+labelWidth, y, valueWidth, rowHeight, "D")
+			pdf.SetFont("Arial", "", fontSize)
+			pdf.SetXY(rx+1.5, y+0.4)
+			pdf.CellFormat(labelWidth-3, rowHeight-0.8, rightField.Label, "", 0, "L", false, 0, "")
+			pdf.SetFont("Arial", "B", fontSize)
+			pdf.SetXY(rx+labelWidth+1.5, y+0.4)
+			pdf.CellFormat(valueWidth-3, rowHeight-0.8, ": "+firstNonEmpty(rightField.Value, "-"), "", 0, "L", false, 0, "")
+			i += 2
+		} else {
+			pdf.Rect(rx, y, halfWidth, rowHeight, "D")
+			i++
+		}
+
+		pdf.SetXY(x, y+rowHeight)
+	}
+
+	spacing := 2.5
+	if isA5 {
+		spacing = 1.8
+	}
+	pdf.SetY(pdf.GetY() + spacing)
+}
+
+func addInvoiceItemSection(pdf *gofpdf.Fpdf, invoice models.Invoice, contentWidth float64, isA5 bool) {
+	addInvoiceSectionTitle(pdf, "Rincian Tagihan", contentWidth, isA5)
+	if len(invoice.Items) == 0 {
+		pdf.CellFormat(contentWidth, 6, "Tidak ada item tagihan.", "1", 1, "C", false, 0, "")
+		pdf.SetY(pdf.GetY() + 2)
+		return
+	}
+
+	var colNo, colQty, colPrice, colTotal, colDesc float64
+	if isA5 {
+		colNo = 8.0
+		colQty = 12.0
+		colPrice = 24.0
+		colTotal = 24.0
+		colDesc = contentWidth - (colNo + colQty + colPrice + colTotal)
+	} else {
+		colNo = 10.0
+		colQty = 15.0
+		colPrice = 34.0
+		colTotal = 34.0
+		colDesc = contentWidth - (colNo + colQty + colPrice + colTotal)
+	}
+
+	headers := []string{"No", "Deskripsi", "Qty", "Harga Satuan", "Total"}
+	widths := []float64{colNo, colDesc, colQty, colPrice, colTotal}
+	aligns := []string{"C", "L", "C", "R", "R"}
+
+	headerHeight := 5.8
+	headerFontSize := 8.5
+	rowFontSize := 8.5
+	lineHeight := 4.0
+	minRowHeight := 5.4
+	if isA5 {
+		headerHeight = 4.8
+		headerFontSize = 7.5
+		rowFontSize = 7.5
+		lineHeight = 3.5
+		minRowHeight = 4.4
+	}
+
+	// Table Header (Tanpa warna background)
+	ensureInitialAssessmentPDFSpace(pdf, headerHeight)
+	x := pdf.GetX()
+	y := pdf.GetY()
+	pdf.SetFont("Arial", "B", headerFontSize)
+	pdf.SetDrawColor(120, 120, 120)
+	pdf.SetTextColor(0, 0, 0)
+	for i, header := range headers {
+		pdf.Rect(x, y, widths[i], headerHeight, "D")
+		pdf.SetXY(x, y+0.4)
+		pdf.CellFormat(widths[i], headerHeight-0.8, header, "", 0, aligns[i], false, 0, "")
+		x += widths[i]
+	}
+	pdf.SetY(y + headerHeight)
+
+	// Rows
+	for idx, item := range invoice.Items {
+		desc := firstNonEmpty(strings.TrimSpace(sanitizePDFSingleLineText(item.Description)), "-")
+		pdf.SetFont("Arial", "", rowFontSize)
+		descLines := pdf.SplitLines([]byte(desc), colDesc-4)
+		lineCount := len(descLines)
+		if lineCount < 1 {
+			lineCount = 1
+		}
+		rowH := float64(lineCount)*lineHeight + 1.6
+		if rowH < minRowHeight {
+			rowH = minRowHeight
+		}
+
+		ensureInitialAssessmentPDFSpace(pdf, rowH)
+		y = pdf.GetY()
+		x = pdf.GetX()
+
+		// Rectangles for each column
+		curX := x
+		for _, w := range widths {
+			pdf.Rect(curX, y, w, rowH, "D")
+			curX += w
+		}
+
+		// Values
+		pdf.SetXY(x, y)
+		pdf.CellFormat(widths[0], rowH, strconv.Itoa(idx+1), "", 0, "C", false, 0, "")
+
+		pdf.SetXY(x+widths[0]+2, y+0.8)
+		pdf.MultiCell(widths[1]-4, lineHeight, desc, "", "L", false)
+
+		pdf.SetXY(x+widths[0]+widths[1], y)
+		pdf.CellFormat(widths[2], rowH, strconv.Itoa(item.Quantity), "", 0, "C", false, 0, "")
+
+		pdf.SetXY(x+widths[0]+widths[1]+widths[2], y)
+		pdf.CellFormat(widths[3]-2, rowH, formatCurrency(item.UnitPrice), "", 0, "R", false, 0, "")
+
+		pdf.SetXY(x+widths[0]+widths[1]+widths[2]+widths[3], y)
+		pdf.CellFormat(widths[4]-2, rowH, formatCurrency(item.TotalPrice), "", 0, "R", false, 0, "")
+
+		pdf.SetY(y + rowH)
+	}
+
+	spacing := 2.5
+	if isA5 {
+		spacing = 1.8
+	}
+	pdf.SetY(pdf.GetY() + spacing)
+}
+
+func addInvoiceSummaryBlock(pdf *gofpdf.Fpdf, fields []initialAssessmentPrintField, contentWidth float64, isA5 bool) {
+	if len(fields) == 0 {
+		return
+	}
+
+	blockWidth := 80.0
+	fontSize := 8.5
+	lineHeight := 4.6
+	headerHeight := 5.0
+	if isA5 {
+		blockWidth = 64.0
+		fontSize = 7.5
+		lineHeight = 3.8
+		headerHeight = 4.2
+	}
+
+	labelWidth := blockWidth * 0.48
+	valueWidth := blockWidth - labelWidth
+	left, _, _, _ := pdf.GetMargins()
+	blockX := left + contentWidth - blockWidth
+	totalHeight := headerHeight + (float64(len(fields)) * lineHeight) + 1.0
+
+	ensureInitialAssessmentPDFSpace(pdf, totalHeight)
+	pdf.SetDrawColor(120, 120, 120)
+	pdf.SetTextColor(0, 0, 0)
+
+	curY := pdf.GetY()
+	// Bingkai kotak rapi di ringkasan pembayaran
+	pdf.Rect(blockX, curY, blockWidth, totalHeight, "D")
+
+	// Garis judul
+	pdf.SetXY(blockX, curY)
+	pdf.SetFont("Arial", "B", fontSize)
+	pdf.CellFormat(blockWidth, headerHeight, " Ringkasan Pembayaran", "B", 1, "L", false, 0, "")
+
+	for _, field := range fields {
+		label := firstNonEmpty(strings.TrimSpace(sanitizePDFSingleLineText(field.Label)), "-")
+		value := firstNonEmpty(strings.TrimSpace(sanitizePDFSingleLineText(field.Value)), "-")
+		isImportant := label == "Total Tagihan" || label == "Sudah Dibayar" || label == "Sisa Tagihan"
+
+		if isImportant {
+			pdf.SetFont("Arial", "B", fontSize)
+		} else {
+			pdf.SetFont("Arial", "", fontSize)
+		}
+
+		pdf.SetTextColor(0, 0, 0)
+		pdf.SetX(blockX)
+		pdf.CellFormat(labelWidth, lineHeight, " "+label, "", 0, "L", false, 0, "")
+		pdf.CellFormat(valueWidth-2, lineHeight, value, "", 1, "R", false, 0, "")
+	}
+
+	pdf.SetY(curY + totalHeight + 3.0)
+}
+
+func addInvoiceSignatureSection(pdf *gofpdf.Fpdf, hospitalInfo initialAssessmentHospitalInfo, generatedAt time.Time, leftLabel string, leftName string, rightLabel string, rightName string, contentWidth float64, isA5 bool) {
+	requiredHeight := 28.0
+	fontSize := 8.5
+	gapHeight := 14.0
+	if isA5 {
+		requiredHeight = 24.0
+		fontSize = 7.5
+		gapHeight = 11.0
+	}
+
+	ensureInitialAssessmentPDFSpace(pdf, requiredHeight)
+	left, _, _, _ := pdf.GetMargins()
+	columnGap := 16.0
+	columnWidth := (contentWidth - columnGap) / 2
+	leftColumnX := left
+	rightColumnX := left + columnWidth + columnGap
+
+	dateLabel := formatDateIndonesian(generatedAt)
+	if city := strings.TrimSpace(hospitalInfo.City); city != "" {
+		dateLabel = city + ", " + dateLabel
+	}
+
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetFont("Arial", "", fontSize)
+
+	// Tanggal di atas tanda tangan kasir
+	currentY := pdf.GetY() + 2.0
+	pdf.SetXY(rightColumnX, currentY)
+	pdf.CellFormat(columnWidth, 4.5, dateLabel, "", 1, "C", false, 0, "")
+
+	// Label penandatangan
+	currentY = pdf.GetY() + 1.0
+	pdf.SetXY(leftColumnX, currentY)
+	pdf.CellFormat(columnWidth, 4.5, fallbackText(leftLabel), "", 0, "C", false, 0, "")
+	pdf.SetXY(rightColumnX, currentY)
+	pdf.CellFormat(columnWidth, 4.5, fallbackText(rightLabel), "", 1, "C", false, 0, "")
+
+	// Jarak untuk tanda tangan fisik
+	currentY = pdf.GetY() + gapHeight
+
+	// Format resmi tanda tangan dokumen: ( Nama Lengkap )
+	pdf.SetFont("Arial", "B", fontSize)
+	pdf.SetXY(leftColumnX, currentY)
+	pdf.CellFormat(columnWidth, 4.5, "( "+fallbackText(leftName)+" )", "", 0, "C", false, 0, "")
+	pdf.SetXY(rightColumnX, currentY)
+	pdf.CellFormat(columnWidth, 4.5, "( "+fallbackText(rightName)+" )", "", 1, "C", false, 0, "")
+
+	pdf.SetY(currentY + 6.0)
+}
+
+// renderInvoiceThermalPDF produces receipt for standard 80mm POS Thermal printers
+func renderInvoiceThermalPDF(invoice models.Invoice, hospitalInfo initialAssessmentHospitalInfo, generatedAt time.Time, totalPaid float64, remaining float64) (*gofpdf.Fpdf, error) {
+	itemCount := len(invoice.Items)
+	baseHeight := 105.0 + float64(itemCount)*9.0
+	if strings.TrimSpace(invoice.Notes) != "" {
+		baseHeight += 12.0
+	}
+	if baseHeight < 140.0 {
+		baseHeight = 140.0
+	}
+
+	pdf := gofpdf.NewCustom(&gofpdf.InitType{
+		OrientationStr: "P",
+		UnitStr:        "mm",
+		Size:           gofpdf.SizeType{Wd: 80, Ht: baseHeight},
+	})
+	pdf.SetMargins(3.5, 4, 3.5)
+	pdf.SetAutoPageBreak(true, 4)
+	pdf.SetTitle("Kwitansi Pembayaran (Thermal)", false)
+	pdf.SetCreator("SIMKLINIK", false)
+	pdf.AddPage()
+
+	width := 73.0
+
+	// 1. Clinic Header
+	pdf.SetFont("Arial", "B", 10)
+	pdf.MultiCell(width, 4.2, strings.ToUpper(fallbackText(hospitalInfo.Name)), "", "C", false)
+
+	pdf.SetFont("Arial", "", 7.5)
+	addr := strings.Trim(strings.Join([]string{strings.TrimSpace(hospitalInfo.Address), strings.TrimSpace(hospitalInfo.City)}, ", "), ", ")
+	if addr != "" {
+		pdf.MultiCell(width, 3.4, addr, "", "C", false)
+	}
+	if phone := strings.TrimSpace(hospitalInfo.Phone); phone != "" {
+		pdf.CellFormat(width, 3.4, "Telp: "+phone, "", 1, "C", false, 0, "")
+	}
+
+	// Double Line
+	drawThermalDivider(pdf, width, "=")
+
+	// 2. Receipt Title & Meta
+	pdf.SetFont("Arial", "B", 9)
+	pdf.CellFormat(width, 4.5, "KWITANSI PEMBAYARAN", "", 1, "C", false, 0, "")
+
+	pdf.SetFont("Arial", "", 7.5)
+	drawThermalKeyValue(pdf, width, "No. Invoice", fallbackText(invoice.InvoiceNumber))
+	drawThermalKeyValue(pdf, width, "Tanggal", formatDateTimeIndonesian(invoice.InvoiceDate))
+	drawThermalKeyValue(pdf, width, "No. Kunjungan", fallbackText(invoice.Visit.VisitNumber))
+
+	drawThermalDivider(pdf, width, "-")
+
+	// 3. Patient & Clinic info
+	drawThermalKeyValue(pdf, width, "No. RM", fallbackText(invoice.Patient.MedicalRecordNumber))
+	drawThermalKeyValue(pdf, width, "Nama Pasien", fallbackText(invoice.Patient.FullName))
+	drawThermalKeyValue(pdf, width, "Poliklinik", fallbackText(invoice.Visit.Polyclinic.Name))
+	drawThermalKeyValue(pdf, width, "Dokter", fallbackText(invoice.Visit.Doctor.FullName))
+	drawThermalKeyValue(pdf, width, "Kasir", resolveInvoiceCashierSignatureName(invoice))
+
+	drawThermalDivider(pdf, width, "-")
+
+	// 4. Items List
+	pdf.SetFont("Arial", "B", 7.5)
+	pdf.CellFormat(width, 4.2, "RINCIAN TAGIHAN", "", 1, "L", false, 0, "")
+	pdf.SetFont("Arial", "", 7.5)
+
+	if len(invoice.Items) == 0 {
+		pdf.CellFormat(width, 4, "Tidak ada item tagihan.", "", 1, "L", false, 0, "")
+	} else {
+		for idx, item := range invoice.Items {
+			desc := fmt.Sprintf("%d. %s", idx+1, strings.TrimSpace(sanitizePDFSingleLineText(item.Description)))
+			pdf.MultiCell(width, 3.6, desc, "", "L", false)
+
+			// Sub row: Qty x UnitPrice -> Total
+			calcLine := fmt.Sprintf("   %d x %s", item.Quantity, formatNumber(item.UnitPrice))
+			totLine := formatCurrency(item.TotalPrice)
+			pdf.CellFormat(width*0.55, 3.6, calcLine, "", 0, "L", false, 0, "")
+			pdf.CellFormat(width*0.45, 3.6, totLine, "", 1, "R", false, 0, "")
+		}
+	}
+
+	drawThermalDivider(pdf, width, "-")
+
+	// 5. Summary
+	drawThermalSummaryRow(pdf, width, "Subtotal", formatCurrency(invoice.SubTotal), false)
+	if invoice.Discount > 0 {
+		drawThermalSummaryRow(pdf, width, "Diskon", "-"+formatCurrency(invoice.Discount), false)
+	}
+	if invoice.Tax > 0 {
+		drawThermalSummaryRow(pdf, width, "Pajak", "+"+formatCurrency(invoice.Tax), false)
+	}
+	drawThermalSummaryRow(pdf, width, "TOTAL TAGIHAN", formatCurrency(invoice.TotalAmount), true)
+	drawThermalSummaryRow(pdf, width, "Sudah Dibayar", formatCurrency(totalPaid), true)
+	drawThermalSummaryRow(pdf, width, "Sisa Tagihan", formatCurrency(remaining), true)
+
+	// Riwayat pembayaran TIDAK ditampilkan sesuai instruksi user
+
+	drawThermalDivider(pdf, width, "=")
+
+	// 6. Status Text
+	statusLabel := fmt.Sprintf("*** %s ***", resolveInvoiceStatusWatermarkText(invoice.Status))
+	pdf.SetFont("Arial", "B", 9.5)
+	pdf.CellFormat(width, 5, statusLabel, "", 1, "C", false, 0, "")
+
+	drawThermalDivider(pdf, width, "=")
+
+	// 7. Footer
+	pdf.SetFont("Arial", "I", 7.5)
+	pdf.CellFormat(width, 3.8, "Terima kasih atas kunjungan Anda", "", 1, "C", false, 0, "")
+	pdf.CellFormat(width, 3.8, "Semoga lekas sembuh", "", 1, "C", false, 0, "")
+
+	return pdf, nil
+}
+
+func drawThermalKeyValue(pdf *gofpdf.Fpdf, width float64, label string, val string) {
+	labelW := 25.0
+	valW := width - labelW
+	pdf.CellFormat(labelW, 3.6, label, "", 0, "L", false, 0, "")
+	pdf.CellFormat(valW, 3.6, ": "+val, "", 1, "L", false, 0, "")
+}
+
+func drawThermalSummaryRow(pdf *gofpdf.Fpdf, width float64, label string, val string, bold bool) {
+	if bold {
+		pdf.SetFont("Arial", "B", 8)
+	} else {
+		pdf.SetFont("Arial", "", 7.5)
+	}
+	labelW := width * 0.55
+	valW := width * 0.45
+	pdf.CellFormat(labelW, 4.0, label, "", 0, "L", false, 0, "")
+	pdf.CellFormat(valW, 4.0, val, "", 1, "R", false, 0, "")
+}
+
+func drawThermalDivider(pdf *gofpdf.Fpdf, width float64, char string) {
+	pdf.SetFont("Courier", "", 8)
+	divider := strings.Repeat(char, 38)
+	pdf.CellFormat(width, 3.5, divider, "", 1, "C", false, 0, "")
+	pdf.SetFont("Arial", "", 7.5)
 }
 
 func formatCurrency(amount float64) string {
@@ -1132,339 +2076,6 @@ func formatNumber(n float64) string {
 	return result
 }
 
-func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen-3] + "..."
-}
-
-func buildInvoiceDocumentFields(invoice models.Invoice) []initialAssessmentPrintField {
-	return []initialAssessmentPrintField{
-		{Label: "No. Invoice", Value: fallbackText(invoice.InvoiceNumber)},
-		{Label: "Tanggal Invoice", Value: formatDateTimeIndonesian(invoice.InvoiceDate)},
-		{Label: "No. Kunjungan", Value: fallbackText(invoice.Visit.VisitNumber)},
-		{Label: "Dokter", Value: fallbackText(invoice.Visit.Doctor.FullName)},
-		{Label: "Poliklinik", Value: fallbackText(invoice.Visit.Polyclinic.Name)},
-		{Label: "Status", Value: resolveInvoiceStatusWatermarkText(invoice.Status)},
-	}
-}
-
-func buildInvoicePatientFields(invoice models.Invoice) []initialAssessmentPrintField {
-	return []initialAssessmentPrintField{
-		{Label: "No. Rekam Medis", Value: fallbackText(invoice.Patient.MedicalRecordNumber)},
-		{Label: "Nama Pasien", Value: fallbackText(invoice.Patient.FullName)},
-		{Label: "Jenis Kelamin", Value: fallbackText(genderLabelForPrint(invoice.Patient.Gender))},
-		{Label: "No. Telepon", Value: fallbackText(invoice.Patient.Phone)},
-		{Label: "Alamat", Value: formatPatientAddress(invoice.Patient)},
-	}
-}
-
-func buildInvoiceSummaryFields(invoice models.Invoice, totalPaid float64, remaining float64) []initialAssessmentPrintField {
-	fields := []initialAssessmentPrintField{
-		{Label: "Subtotal", Value: formatCurrency(invoice.SubTotal)},
-		{Label: "Diskon", Value: formatSignedCurrency(-invoice.Discount)},
-		{Label: "Pajak", Value: formatSignedCurrency(invoice.Tax)},
-		{Label: "Total Tagihan", Value: formatCurrency(invoice.TotalAmount)},
-		{Label: "Sudah Dibayar", Value: formatCurrency(totalPaid)},
-		{Label: "Sisa Tagihan", Value: formatCurrency(remaining)},
-	}
-
-	return fields
-}
-
-func addInvoiceItemSection(pdf *gofpdf.Fpdf, invoice models.Invoice) {
-	addInvoiceSectionTitle(pdf, "Rincian Tagihan")
-	if len(invoice.Items) == 0 {
-		addInitialAssessmentFullWidthRow(pdf, "Tidak ada item tagihan.", false)
-		addInitialAssessmentSectionSpacing(pdf)
-		return
-	}
-
-	drawInvoiceItemTableHeader(pdf)
-	for index, item := range invoice.Items {
-		ensureInvoiceItemRowSpace(pdf)
-		drawInvoiceItemTableRow(pdf, index+1, item)
-	}
-	addInitialAssessmentSectionSpacing(pdf)
-}
-
-func addInvoicePaymentSection(pdf *gofpdf.Fpdf, payments []models.Payment) {
-	addInvoiceSectionTitle(pdf, "Riwayat Pembayaran")
-	drawInvoicePaymentTableHeader(pdf)
-	for _, payment := range payments {
-		ensureInvoicePaymentRowSpace(pdf)
-		drawInvoicePaymentTableRow(pdf, payment)
-	}
-	addInitialAssessmentSectionSpacing(pdf)
-}
-
-func drawInvoiceStatusWatermark(pdf *gofpdf.Fpdf, status string) {
-	label := resolveInvoiceStatusWatermarkText(status)
-	if label == "" {
-		return
-	}
-
-	pageWidth, pageHeight := pdf.GetPageSize()
-	textR, textG, textB, borderR, borderG, borderB := resolveInvoiceStatusWatermarkColors(status)
-	template := pdf.CreateTemplateCustom(
-		gofpdf.PointType{X: 0, Y: 0},
-		gofpdf.SizeType{Wd: pageWidth, Ht: pageHeight},
-		func(tpl *gofpdf.Tpl) {
-			tpl.SetFont("Arial", "B", 58)
-			textWidth := tpl.GetStringWidth(label)
-			stampWidth := textWidth + 26
-			if stampWidth < 116 {
-				stampWidth = 116
-			}
-			if stampWidth > pageWidth-42 {
-				stampWidth = pageWidth - 42
-			}
-			stampHeight := 34.0
-			stampX := (pageWidth - stampWidth) / 2
-			stampY := (pageHeight - stampHeight) / 2
-			if stampX < 10 {
-				stampX = 10
-			}
-			if stampY < 10 {
-				stampY = 10
-			}
-
-			tpl.TransformBegin()
-			tpl.TransformRotate(50, pageWidth/2, pageHeight/2)
-			tpl.SetLineWidth(1.1)
-			tpl.SetDrawColor(borderR, borderG, borderB)
-			tpl.RoundedRect(stampX, stampY, stampWidth, stampHeight, 2.4, "1234", "D")
-			tpl.SetLineWidth(0.55)
-			tpl.RoundedRect(stampX+2.6, stampY+2.6, stampWidth-5.2, stampHeight-5.2, 1.7, "1234", "D")
-			tpl.SetTextColor(textR, textG, textB)
-			tpl.SetXY(stampX, stampY+7.5)
-			tpl.CellFormat(stampWidth, 18, label, "", 0, "C", false, 0, "")
-			tpl.SetTextColor(0, 0, 0)
-			tpl.SetLineWidth(0.2)
-			tpl.TransformEnd()
-		},
-	)
-	pdf.UseTemplateScaled(template, gofpdf.PointType{X: 0, Y: 0}, gofpdf.SizeType{Wd: pageWidth, Ht: pageHeight})
-}
-
-func resolveInvoiceStatusWatermarkText(status string) string {
-	switch strings.TrimSpace(strings.ToLower(status)) {
-	case "lunas":
-		return "LUNAS"
-	case "sebagian":
-		return "BAYAR SEBAGIAN"
-	case "batal":
-		return "DIBATALKAN"
-	default:
-		return "BELUM LUNAS"
-	}
-}
-
-func addInvoiceSummaryBlock(pdf *gofpdf.Fpdf, fields []initialAssessmentPrintField) {
-	if len(fields) == 0 {
-		return
-	}
-
-	left, _, right, _ := pdf.GetMargins()
-	pageWidth, pageHeight := pdf.GetPageSize()
-	contentWidth := pageWidth - left - right
-	blockWidth := 78.0
-	if blockWidth > contentWidth {
-		blockWidth = contentWidth
-	}
-	labelWidth := blockWidth * 0.5
-	valueWidth := blockWidth - labelWidth
-	blockX := left + contentWidth - blockWidth
-	lineHeight := 5.2
-	headerHeight := 5.0
-	totalHeight := headerHeight + (float64(len(fields)) * lineHeight) + 2
-
-	if pdf.GetY()+totalHeight > pageHeight-initialAssessmentPDFMarginBottom {
-		pdf.AddPage()
-		pdf.SetY(initialAssessmentPDFPageContentStartForPDF(pdf, pdf.PageNo()))
-	}
-
-	pdf.SetX(blockX)
-	pdf.SetFont("Arial", "B", 10)
-	pdf.CellFormat(blockWidth, headerHeight, "Ringkasan Pembayaran", "", 1, "L", false, 0, "")
-	pdf.SetY(pdf.GetY() + 0.8)
-
-	for _, field := range fields {
-		label := firstNonEmpty(strings.TrimSpace(sanitizePDFSingleLineText(field.Label)), "-")
-		value := firstNonEmpty(strings.TrimSpace(sanitizePDFSingleLineText(field.Value)), "-")
-		isTotal := label == "Total Tagihan"
-		isRemaining := label == "Sisa Tagihan"
-
-		if isTotal || isRemaining {
-			pdf.SetFont("Arial", "B", 10)
-		} else {
-			pdf.SetFont("Arial", "", 9)
-		}
-
-		if isRemaining {
-			pdf.SetTextColor(170, 30, 45)
-		} else {
-			pdf.SetTextColor(0, 0, 0)
-		}
-
-		pdf.SetX(blockX)
-		pdf.CellFormat(labelWidth, lineHeight, label, "", 0, "L", false, 0, "")
-		pdf.CellFormat(valueWidth, lineHeight, value, "", 1, "R", false, 0, "")
-	}
-
-	pdf.SetTextColor(0, 0, 0)
-	pdf.SetY(pdf.GetY() + 2)
-}
-
-func addInvoiceCompactFieldSection(pdf *gofpdf.Fpdf, title string, fields []initialAssessmentPrintField, emptyMessage string) {
-	addInvoiceSectionTitle(pdf, title)
-	if len(fields) == 0 {
-		addInitialAssessmentFullWidthRow(pdf, firstNonEmpty(emptyMessage, "Tidak ada data."), false)
-		return
-	}
-
-	pending := make([]initialAssessmentPrintField, 0, 2)
-	flushPending := func() {
-		if len(pending) == 0 {
-			return
-		}
-		if len(pending) == 1 {
-			drawInvoiceCompactSingleFieldRow(pdf, pending[0])
-			pending = pending[:0]
-			return
-		}
-		drawInvoiceCompactFieldPair(pdf, pending[0], pending[1])
-		pending = pending[:0]
-	}
-
-	for _, field := range fields {
-		if !isInitialAssessmentFieldCompactFriendly(pdf, field) {
-			flushPending()
-			addInvoiceKeyValueRow(pdf, field.Label, field.Value)
-			continue
-		}
-
-		pending = append(pending, field)
-		if len(pending) == 2 {
-			flushPending()
-		}
-	}
-
-	flushPending()
-	addInitialAssessmentSectionSpacing(pdf)
-}
-
-func addInvoiceSectionTitle(pdf *gofpdf.Fpdf, title string) {
-	ensureInitialAssessmentPDFSpace(pdf, 8)
-	left, _, right, _ := pdf.GetMargins()
-	pageWidth, _ := pdf.GetPageSize()
-	contentWidth := pageWidth - left - right
-	title = firstNonEmpty(sanitizePDFText(title), "-")
-	pdf.SetFont("Arial", "B", 11)
-	pdf.SetDrawColor(120, 120, 120)
-	pdf.CellFormat(contentWidth, 6.5, " "+strings.ToUpper(title), "1", 1, "L", false, 0, "")
-	pdf.SetFont("Arial", "", 9)
-}
-
-func addInvoiceKeyValueRow(pdf *gofpdf.Fpdf, label string, value string) {
-	left, _, right, _ := pdf.GetMargins()
-	pageWidth, _ := pdf.GetPageSize()
-	contentWidth := pageWidth - left - right
-	labelWidth := 42.0
-	valueWidth := contentWidth - labelWidth
-
-	trimmedLabel := firstNonEmpty(strings.TrimSpace(sanitizePDFText(label)), "-")
-	trimmedValue := firstNonEmpty(strings.TrimSpace(sanitizePDFText(value)), "-")
-	labelLines := pdf.SplitLines([]byte(trimmedLabel), labelWidth-4)
-	valueLines := pdf.SplitLines([]byte(trimmedValue), valueWidth-4)
-	lineCount := maxInt(len(labelLines), len(valueLines))
-	if lineCount == 0 {
-		lineCount = 1
-	}
-	rowHeight := float64(lineCount)*4.5 + 2
-	ensureInitialAssessmentPDFSpace(pdf, rowHeight)
-
-	x := left
-	y := pdf.GetY()
-	pdf.SetDrawColor(120, 120, 120)
-	pdf.Rect(x, y, labelWidth, rowHeight, "D")
-	pdf.Rect(x+labelWidth, y, valueWidth, rowHeight, "D")
-
-	pdf.SetXY(x+2, y+1.5)
-	pdf.SetFont("Arial", "", 9)
-	pdf.MultiCell(labelWidth-4, 4.5, trimmedLabel, "", "L", false)
-	pdf.SetXY(x+labelWidth+2, y+1.5)
-	pdf.MultiCell(valueWidth-4, 4.5, trimmedValue, "", "L", false)
-	pdf.SetXY(left, y+rowHeight)
-}
-
-func drawInvoiceCompactFieldPair(pdf *gofpdf.Fpdf, leftField initialAssessmentPrintField, rightField initialAssessmentPrintField) {
-	left, _, right, _ := pdf.GetMargins()
-	pageWidth, _ := pdf.GetPageSize()
-	contentWidth := pageWidth - left - right
-	halfWidth := contentWidth / 2
-	labelWidth := resolveInitialAssessmentCompactFieldLabelWidth(halfWidth)
-	rowHeight := 6.5
-	ensureInitialAssessmentPDFSpace(pdf, rowHeight)
-
-	y := pdf.GetY()
-	drawInvoiceCompactFieldBox(pdf, left, y, halfWidth, rowHeight, labelWidth, leftField)
-	drawInvoiceCompactFieldBox(pdf, left+halfWidth, y, halfWidth, rowHeight, labelWidth, rightField)
-	pdf.SetY(y + rowHeight)
-}
-
-func drawInvoiceCompactSingleFieldRow(pdf *gofpdf.Fpdf, field initialAssessmentPrintField) {
-	left, _, right, _ := pdf.GetMargins()
-	pageWidth, _ := pdf.GetPageSize()
-	contentWidth := pageWidth - left - right
-	halfWidth := contentWidth / 2
-	labelWidth := resolveInitialAssessmentCompactFieldLabelWidth(halfWidth)
-	rowHeight := 6.5
-	ensureInitialAssessmentPDFSpace(pdf, rowHeight)
-
-	y := pdf.GetY()
-	drawInvoiceCompactFieldBox(pdf, left, y, halfWidth, rowHeight, labelWidth, field)
-	drawInvoiceCompactBlankFieldBox(pdf, left+halfWidth, y, halfWidth, rowHeight, labelWidth)
-	pdf.SetY(y + rowHeight)
-}
-
-func drawInvoiceCompactFieldBox(pdf *gofpdf.Fpdf, x float64, y float64, totalWidth float64, rowHeight float64, labelWidth float64, field initialAssessmentPrintField) {
-	valueWidth := totalWidth - labelWidth
-	trimmedLabel := firstNonEmpty(sanitizePDFSingleLineText(field.Label), "-")
-	trimmedValue := firstNonEmpty(sanitizePDFSingleLineText(field.Value), "-")
-
-	pdf.SetDrawColor(120, 120, 120)
-	pdf.Rect(x, y, labelWidth, rowHeight, "D")
-	pdf.Rect(x+labelWidth, y, valueWidth, rowHeight, "D")
-
-	pdf.SetXY(x+1.5, y+0.4)
-	pdf.SetFont("Arial", "", 9)
-	pdf.CellFormat(labelWidth-3, rowHeight-0.8, trimmedLabel, "", 0, "L", false, 0, "")
-	pdf.SetXY(x+labelWidth+1.5, y+0.4)
-	pdf.CellFormat(valueWidth-3, rowHeight-0.8, trimmedValue, "", 0, "L", false, 0, "")
-}
-
-func drawInvoiceCompactBlankFieldBox(pdf *gofpdf.Fpdf, x float64, y float64, totalWidth float64, rowHeight float64, labelWidth float64) {
-	valueWidth := totalWidth - labelWidth
-	pdf.SetDrawColor(120, 120, 120)
-	pdf.Rect(x, y, labelWidth, rowHeight, "D")
-	pdf.Rect(x+labelWidth, y, valueWidth, rowHeight, "D")
-}
-
-func resolveInvoiceStatusWatermarkColors(status string) (int, int, int, int, int, int) {
-	switch strings.TrimSpace(strings.ToLower(status)) {
-	case "lunas":
-		return 118, 168, 124, 146, 194, 150
-	case "sebagian":
-		return 176, 136, 72, 214, 180, 126
-	case "batal":
-		return 150, 150, 150, 198, 198, 198
-	default:
-		return 188, 92, 92, 226, 164, 164
-	}
-}
-
 func resolveInvoiceCashierSignatureName(invoice models.Invoice) string {
 	for index := len(invoice.Payments) - 1; index >= 0; index-- {
 		name := strings.TrimSpace(invoice.Payments[index].Receiver.FullName)
@@ -1480,156 +2091,17 @@ func resolveInvoiceCashierSignatureName(invoice models.Invoice) string {
 	return "________________"
 }
 
-func drawInvoiceItemTableHeader(pdf *gofpdf.Fpdf) {
-	left, _, right, _ := pdf.GetMargins()
-	pageWidth, _ := pdf.GetPageSize()
-	contentWidth := pageWidth - left - right
-	columns := []float64{12, 84, 18, 34, 34}
-	if len(columns) == 5 {
-		columns[1] = contentWidth - (columns[0] + columns[2] + columns[3] + columns[4])
-	}
-	headers := []string{"No", "Deskripsi", "Qty", "Harga", "Total"}
-	aligns := []string{"C", "C", "C", "C", "C"}
-
-	y := pdf.GetY()
-	pdf.SetDrawColor(120, 120, 120)
-	pdf.SetFont("Arial", "B", 9)
-	x := left
-	for index, width := range columns {
-		pdf.Rect(x, y, width, 7, "D")
-		pdf.SetXY(x, y+1.1)
-		pdf.CellFormat(width, 4.8, headers[index], "", 0, aligns[index], false, 0, "")
-		x += width
-	}
-	pdf.SetY(y + 7)
-	pdf.SetFont("Arial", "", 9)
-}
-
-func drawInvoiceItemTableRow(pdf *gofpdf.Fpdf, rowNumber int, item models.InvoiceItem) {
-	left, _, right, _ := pdf.GetMargins()
-	pageWidth, _ := pdf.GetPageSize()
-	contentWidth := pageWidth - left - right
-	columns := []float64{12, 84, 18, 34, 34}
-	columns[1] = contentWidth - (columns[0] + columns[2] + columns[3] + columns[4])
-	values := []string{
-		strconv.Itoa(rowNumber),
-		firstNonEmpty(strings.TrimSpace(sanitizePDFSingleLineText(item.Description)), "-"),
-		strconv.Itoa(item.Quantity),
-		formatCurrency(item.UnitPrice),
-		formatCurrency(item.TotalPrice),
-	}
-	aligns := []string{"C", "L", "C", "R", "R"}
-
-	pdf.SetFont("Arial", "", 9)
-	rowHeight := measureInvoiceTableRowHeight(pdf, values[1], columns[1]-4)
-	y := pdf.GetY()
-	x := left
-	pdf.SetDrawColor(120, 120, 120)
-	for index, width := range columns {
-		pdf.Rect(x, y, width, rowHeight, "D")
-		text := values[index]
-		if index == 1 {
-			pdf.SetXY(x+2, y+1.2)
-			pdf.MultiCell(width-4, 4.2, text, "", aligns[index], false)
-		} else {
-			pdf.SetXY(x+1.5, y+1.2)
-			pdf.CellFormat(width-3, rowHeight-2.4, text, "", 0, aligns[index], false, 0, "")
-		}
-		x += width
-	}
-	pdf.SetY(y + rowHeight)
-}
-
-func ensureInvoiceItemRowSpace(pdf *gofpdf.Fpdf) {
-	_, pageHeight := pdf.GetPageSize()
-	if pdf.GetY()+8 > pageHeight-initialAssessmentPDFMarginBottom {
-		pdf.AddPage()
-		pdf.SetY(initialAssessmentPDFPageContentStartForPDF(pdf, pdf.PageNo()))
-		addInvoiceSectionTitle(pdf, "Rincian Tagihan")
-		drawInvoiceItemTableHeader(pdf)
+func resolveInvoiceStatusWatermarkText(status string) string {
+	switch strings.TrimSpace(strings.ToLower(status)) {
+	case "lunas":
+		return "LUNAS"
+	case "sebagian":
+		return "BAYAR SEBAGIAN"
+	case "batal":
+		return "DIBATALKAN"
+	default:
+		return "BELUM LUNAS"
 	}
 }
 
-func drawInvoicePaymentTableHeader(pdf *gofpdf.Fpdf) {
-	left, _, right, _ := pdf.GetMargins()
-	pageWidth, _ := pdf.GetPageSize()
-	contentWidth := pageWidth - left - right
-	columns := []float64{40, 46, 52, 0}
-	columns[3] = contentWidth - (columns[0] + columns[1] + columns[2])
-	headers := []string{"Tanggal", "Metode", "Referensi", "Jumlah"}
-	aligns := []string{"C", "C", "C", "C"}
 
-	y := pdf.GetY()
-	pdf.SetDrawColor(120, 120, 120)
-	pdf.SetFont("Arial", "B", 9)
-	x := left
-	for index, width := range columns {
-		pdf.Rect(x, y, width, 7, "D")
-		pdf.SetXY(x, y+1.1)
-		pdf.CellFormat(width, 4.8, headers[index], "", 0, aligns[index], false, 0, "")
-		x += width
-	}
-	pdf.SetY(y + 7)
-	pdf.SetFont("Arial", "", 9)
-}
-
-func drawInvoicePaymentTableRow(pdf *gofpdf.Fpdf, payment models.Payment) {
-	left, _, right, _ := pdf.GetMargins()
-	pageWidth, _ := pdf.GetPageSize()
-	contentWidth := pageWidth - left - right
-	columns := []float64{40, 46, 52, 0}
-	columns[3] = contentWidth - (columns[0] + columns[1] + columns[2])
-	values := []string{
-		formatDateTimeIndonesian(payment.PaymentDate),
-		firstNonEmpty(strings.TrimSpace(sanitizePDFSingleLineText(payment.PaymentMethod.Name)), "-"),
-		firstNonEmpty(strings.TrimSpace(sanitizePDFSingleLineText(payment.ReferenceNumber)), "-"),
-		formatCurrency(payment.Amount),
-	}
-	aligns := []string{"L", "L", "L", "R"}
-	rowHeight := 6.8
-	y := pdf.GetY()
-	x := left
-	pdf.SetDrawColor(120, 120, 120)
-	pdf.SetFont("Arial", "", 9)
-	for index, width := range columns {
-		pdf.Rect(x, y, width, rowHeight, "D")
-		pdf.SetXY(x+1.5, y+1.2)
-		pdf.CellFormat(width-3, rowHeight-2.4, values[index], "", 0, aligns[index], false, 0, "")
-		x += width
-	}
-	pdf.SetY(y + rowHeight)
-}
-
-func ensureInvoicePaymentRowSpace(pdf *gofpdf.Fpdf) {
-	_, pageHeight := pdf.GetPageSize()
-	if pdf.GetY()+8 > pageHeight-initialAssessmentPDFMarginBottom {
-		pdf.AddPage()
-		pdf.SetY(initialAssessmentPDFPageContentStartForPDF(pdf, pdf.PageNo()))
-		addInvoiceSectionTitle(pdf, "Riwayat Pembayaran")
-		drawInvoicePaymentTableHeader(pdf)
-	}
-}
-
-func measureInvoiceTableRowHeight(pdf *gofpdf.Fpdf, value string, width float64) float64 {
-	pdf.SetFont("Arial", "", 9)
-	lines := pdf.SplitLines([]byte(value), width)
-	lineCount := len(lines)
-	if lineCount < 1 {
-		lineCount = 1
-	}
-	rowHeight := float64(lineCount)*4.2 + 2.4
-	if rowHeight < 6.8 {
-		rowHeight = 6.8
-	}
-	return rowHeight
-}
-
-func formatSignedCurrency(amount float64) string {
-	if amount < 0 {
-		return "-" + formatCurrency(math.Abs(amount))
-	}
-	if amount > 0 {
-		return "+" + formatCurrency(amount)
-	}
-	return formatCurrency(0)
-}

@@ -84,9 +84,6 @@ export default function PatientsIndex() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 Data Pasien
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Kelola master data pasien dan rekam medis ({filtered.length} pasien)
-              </p>
             </div>
           </div>
 

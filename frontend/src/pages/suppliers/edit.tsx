@@ -6,9 +6,9 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { suppliersApi } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, User, Phone, Mail, MapPin } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
-import { MasterDataAsideSection, MasterDataAsideStack, MasterDataLegacySections, MasterDataPageShell } from '@/pages/master-data/shared';
+import { MasterDataPageShell } from '@/pages/master-data/shared';
 
 export default function SupplierEdit() {
   const navigate = useNavigate();
@@ -20,48 +20,115 @@ export default function SupplierEdit() {
 
   useEffect(() => {
     setPageTitle('Edit Supplier');
-    suppliersApi.getById(Number(id)).then(r => { const d = r.data.data; setFormData({ name: d.name, contact_person: d.contact_person, phone: d.phone, email: d.email, address: d.address, is_active: d.is_active }); }).catch(() => toast({ variant: "destructive", title: "Error!" })).finally(() => setFetching(false));
+    suppliersApi.getById(Number(id)).then(r => {
+      const d = r.data.data;
+      setFormData({ name: d.name, contact_person: d.contact_person, phone: d.phone, email: d.email, address: d.address, is_active: d.is_active });
+    }).catch(() => toast({ variant: "destructive", title: "Error!", description: "Gagal memuat data supplier." })).finally(() => setFetching(false));
   }, [id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); setLoading(true);
-    try { await suppliersApi.update(Number(id), formData); toast({ variant: "success", title: "Berhasil!" }); setTimeout(() => navigate('/suppliers'), 500); }
-    catch (e: any) { toast({ variant: "destructive", title: "Error!", description: e.response?.data?.error || "Gagal." }); } finally { setLoading(false); }
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await suppliersApi.update(Number(id), formData);
+      toast({ variant: "success", title: "Berhasil!", description: "Supplier berhasil diperbarui." });
+      setTimeout(() => navigate('/suppliers'), 400);
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error!", description: e.response?.data?.error || "Gagal memperbarui supplier." });
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (fetching) return <div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
   return (
-    <form id="supplier-edit-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <form id="supplier-edit-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <MasterDataPageShell
         title="Edit Supplier"
-        subtitle="Perbarui data pemasok yang dipakai modul pembelian dan stok tanpa mengubah struktur referensinya."
+        subtitle="Perbarui data pemasok logistik farmasi / klinik."
         onBack={() => navigate('/suppliers')}
-        actions={<Button type="submit" form="supplier-edit-form" disabled={loading} className="rounded-none shadow-none">{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Update</Button>}
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Ringkasan" helper="Preview data supplier yang akan disimpan.">
-                <div className="space-y-1"><p className="truncate font-medium">{formData.name || '-'}</p><p className="text-muted-foreground">{formData.contact_person || '-'}</p></div>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
+        actions={
+          <Button type="submit" form="supplier-edit-form" disabled={loading} size="sm" className="h-8 px-4 text-xs rounded-none shadow-none">
+            {loading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            Update Supplier
+          </Button>
         }
       >
-        <MasterDataLegacySections>
-          <div className="space-y-6"><section className="space-y-4 rounded-lg border border-border/80 p-5">
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-              <div className="space-y-2"><Label htmlFor="name" className="text-xs font-medium">Nama Supplier</Label><Input id="name" required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="h-10 text-sm" /></div>
-              <div className="space-y-2"><Label htmlFor="contact_person" className="text-xs font-medium flex items-center gap-2"><User className="h-3.5 w-3.5 text-muted-foreground" />Contact Person</Label><Input id="contact_person" value={formData.contact_person} onChange={e => setFormData({ ...formData, contact_person: e.target.value })} className="h-10 text-sm" /></div>
+        <div className="space-y-4">
+          <div className="space-y-2.5">
+            <div className="border-b border-border/60 pb-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Informasi Pemasok / Vendor</span>
             </div>
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-              <div className="space-y-2"><Label htmlFor="phone" className="text-xs font-medium flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" />Telepon</Label><Input id="phone" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} className="h-10 text-sm" /></div>
-              <div className="space-y-2"><Label htmlFor="email" className="text-xs font-medium flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" />Email</Label><Input id="email" type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className="h-10 text-sm" /></div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="name" className="text-xs font-medium">Nama Supplier *</Label>
+                <Input
+                  id="name"
+                  required
+                  placeholder="Nama supplier"
+                  value={formData.name}
+                  onChange={e => setFormData({ ...formData, name: e.target.value })}
+                  className="h-9 text-xs rounded-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="contact_person" className="text-xs font-medium">Contact Person</Label>
+                <Input
+                  id="contact_person"
+                  placeholder="Nama kontak PIC"
+                  value={formData.contact_person}
+                  onChange={e => setFormData({ ...formData, contact_person: e.target.value })}
+                  className="h-9 text-xs rounded-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="phone" className="text-xs font-medium">Telepon / WA</Label>
+                <Input
+                  id="phone"
+                  placeholder="08xxxxxxxxxx"
+                  value={formData.phone}
+                  onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                  className="h-9 text-xs rounded-none font-mono"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="email" className="text-xs font-medium">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="supplier@example.com"
+                  value={formData.email}
+                  onChange={e => setFormData({ ...formData, email: e.target.value })}
+                  className="h-9 text-xs rounded-none"
+                />
+              </div>
+
+              <div className="space-y-1 lg:col-span-2">
+                <Label htmlFor="address" className="text-xs font-medium">Alamat</Label>
+                <Input
+                  id="address"
+                  placeholder="Alamat kantor / gudang supplier"
+                  value={formData.address}
+                  onChange={e => setFormData({ ...formData, address: e.target.value })}
+                  className="h-9 text-xs rounded-none"
+                />
+              </div>
             </div>
-            <div className="space-y-2"><Label htmlFor="address" className="text-xs font-medium flex items-center gap-2"><MapPin className="h-3.5 w-3.5 text-muted-foreground" />Alamat</Label><Input id="address" value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} className="h-10 text-sm" /></div>
-            <div className="flex items-center justify-between rounded-md border p-4"><div className="space-y-0.5"><Label htmlFor="is_active" className="text-xs font-medium cursor-pointer">Status Aktif</Label><p className="text-xs text-muted-foreground">{formData.is_active ? 'Aktif' : 'Tidak aktif'}</p></div><Switch id="is_active" checked={formData.is_active} onCheckedChange={checked => setFormData({ ...formData, is_active: checked })} /></div>
-          </section></div>
-        </MasterDataLegacySections>
+
+            <div className="flex items-center justify-between border border-border/70 p-2.5 bg-muted/10">
+              <div>
+                <Label htmlFor="is_active" className="text-xs font-medium cursor-pointer">Status Aktif</Label>
+                <p className="text-[11px] text-muted-foreground">{formData.is_active ? 'Supplier aktif beroperasi' : 'Supplier nonaktif'}</p>
+              </div>
+              <Switch id="is_active" checked={formData.is_active} onCheckedChange={checked => setFormData({ ...formData, is_active: checked })} />
+            </div>
+          </div>
+        </div>
       </MasterDataPageShell>
     </form>
   );

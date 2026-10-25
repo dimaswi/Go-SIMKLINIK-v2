@@ -148,9 +148,6 @@ export default function UsersPage() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 Pengguna Sistem
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Kelola akun pengguna, role, dan tautan pegawai ({filteredUsers.length} pengguna)
-              </p>
             </div>
           </div>
 

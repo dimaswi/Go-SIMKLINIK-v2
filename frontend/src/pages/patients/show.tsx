@@ -10,11 +10,10 @@ import { setPageTitle } from '@/lib/page-title';
 import { formatDate, formatDateTime } from '@/pages/emr/utils';
 import { Edit, Loader2, PlusCircle, RefreshCw, Trash2 } from 'lucide-react';
 import {
+  HeaderActionButton,
   PatientDetailItem,
   PatientPageShell,
-  PatientPanelSection,
   PatientSection,
-  getPatientAddressLabel,
   getPatientAgeLabel,
   getPatientEmergencyLabel,
   getPatientGenderLabel,
@@ -179,50 +178,32 @@ export default function PatientShow() {
         actions={
           <>
             {canSyncSatusehat ? (
-              <Button variant="outline" className="gap-1.5 rounded-none shadow-none" onClick={() => void handleSyncSatusehatPatient()} disabled={syncingSatusehat}>
-                {syncingSatusehat ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                {patient.satusehat_patient_id ? 'Sync Ulang SATUSEHAT' : 'Sync ke SATUSEHAT'}
-              </Button>
+              <HeaderActionButton
+                label={patient.satusehat_patient_id ? 'Sync Ulang SATUSEHAT' : 'Sync ke SATUSEHAT'}
+                icon={syncingSatusehat ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                onClick={() => void handleSyncSatusehatPatient()}
+                disabled={syncingSatusehat}
+              />
             ) : null}
-            <Button className="gap-1.5 rounded-none shadow-none" onClick={() => navigate(`/registration/create?patient_id=${patient.id}`)}>
-              <PlusCircle className="h-4 w-4" />
-              Daftarkan Kunjungan
-            </Button>
-            <Button variant="outline" className="gap-1.5 rounded-none shadow-none" onClick={() => navigate(`/patients/${id}/edit`)}>
-              <Edit className="h-4 w-4" />
-              Edit Pasien
-            </Button>
-            <Button variant="destructive" className="gap-1.5 rounded-none shadow-none" onClick={() => setShowDelete(true)} disabled={deleting}>
-              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-              Hapus Pasien
-            </Button>
+            <HeaderActionButton
+              label="Daftarkan Kunjungan"
+              icon={<PlusCircle className="h-4 w-4" />}
+              variant="default"
+              onClick={() => navigate(`/registration/create?patient_id=${patient.id}`)}
+            />
+            <HeaderActionButton
+              label="Edit Pasien"
+              icon={<Edit className="h-4 w-4" />}
+              onClick={() => navigate(`/patients/${id}/edit`)}
+            />
+            <HeaderActionButton
+              label="Hapus Pasien"
+              icon={deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              variant="destructive"
+              onClick={() => setShowDelete(true)}
+              disabled={deleting}
+            />
           </>
-        }
-        aside={
-          <div className="divide-y divide-border/70">
-            <PatientPanelSection title="Status Integrasi">
-              <div className="space-y-3">
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant={patient.satusehat_patient_id ? 'default' : 'secondary'} className="rounded-none">
-                    {patient.satusehat_patient_id ? 'Patient tersinkron' : 'Belum sync SATUSEHAT'}
-                  </Badge>
-                </div>
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Patient ID SATUSEHAT: <span className="font-medium text-foreground break-all">{patient.satusehat_patient_id || '-'}</span></p>
-                  <p>Sync terakhir: <span className="font-medium text-foreground">{formatDateTime(patient.satusehat_synced_at)}</span></p>
-                  <p>NIK: <span className="font-medium text-foreground">{formatValue(patient.nik)}</span></p>
-                </div>
-              </div>
-            </PatientPanelSection>
-
-            <PatientPanelSection title="Kontak Ringkas" helper="Informasi yang paling sering dipakai saat registrasi ulang.">
-              <div className="space-y-2 text-sm text-muted-foreground">
-                <p>Alamat: {getPatientAddressLabel(patient)}</p>
-                <p>Kontak darurat: {getPatientEmergencyLabel(patient)}</p>
-                <p>Email: {formatValue(patient.email)}</p>
-              </div>
-            </PatientPanelSection>
-          </div>
         }
       >
         <div className="divide-y divide-border/70">

@@ -462,6 +462,7 @@ func Connect(dsn string) error {
 	// Ensure PostgreSQL session uses local timezone for DATE() calculations
 	DB.Exec("SET timezone = 'Asia/Jakarta'")
 	migrationDB.Exec("SET timezone = 'Asia/Jakarta'")
+	DB.Exec("ALTER TABLE invoice_items ALTER COLUMN description TYPE TEXT")
 
 	log.Println("Database connected successfully")
 	return nil
@@ -581,10 +582,10 @@ func ensureRBACReferenceConstraints() error {
 }
 
 type legacyUserIdentityRow struct {
-	ID        uint   `gorm:"column:id"`
-	Username  string `gorm:"column:username"`
-	Email     string `gorm:"column:email"`
-	IsActive  bool   `gorm:"column:is_active"`
+	ID       uint   `gorm:"column:id"`
+	Username string `gorm:"column:username"`
+	Email    string `gorm:"column:email"`
+	IsActive bool   `gorm:"column:is_active"`
 }
 
 type legacySettingRow struct {
@@ -1582,10 +1583,157 @@ func seedMasterData() {
 		DB.Where(models.Polyclinic{Code: p.Code}).FirstOrCreate(&p)
 	}
 
+	// Seed Suppliers & Medicines Dummy Data
+	seedSuppliersAndMedicines()
+
 	// Seed ICD-10 & ICD-9-CM codes from TSV dataset
 	seedICD10FromTSV()
 
 	log.Println("Master data seeded successfully")
+}
+
+func seedSuppliersAndMedicines() {
+	// Seed Suppliers (PBF / Distributor / Produsen Farmasi)
+	suppliers := []models.Supplier{
+		{
+			Name:          "PT Kimia Farma Trading & Distribution",
+			ContactPerson: "Hendra Setiawan, S.Farm",
+			Phone:         "021-3847755",
+			Email:         "kftd.order@kimiafarma.co.id",
+			Address:       "Jl. Budi Utomo No. 1, Pasar Baru, Sawah Besar, Jakarta Pusat",
+			IsActive:      true,
+		},
+		{
+			Name:          "PT Kalbe Farma Tbk",
+			ContactPerson: "dr. Rina Wijaya",
+			Phone:         "021-42873888",
+			Email:         "institutional.sales@kalbe.co.id",
+			Address:       "Kawasan Industri Delta Silicon, Cikarang, Bekasi",
+			IsActive:      true,
+		},
+		{
+			Name:          "PT Enseval Putera Megatrading Tbk",
+			ContactPerson: "Budi Santoso",
+			Phone:         "021-4609042",
+			Email:         "customer.care@enseval.com",
+			Address:       "Jl. Pulo Lentut No. 10, Kawasan Industri Pulogadung, Jakarta Timur",
+			IsActive:      true,
+		},
+		{
+			Name:          "PT Dexa Medica",
+			ContactPerson: "Anita Rahayu",
+			Phone:         "021-7451999",
+			Email:         "order.pharma@dexa-medica.com",
+			Address:       "Titan Center Lt. 3, Jl. Boulevard Bintaro Block B7/B1 No. 05, Tangerang Selatan",
+			IsActive:      true,
+		},
+		{
+			Name:          "PT Sanbe Farma",
+			ContactPerson: "Ir. Denny Kurniawan",
+			Phone:         "022-6015666",
+			Email:         "pbf.sales@sanbe-farma.com",
+			Address:       "Jl. Tamansari No. 10, Bandung, Jawa Barat",
+			IsActive:      true,
+		},
+		{
+			Name:          "PT Tempo Scan Pacific Tbk",
+			ContactPerson: "Maya Indriati",
+			Phone:         "021-29228888",
+			Email:         "distribution@temposcangroup.com",
+			Address:       "Tempo Scan Tower, Jl. H.R. Rasuna Said Kav. 3-4, Jakarta Selatan",
+			IsActive:      true,
+		},
+		{
+			Name:          "PT Mensa Bina Sukses",
+			ContactPerson: "Agus Prasetyo",
+			Phone:         "021-46826620",
+			Email:         "mbs.pharma@mensa.co.id",
+			Address:       "Jl. Pulogadung No. 23, Kawasan Industri Pulogadung, Jakarta Timur",
+			IsActive:      true,
+		},
+		{
+			Name:          "PT Phapros Tbk",
+			ContactPerson: "Siti Nurhaliza",
+			Phone:         "024-7625555",
+			Email:         "order@phapros.co.id",
+			Address:       "Jl. Simongan No. 131, Semarang, Jawa Tengah",
+			IsActive:      true,
+		},
+		{
+			Name:          "PT Bio Farma (Persero)",
+			ContactPerson: "Dr. Ahmad Fauzi",
+			Phone:         "022-2033755",
+			Email:         "info@biofarma.co.id",
+			Address:       "Jl. Pasteur No. 28, Sukajadi, Bandung",
+			IsActive:      true,
+		},
+	}
+	for _, s := range suppliers {
+		DB.Where(models.Supplier{Name: s.Name}).FirstOrCreate(&s)
+	}
+
+	// Helper query category IDs
+	var catAnalgesik, catAntibiotik, catAntihipertensi, catAntidiabetes, catVitamin, catMaag, catAntihistamin, catKortikosteroid, catBatuk, catKulit, catAntiseptik, catCerna models.MedicineCategory
+	DB.Where("name = ?", "Analgesik").First(&catAnalgesik)
+	DB.Where("name = ?", "Antibiotik").First(&catAntibiotik)
+	DB.Where("name = ?", "Antihipertensi").First(&catAntihipertensi)
+	DB.Where("name = ?", "Antidiabetes").First(&catAntidiabetes)
+	DB.Where("name = ?", "Vitamin & Suplemen").First(&catVitamin)
+	DB.Where("name = ?", "Obat Maag").First(&catMaag)
+	DB.Where("name = ?", "Antihistamin").First(&catAntihistamin)
+	DB.Where("name = ?", "Kortikosteroid").First(&catKortikosteroid)
+	DB.Where("name = ?", "Antitusif & Ekspektoran").First(&catBatuk)
+	DB.Where("name = ?", "Obat Kulit").First(&catKulit)
+	DB.Where("name = ?", "Antiseptik").First(&catAntiseptik)
+	DB.Where("name = ?", "Obat Saluran Cerna").First(&catCerna)
+
+	// Helper query unit IDs
+	var unitTablet, unitKapsul, unitBotol, unitTube, unitSachet models.Unit
+	DB.Where("name = ?", "Tablet").First(&unitTablet)
+	DB.Where("name = ?", "Kapsul").First(&unitKapsul)
+	DB.Where("name = ?", "Botol").First(&unitBotol)
+	DB.Where("name = ?", "Tube").First(&unitTube)
+	DB.Where("name = ?", "Sachet").First(&unitSachet)
+
+	dummyMedicines := []models.Medicine{
+		{Code: "MED-0001", Name: "Paracetamol 500 mg", GenericName: "Paracetamol", CategoryID: catAnalgesik.ID, UnitID: unitTablet.ID, Type: "generic", Form: "Tablet", Strength: "500 mg", MinStock: 50, CurrentStock: 500, PurchasePrice: 300, SellingPrice: 700, IsActive: true},
+		{Code: "MED-0002", Name: "Ibuprofen 400 mg", GenericName: "Ibuprofen", CategoryID: catAnalgesik.ID, UnitID: unitTablet.ID, Type: "generic", Form: "Tablet", Strength: "400 mg", MinStock: 30, CurrentStock: 300, PurchasePrice: 650, SellingPrice: 1500, IsActive: true},
+		{Code: "MED-0003", Name: "Asam Mefenamat 500 mg", GenericName: "Mefenamic Acid", CategoryID: catAnalgesik.ID, UnitID: unitTablet.ID, Type: "generic", Form: "Kaplet", Strength: "500 mg", MinStock: 30, CurrentStock: 250, PurchasePrice: 750, SellingPrice: 1600, IsActive: true},
+		{Code: "MED-0004", Name: "Natrium Diklofenak 50 mg", GenericName: "Diclofenac Sodium", CategoryID: catAnalgesik.ID, UnitID: unitTablet.ID, Type: "generic", Form: "Tablet Salut Enterik", Strength: "50 mg", MinStock: 25, CurrentStock: 200, PurchasePrice: 800, SellingPrice: 1800, IsActive: true},
+		{Code: "MED-0005", Name: "Amoxicillin 500 mg", GenericName: "Amoxicillin Trihydrate", CategoryID: catAntibiotik.ID, UnitID: unitKapsul.ID, Type: "generic", Form: "Kapsul", Strength: "500 mg", MinStock: 40, CurrentStock: 400, PurchasePrice: 700, SellingPrice: 1500, IsActive: true},
+		{Code: "MED-0006", Name: "Cefixime 100 mg", GenericName: "Cefixime", CategoryID: catAntibiotik.ID, UnitID: unitKapsul.ID, Type: "generic", Form: "Kapsul", Strength: "100 mg", MinStock: 20, CurrentStock: 150, PurchasePrice: 2800, SellingPrice: 5000, IsActive: true},
+		{Code: "MED-0007", Name: "Ciprofloxacin 500 mg", GenericName: "Ciprofloxacin HCl", CategoryID: catAntibiotik.ID, UnitID: unitTablet.ID, Type: "generic", Form: "Tablet Salut Selaput", Strength: "500 mg", MinStock: 20, CurrentStock: 180, PurchasePrice: 1200, SellingPrice: 2500, IsActive: true},
+		{Code: "MED-0008", Name: "Azithromycin 500 mg", GenericName: "Azithromycin Dihydrate", CategoryID: catAntibiotik.ID, UnitID: unitTablet.ID, Type: "generic", Form: "Tablet Salut Selaput", Strength: "500 mg", MinStock: 15, CurrentStock: 100, PurchasePrice: 5500, SellingPrice: 10000, IsActive: true},
+		{Code: "MED-0009", Name: "Amlodipine 5 mg", GenericName: "Amlodipine Besilate", CategoryID: catAntihipertensi.ID, UnitID: unitTablet.ID, Type: "generic", Form: "Tablet", Strength: "5 mg", MinStock: 40, CurrentStock: 350, PurchasePrice: 400, SellingPrice: 900, IsActive: true},
+		{Code: "MED-0010", Name: "Amlodipine 10 mg", GenericName: "Amlodipine Besilate", CategoryID: catAntihipertensi.ID, UnitID: unitTablet.ID, Type: "generic", Form: "Tablet", Strength: "10 mg", MinStock: 30, CurrentStock: 280, PurchasePrice: 600, SellingPrice: 1300, IsActive: true},
+		{Code: "MED-0011", Name: "Captopril 25 mg", GenericName: "Captopril", CategoryID: catAntihipertensi.ID, UnitID: unitTablet.ID, Type: "generic", Form: "Tablet", Strength: "25 mg", MinStock: 30, CurrentStock: 220, PurchasePrice: 350, SellingPrice: 800, IsActive: true},
+		{Code: "MED-0012", Name: "Candesartan 8 mg", GenericName: "Candesartan Cilexetil", CategoryID: catAntihipertensi.ID, UnitID: unitTablet.ID, Type: "generic", Form: "Tablet", Strength: "8 mg", MinStock: 20, CurrentStock: 150, PurchasePrice: 3200, SellingPrice: 6500, IsActive: true},
+		{Code: "MED-0013", Name: "Metformin 500 mg", GenericName: "Metformin HCl", CategoryID: catAntidiabetes.ID, UnitID: unitTablet.ID, Type: "generic", Form: "Tablet Salut Selaput", Strength: "500 mg", MinStock: 50, CurrentStock: 450, PurchasePrice: 450, SellingPrice: 1000, IsActive: true},
+		{Code: "MED-0014", Name: "Glimepiride 2 mg", GenericName: "Glimepiride", CategoryID: catAntidiabetes.ID, UnitID: unitTablet.ID, Type: "generic", Form: "Tablet", Strength: "2 mg", MinStock: 30, CurrentStock: 250, PurchasePrice: 850, SellingPrice: 1900, IsActive: true},
+		{Code: "MED-0015", Name: "Omeprazole 20 mg", GenericName: "Omeprazole", CategoryID: catMaag.ID, UnitID: unitKapsul.ID, Type: "generic", Form: "Kapsul", Strength: "20 mg", MinStock: 30, CurrentStock: 320, PurchasePrice: 950, SellingPrice: 2200, IsActive: true},
+		{Code: "MED-0016", Name: "Lansoprazole 30 mg", GenericName: "Lansoprazole", CategoryID: catMaag.ID, UnitID: unitKapsul.ID, Type: "generic", Form: "Kapsul", Strength: "30 mg", MinStock: 25, CurrentStock: 200, PurchasePrice: 1600, SellingPrice: 3500, IsActive: true},
+		{Code: "MED-0017", Name: "Antasida Doen Tablet", GenericName: "Aluminium Hidroksida + Magnesium Hidroksida", CategoryID: catMaag.ID, UnitID: unitTablet.ID, Type: "generic", Form: "Tablet Kunyah", Strength: "200 mg / 200 mg", MinStock: 50, CurrentStock: 500, PurchasePrice: 300, SellingPrice: 700, IsActive: true},
+		{Code: "MED-0018", Name: "Cetirizine 10 mg", GenericName: "Cetirizine HCl", CategoryID: catAntihistamin.ID, UnitID: unitTablet.ID, Type: "generic", Form: "Tablet Salut Selaput", Strength: "10 mg", MinStock: 40, CurrentStock: 350, PurchasePrice: 500, SellingPrice: 1200, IsActive: true},
+		{Code: "MED-0019", Name: "Loratadine 10 mg", GenericName: "Loratadine", CategoryID: catAntihistamin.ID, UnitID: unitTablet.ID, Type: "generic", Form: "Tablet", Strength: "10 mg", MinStock: 25, CurrentStock: 200, PurchasePrice: 650, SellingPrice: 1500, IsActive: true},
+		{Code: "MED-0020", Name: "Dexamethasone 0.5 mg", GenericName: "Dexamethasone", CategoryID: catKortikosteroid.ID, UnitID: unitTablet.ID, Type: "generic", Form: "Tablet", Strength: "0.5 mg", MinStock: 40, CurrentStock: 380, PurchasePrice: 250, SellingPrice: 600, IsActive: true},
+		{Code: "MED-0021", Name: "Methylprednisolone 4 mg", GenericName: "Methylprednisolone", CategoryID: catKortikosteroid.ID, UnitID: unitTablet.ID, Type: "generic", Form: "Tablet", Strength: "4 mg", MinStock: 30, CurrentStock: 260, PurchasePrice: 1100, SellingPrice: 2400, IsActive: true},
+		{Code: "MED-0022", Name: "Ambroxol 30 mg", GenericName: "Ambroxol HCl", CategoryID: catBatuk.ID, UnitID: unitTablet.ID, Type: "generic", Form: "Tablet", Strength: "30 mg", MinStock: 40, CurrentStock: 320, PurchasePrice: 400, SellingPrice: 900, IsActive: true},
+		{Code: "MED-0023", Name: "Paracetamol Sirup 120mg/5ml", GenericName: "Paracetamol", CategoryID: catAnalgesik.ID, UnitID: unitBotol.ID, Type: "generic", Form: "Sirup", Strength: "120 mg / 5 mL", MinStock: 15, CurrentStock: 80, PurchasePrice: 8500, SellingPrice: 16000, IsActive: true},
+		{Code: "MED-0024", Name: "OBH Sirup 100 ml", GenericName: "Succus Liquiritiae + Amonium Klorida", CategoryID: catBatuk.ID, UnitID: unitBotol.ID, Type: "otc", Form: "Sirup", Strength: "100 mL", MinStock: 15, CurrentStock: 75, PurchasePrice: 12500, SellingPrice: 22000, IsActive: true},
+		{Code: "MED-0025", Name: "Vitamin C 500 mg", GenericName: "Ascorbic Acid", CategoryID: catVitamin.ID, UnitID: unitTablet.ID, Type: "otc", Form: "Tablet Salut Selaput", Strength: "500 mg", MinStock: 40, CurrentStock: 400, PurchasePrice: 600, SellingPrice: 1500, IsActive: true},
+		{Code: "MED-0026", Name: "Vitamin B Complex", GenericName: "Vitamin B1, B2, B6, Nikotinamida", CategoryID: catVitamin.ID, UnitID: unitTablet.ID, Type: "generic", Form: "Tablet Salut Gula", Strength: "Multivitamin", MinStock: 50, CurrentStock: 450, PurchasePrice: 350, SellingPrice: 800, IsActive: true},
+		{Code: "MED-0027", Name: "Betamethasone Salep 0.1%", GenericName: "Betamethasone Valerate", CategoryID: catKulit.ID, UnitID: unitTube.ID, Type: "generic", Form: "Salep", Strength: "5 gram (0.1%)", MinStock: 15, CurrentStock: 90, PurchasePrice: 4800, SellingPrice: 9500, IsActive: true},
+		{Code: "MED-0028", Name: "Hydrocortisone Salep 2.5%", GenericName: "Hydrocortisone Acetate", CategoryID: catKulit.ID, UnitID: unitTube.ID, Type: "generic", Form: "Krim", Strength: "5 gram (2.5%)", MinStock: 15, CurrentStock: 85, PurchasePrice: 6200, SellingPrice: 12500, IsActive: true},
+		{Code: "MED-0029", Name: "Oralit 200 ml", GenericName: "Garam Rehidrasi Oral", CategoryID: catCerna.ID, UnitID: unitSachet.ID, Type: "generic", Form: "Serbuk", Strength: "200 mL", MinStock: 40, CurrentStock: 300, PurchasePrice: 1100, SellingPrice: 2200, IsActive: true},
+		{Code: "MED-0030", Name: "Povidone Iodine 10% 60 ml", GenericName: "Povidone Iodine", CategoryID: catAntiseptik.ID, UnitID: unitBotol.ID, Type: "otc", Form: "Larutan", Strength: "60 mL (10%)", MinStock: 15, CurrentStock: 65, PurchasePrice: 11000, SellingPrice: 19500, IsActive: true},
+	}
+
+	for _, med := range dummyMedicines {
+		if med.CategoryID == 0 || med.UnitID == 0 {
+			continue
+		}
+		DB.Where(models.Medicine{Code: med.Code}).FirstOrCreate(&med)
+	}
 }
 
 // seedICD10FromTSV reads dataset/icd.tsv and upserts all valid codes (VALIDCODE=1).

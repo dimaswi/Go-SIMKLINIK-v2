@@ -2,46 +2,53 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { patientsApi, type Patient } from '@/lib/api';
+import { patientsApi } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Save } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
 import {
   EMPTY_PATIENT_FORM_DATA,
   PatientFormSections,
-  PatientFormSummaryPanel,
   PatientPageShell,
   type PatientFormData,
-  getPatientGenderLabel,
   getPatientInsuranceLabel,
   isPatientSatusehatReady,
   mapPatientToFormData,
 } from './shared';
 
 export default function PatientEdit() {
-  const { id } = useParams();
   const navigate = useNavigate();
+  const { id } = useParams();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
-  const [mrn, setMrn] = useState('');
   const [formData, setFormData] = useState<PatientFormData>(EMPTY_PATIENT_FORM_DATA);
+  const [mrn, setMrn] = useState('');
   const satusehatReady = isPatientSatusehatReady(formData);
 
   useEffect(() => {
     setPageTitle('Edit Pasien');
-    patientsApi.getById(Number(id)).then((detailResponse) => {
-      const patient: Patient = detailResponse.data.data;
-      setMrn(patient.medical_record_number);
-      setFormData(mapPatientToFormData(patient));
-    }).catch(() => {
-      toast({ variant: 'destructive', title: 'Error!', description: 'Gagal memuat data pasien.' });
-    }).finally(() => setFetching(false));
-  }, [id, toast]);
+    if (!id) return;
+    patientsApi
+      .getById(Number(id))
+      .then((res) => {
+        const p = res.data.data;
+        setFormData(mapPatientToFormData(p));
+        setMrn(p.medical_record_number || '');
+      })
+      .catch((e) => {
+        toast({ variant: 'destructive', title: 'Error!', description: e.response?.data?.error || 'Gagal memuat data.' });
+        navigate('/patients');
+      })
+      .finally(() => setFetching(false));
+  }, [id]);
 
-  const setField = (field: keyof PatientFormData, value: string) => setFormData((previous) => ({ ...previous, [field]: value }));
-  const handleInput = (event: React.ChangeEvent<HTMLInputElement>) => setField(event.target.name as keyof PatientFormData, event.target.value);
-  const handleTextarea = (event: React.ChangeEvent<HTMLTextAreaElement>) => setField(event.target.name as keyof PatientFormData, event.target.value);
+  const setField = (field: keyof PatientFormData, value: string) =>
+    setFormData((previous) => ({ ...previous, [field]: value }));
+  const handleInput = (event: React.ChangeEvent<HTMLInputElement>) =>
+    setField(event.target.name as keyof PatientFormData, event.target.value);
+  const handleTextarea = (event: React.ChangeEvent<HTMLTextAreaElement>) =>
+    setField(event.target.name as keyof PatientFormData, event.target.value);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,13 +68,19 @@ export default function PatientEdit() {
     }
   };
 
-  if (fetching) return <div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  if (fetching) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
-    <form id="patient-edit-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <form id="patient-edit-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <PatientPageShell
         title={formData.full_name || 'Edit Pasien'}
-        subtitle="Perbarui data administratif pasien dengan pola layout yang sama seperti workspace rekam medis terbaru. Nomor rekam medis tetap dipertahankan."
+        subtitle="Perbarui data administratif dan kontak pasien."
         onBack={() => navigate(`/patients/${id}`)}
         badges={
           <>
@@ -79,28 +92,14 @@ export default function PatientEdit() {
             </Badge>
           </>
         }
-        meta={
-          <>
-            <span>{getPatientGenderLabel(formData.gender)}</span>
-            <span>Telepon {formData.phone || '-'}</span>
-            <span>NIK {formData.nik || '-'}</span>
-          </>
-        }
         actions={
-          <Button type="submit" form="patient-edit-form" className="gap-1.5 rounded-none shadow-none" disabled={loading}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {loading ? 'Menyimpan...' : 'Update Pasien'}
+          <Button type="submit" form="patient-edit-form" disabled={loading} size="sm" className="h-8 px-4 text-xs rounded-none shadow-none">
+            {loading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            Update Pasien
           </Button>
         }
-        aside={
-          <PatientFormSummaryPanel
-            formData={formData}
-            medicalRecordNumber={mrn}
-            footerNote="Perubahan pada data ini langsung memengaruhi registrasi ulang dan kesiapan payload Patient SATUSEHAT untuk sinkronisasi berikutnya."
-          />
-        }
       >
-        <div className="divide-y divide-border/70">
+        <div className="space-y-4">
           <PatientFormSections
             formData={formData}
             setField={setField}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,9 +17,11 @@ import {
   type Patient,
   type Polyclinic,
   type RegistrationQueueItem,
+  type Visit,
 } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
-import { CalendarDays, Loader2, UserPlus } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { AlertTriangle, ArrowLeft, CalendarDays, ClipboardEdit, ExternalLink, Loader2, UserPlus, Users } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
 import { getLocalISODate } from '@/lib/utils';
 import {
@@ -30,7 +32,7 @@ import {
   getPatientGenderLabel,
   getPatientInsuranceLabel,
 } from '@/pages/patients/shared';
-import { MasterDataAsideSection, MasterDataAsideStack, MasterDataPageShell, formatMasterDataDateTime } from '@/pages/master-data/shared';
+import { formatMasterDataDateTime } from '@/pages/master-data/shared';
 
 const PAYMENT_OPTIONS = [
   { value: 'umum', label: 'Umum (Mandiri)' },
@@ -47,7 +49,7 @@ type EntryMode = 'existing' | 'new';
 
 export default function RegistrationCreate() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const initialMode = searchParams.get('mode') === 'new' ? 'new' : 'existing';
   const ticketId = searchParams.get('ticket_id');
@@ -64,14 +66,23 @@ export default function RegistrationCreate() {
   const controlFollowUpAt = searchParams.get('control_follow_up_at');
   const controlInstruction = searchParams.get('control_instruction');
   const [entryMode, setEntryMode] = useState<EntryMode>(initialMode);
+
+  useEffect(() => {
+    const modeParam = searchParams.get('mode');
+    if ((modeParam === 'new' || modeParam === 'existing') && modeParam !== entryMode) {
+      setEntryMode(modeParam);
+    }
+  }, [entryMode, searchParams]);
+
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [newPatientForm, setNewPatientForm] = useState<PatientFormData>(EMPTY_PATIENT_FORM_DATA);
   const [polyclinics, setPolyclinics] = useState<Polyclinic[]>([]);
   const [allDoctors, setAllDoctors] = useState<Doctor[]>([]);
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [activeVisitAlert, setActiveVisitAlert] = useState<Visit | null>(null);
+  const [checkingActiveVisit, setCheckingActiveVisit] = useState(false);
   const [registrationTicket, setRegistrationTicket] = useState<RegistrationQueueItem | null>(null);
   const [markingTicketProcessing, setMarkingTicketProcessing] = useState(false);
   const processingSyncTicketIdRef = useRef<number | null>(null);
@@ -103,9 +114,20 @@ export default function RegistrationCreate() {
       setPatients(patientList);
       setPolyclinics(polyclinicResponse.data.data || []);
       setAllDoctors(doctorList);
-      setDoctors(doctorList);
-      setRegistrationTicket(ticketResponse?.data.data || null);
+      const ticket = ticketResponse?.data.data || null;
+      setRegistrationTicket(ticket);
       processingSyncTicketIdRef.current = null;
+
+      const targetPolyclinicId = initialPolyclinicId || (ticket?.polyclinic_id ? String(ticket.polyclinic_id) : '');
+      const targetDoctorId = initialDoctorId || (ticket?.doctor_id ? String(ticket.doctor_id) : '');
+
+      if (targetPolyclinicId || targetDoctorId) {
+        setVisitForm((previous) => ({
+          ...previous,
+          ...(targetPolyclinicId ? { polyclinic_id: targetPolyclinicId } : {}),
+          ...(targetDoctorId ? { doctor_id: targetDoctorId } : {}),
+        }));
+      }
 
       if (initialPatientId) {
         const patient = patientList.find((item: Patient) => String(item.id) === initialPatientId) || null;
@@ -120,6 +142,8 @@ export default function RegistrationCreate() {
               ? initialPaymentType
               : patient.insurance_type || 'umum',
             insurance_number: initialInsuranceNumber || patient.insurance_number || '',
+            ...(targetPolyclinicId ? { polyclinic_id: targetPolyclinicId } : {}),
+            ...(targetDoctorId ? { doctor_id: targetDoctorId } : {}),
           }));
         }
       }
@@ -128,18 +152,30 @@ export default function RegistrationCreate() {
     }).finally(() => {
       setLoading(false);
     });
-  }, [initialInsuranceNumber, initialPatientId, initialPaymentType, ticketId, toast]);
+  }, [initialDoctorId, initialInsuranceNumber, initialPatientId, initialPaymentType, initialPolyclinicId, ticketId, toast]);
 
   useEffect(() => {
     if (entryMode !== 'existing') {
       setSelectedPatient(null);
-      setVisitForm((previous) => ({
-        ...previous,
-        patient_id: '',
-        visit_type: 'baru',
-        payment_type: newPatientForm.insurance_type || 'umum',
-        insurance_number: newPatientForm.insurance_number || '',
-      }));
+      setVisitForm((previous) => {
+        const nextPayment = newPatientForm.insurance_type || 'umum';
+        const nextInsurance = newPatientForm.insurance_number || '';
+        if (
+          previous.patient_id === '' &&
+          previous.visit_type === 'baru' &&
+          previous.payment_type === nextPayment &&
+          previous.insurance_number === nextInsurance
+        ) {
+          return previous;
+        }
+        return {
+          ...previous,
+          patient_id: '',
+          visit_type: 'baru',
+          payment_type: nextPayment,
+          insurance_number: nextInsurance,
+        };
+      });
       return;
     }
 
@@ -151,27 +187,55 @@ export default function RegistrationCreate() {
     const patient = patients.find((item) => String(item.id) === visitForm.patient_id) || null;
     setSelectedPatient(patient);
     if (patient) {
-      setVisitForm((previous) => ({
-        ...previous,
-        visit_type: 'lama',
-        payment_type: previous.payment_type || patient.insurance_type || 'umum',
-        insurance_number: previous.insurance_number || patient.insurance_number || '',
-      }));
+      setVisitForm((previous) => {
+        const nextPayment = previous.payment_type || patient.insurance_type || 'umum';
+        const nextInsurance = previous.insurance_number || patient.insurance_number || '';
+        if (
+          previous.visit_type === 'lama' &&
+          previous.payment_type === nextPayment &&
+          previous.insurance_number === nextInsurance
+        ) {
+          return previous;
+        }
+        return {
+          ...previous,
+          visit_type: 'lama',
+          payment_type: nextPayment,
+          insurance_number: nextInsurance,
+        };
+      });
     }
   }, [entryMode, newPatientForm.insurance_number, newPatientForm.insurance_type, patients, visitForm.patient_id]);
 
   useEffect(() => {
-    if (entryMode !== 'new') {
+    if (entryMode !== 'existing' || !visitForm.patient_id) {
+      setActiveVisitAlert(null);
       return;
     }
 
-    setVisitForm((previous) => ({
-      ...previous,
-      payment_type: newPatientForm.insurance_type || 'umum',
-      insurance_number: newPatientForm.insurance_number || '',
-      visit_type: 'baru',
-    }));
-  }, [entryMode, newPatientForm.insurance_number, newPatientForm.insurance_type]);
+    let isMounted = true;
+    setCheckingActiveVisit(true);
+    visitsApi.getActiveByPatient(visitForm.patient_id)
+      .then((res) => {
+        if (isMounted) {
+          setActiveVisitAlert(res.data.data || null);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setActiveVisitAlert(null);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setCheckingActiveVisit(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [entryMode, visitForm.patient_id]);
 
   useEffect(() => {
     if (!ticketId || !registrationTicket || registrationTicket.status !== 'called' || markingTicketProcessing) {
@@ -197,32 +261,25 @@ export default function RegistrationCreate() {
       });
   }, [markingTicketProcessing, registrationTicket, ticketId]);
 
-  useEffect(() => {
-    if (visitForm.polyclinic_id) {
-      const filteredDoctors = allDoctors.filter((doctor) => (
-        !doctor.polyclinics ||
-        doctor.polyclinics.length === 0 ||
-        doctor.polyclinics.some((polyclinic: Polyclinic) => String(polyclinic.id) === visitForm.polyclinic_id)
-      ));
-      setDoctors(filteredDoctors.length > 0 ? filteredDoctors : allDoctors);
-    } else {
-      setDoctors(allDoctors);
+  const availableDoctors = useMemo(() => {
+    if (!visitForm.polyclinic_id) {
+      return allDoctors;
     }
+    const filtered = allDoctors.filter((doctor) => (
+      !doctor.polyclinics ||
+      doctor.polyclinics.length === 0 ||
+      doctor.polyclinics.some((polyclinic: Polyclinic) => String(polyclinic.id) === visitForm.polyclinic_id)
+    ));
+    return filtered.length > 0 ? filtered : allDoctors;
+  }, [allDoctors, visitForm.polyclinic_id]);
 
-    setVisitForm((previous) => {
-      if (!previous.doctor_id) {
-        return previous;
-      }
-
-      const doctorStillAvailable = (allDoctors.length > 0 ? allDoctors : doctors).some((doctor) => String(doctor.id) === previous.doctor_id && (
-        !doctor.polyclinics ||
-        doctor.polyclinics.length === 0 ||
-        doctor.polyclinics.some((polyclinic: Polyclinic) => String(polyclinic.id) === previous.polyclinic_id)
-      ));
-
-      return doctorStillAvailable ? previous : { ...previous, doctor_id: '' };
-    });
-  }, [allDoctors, doctors, visitForm.polyclinic_id]);
+  useEffect(() => {
+    if (!visitForm.doctor_id) return;
+    const isStillAvailable = availableDoctors.some((doc) => String(doc.id) === visitForm.doctor_id);
+    if (!isStillAvailable) {
+      setVisitForm((prev) => ({ ...prev, doctor_id: '' }));
+    }
+  }, [availableDoctors, visitForm.doctor_id]);
 
   const setVisitField = (field: keyof typeof visitForm, value: string) => {
     setVisitForm((previous) => ({ ...previous, [field]: value }));
@@ -250,6 +307,15 @@ export default function RegistrationCreate() {
 
     if (entryMode === 'existing' && !visitForm.patient_id) {
       toast({ variant: 'destructive', title: 'Periksa data!', description: 'Pilih pasien lama terlebih dahulu.' });
+      return;
+    }
+
+    if (entryMode === 'existing' && activeVisitAlert) {
+      toast({
+        variant: 'destructive',
+        title: 'Pendaftaran Ditolak!',
+        description: `Pasien masih memiliki kunjungan aktif (${activeVisitAlert.visit_number}) di ${activeVisitAlert.polyclinic?.name || 'Poliklinik'} yang belum selesai sampai billing.`,
+      });
       return;
     }
 
@@ -305,7 +371,7 @@ export default function RegistrationCreate() {
           ? `Kunjungan berhasil dibuat dengan nomor antrian ${queueNumber}, tetapi sinkronisasi status tiket belum selesai.`
           : `Pendaftaran berhasil disimpan. Nomor antrian pasien adalah ${queueNumber}.`,
       });
-      navigate('/registration');
+      navigate(`/registration/${visitResponse.data.data.id}`);
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Gagal!', description: error.response?.data?.error || 'Pendaftaran gagal.' });
     } finally {
@@ -323,13 +389,11 @@ export default function RegistrationCreate() {
     label: polyclinic.name,
   })), [polyclinics]);
 
-  const doctorOptions = useMemo(() => doctors.map((doctor) => ({
+  const doctorOptions = useMemo(() => availableDoctors.map((doctor) => ({
     value: String(doctor.id),
     label: `${doctor.full_name}${doctor.specialization ? ` — ${doctor.specialization}` : ''}`,
-  })), [doctors]);
+  })), [availableDoctors]);
 
-  const selectedPolyclinic = polyclinics.find((item) => String(item.id) === visitForm.polyclinic_id) || null;
-  const selectedDoctor = doctors.find((item) => String(item.id) === visitForm.doctor_id) || null;
   const isControlRegistration = registrationSource === 'control-schedule';
   const controlScheduleLabel = controlFollowUpAt ? formatMasterDataDateTime(controlFollowUpAt) : '-';
 
@@ -342,169 +406,233 @@ export default function RegistrationCreate() {
   }
 
   return (
-    <form id="registration-create-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <MasterDataPageShell
-        title="Workspace Pendaftaran"
-        subtitle={isControlRegistration
-          ? 'Registrasi kontrol dari monitoring jadwal. Data kunjungan utama sudah diprefill dan tinggal diverifikasi petugas.'
-          : 'Fokus ke form pendaftaran. Pilih mode pasien di kontrol ringkas, lalu langsung isi data kunjungan.'}
-        onBack={() => navigate('/registration')}
-        badges={
-          <>
-            {registrationTicket ? (
-              <Badge variant="outline" className="h-5 rounded-none px-2 text-[10px] uppercase tracking-[0.18em] shadow-none">
-                Tiket {String(registrationTicket.ticket_number).padStart(3, '0')}
-              </Badge>
-            ) : null}
-            {isControlRegistration ? (
-              <Badge className="h-5 rounded-none border-0 bg-amber-500 px-2 text-[10px] uppercase tracking-[0.18em] text-white shadow-none">
-                Pasien Kontrol
-              </Badge>
-            ) : null}
-            <Badge variant="secondary" className="h-5 rounded-none px-2 text-[10px] uppercase tracking-[0.18em] shadow-none">
-              {entryMode === 'new' ? 'Pasien Baru' : 'Pasien Lama'}
-            </Badge>
-            <Badge variant="outline" className="h-5 rounded-none px-2 text-[10px] uppercase tracking-[0.18em] shadow-none">
-              {getPatientInsuranceLabel(visitForm.payment_type)}
-            </Badge>
-          </>
-        }
-        meta={
-          <>
-            {isControlRegistration ? <span>Kontrol dari {controlVisitNumber || '-'}</span> : null}
-            <span>Poli {selectedPolyclinic?.name || '-'}</span>
-            <span>Dokter {selectedDoctor?.full_name || '-'}</span>
-            <span>Tanggal {visitForm.visit_date || '-'}</span>
-          </>
-        }
-        actions={
-          <Button type="submit" form="registration-create-form" disabled={submitting} className="rounded-none shadow-none">
-            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Simpan Pendaftaran
-          </Button>
-        }
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Ringkasan Kunjungan">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Tiket: <span className="font-medium text-foreground">{registrationTicket ? String(registrationTicket.ticket_number).padStart(3, '0') : '-'}</span></p>
-                  <p>Pasien: <span className="font-medium text-foreground">{entryMode === 'existing' ? (selectedPatient?.full_name || 'Belum dipilih') : (newPatientForm.full_name || 'Belum diisi')}</span></p>
-                  <p>Jenis kelamin: {entryMode === 'existing' ? getPatientGenderLabel(selectedPatient?.gender) : getPatientGenderLabel(newPatientForm.gender)}</p>
-                  <p>Usia: {entryMode === 'existing' ? getPatientAgeLabel(selectedPatient?.birth_date) : getPatientAgeLabel(newPatientForm.birth_date)}</p>
-                  <p>Pembayaran: {getPatientInsuranceLabel(visitForm.payment_type)}</p>
-                  <p>Prioritas: {visitForm.priority === 'urgent' ? 'Urgent' : 'Normal'}</p>
-                  <p>Poli: {selectedPolyclinic?.name || '-'}</p>
-                  <p>Dokter: {selectedDoctor?.full_name || '-'}</p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-            {isControlRegistration ? (
-              <div>
-                <MasterDataAsideSection title="Konteks Kontrol" helper="Pastikan poli, dokter, dan instruksi kontrol sudah sesuai sebelum pendaftaran disimpan.">
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p>Kunjungan asal: <span className="font-medium text-foreground">{controlVisitNumber || '-'}</span></p>
-                    <p>Jadwal kontrol: <span className="font-medium text-foreground">{controlScheduleLabel}</span></p>
-                    <p>Instruksi: <span className="font-medium text-foreground">{controlInstruction || 'Tidak ada instruksi tambahan.'}</span></p>
-                  </div>
-                </MasterDataAsideSection>
-              </div>
-            ) : null}
-          </MasterDataAsideStack>
-        }
-      >
-        <div className="divide-y divide-border/70">
+    <form id="registration-create-form" onSubmit={handleSubmit} className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
+        <div className="border border-border/70 bg-card shadow-none">
+          {/* Card Header Bar */}
+          <div className="flex flex-col gap-3 p-4 border-b border-border/70 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3 min-w-0">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+                    onClick={() => navigate('/queue')}
+                    aria-label="Kembali ke Antrian"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  <p>Kembali ke Antrian</p>
+                </TooltipContent>
+              </Tooltip>
 
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center border border-border/70 bg-muted/20">
+                <ClipboardEdit className="h-4 w-4 text-primary" />
+              </div>
+
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-sm sm:text-base font-bold tracking-tight text-foreground truncate">
+                    Form Pendaftaran Pasien
+                  </h1>
+                  {registrationTicket ? (
+                    <Badge variant="outline" className="rounded-none font-mono text-xs shadow-none">
+                      Tiket #{String(registrationTicket.ticket_number).padStart(3, '0')}
+                    </Badge>
+                  ) : null}
+                  {isControlRegistration ? (
+                    <Badge className="rounded-none border-0 bg-amber-500 text-white text-[10px] uppercase shadow-none">
+                      Pasien Kontrol
+                    </Badge>
+                  ) : null}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                  {entryMode === 'existing'
+                    ? 'Pendaftaran kunjungan poli untuk pasien yang sudah terdaftar.'
+                    : 'Pendaftaran pasien baru dan langsung masukkan antrian kunjungan.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {!isControlRegistration && (
+                <div className="flex items-center gap-1 border border-border/70 bg-muted/40 p-0.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={entryMode === 'existing' ? 'default' : 'ghost'}
+                    className="h-7 rounded-none px-3 text-xs shadow-none"
+                    onClick={() => {
+                      setEntryMode('existing');
+                      setSearchParams((prev) => {
+                        const next = new URLSearchParams(prev);
+                        next.set('mode', 'existing');
+                        return next;
+                      });
+                    }}
+                  >
+                    <Users className="mr-1.5 h-3.5 w-3.5" />
+                    Pasien Lama
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={entryMode === 'new' ? 'default' : 'ghost'}
+                    className="h-7 rounded-none px-3 text-xs shadow-none"
+                    onClick={() => {
+                      setEntryMode('new');
+                      setSearchParams((prev) => {
+                        const next = new URLSearchParams(prev);
+                        next.set('mode', 'new');
+                        return next;
+                      });
+                    }}
+                  >
+                    <UserPlus className="mr-1.5 h-3.5 w-3.5" />
+                    Pasien Baru
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Banner Registrasi Kontrol */}
           {isControlRegistration ? (
-            <section className="px-4 py-4 lg:px-5 lg:py-5">
-              <div className="border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
-                <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                  <div className="space-y-1">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">Registrasi Kontrol</p>
-                    <h2 className="text-sm font-semibold tracking-tight text-amber-950">Pasien datang sesuai jadwal kontrol yang sudah dibuat dari kunjungan sebelumnya.</h2>
-                    <p className="text-xs leading-5 text-amber-800">Form sudah menyiapkan pasien lama, poli, dokter, penjamin, prioritas, dan keluhan awal. Petugas cukup cek ulang lalu simpan pendaftaran.</p>
-                  </div>
-                  <div className="grid gap-2 text-xs text-amber-900 sm:grid-cols-2 xl:min-w-[360px]">
-                    <div className="border border-amber-200/80 bg-white/55 px-3 py-2">
-                      <p className="font-semibold uppercase tracking-[0.14em] text-amber-700">Kunjungan Asal</p>
-                      <p className="mt-1 text-sm font-medium text-amber-950">{controlVisitNumber || '-'}</p>
-                    </div>
-                    <div className="border border-amber-200/80 bg-white/55 px-3 py-2">
-                      <p className="font-semibold uppercase tracking-[0.14em] text-amber-700">Jadwal Kontrol</p>
-                      <p className="mt-1 text-sm font-medium text-amber-950">{controlScheduleLabel}</p>
-                    </div>
-                  </div>
+            <div className="border-b border-amber-300 bg-amber-50/70 p-3 sm:px-5 text-xs text-amber-900">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Registrasi Kontrol</p>
+                  <p className="font-semibold text-amber-950">Pasien datang sesuai jadwal kontrol.</p>
+                </div>
+                <div className="flex flex-wrap gap-3 text-xs">
+                  <span>Kunjungan Asal: <strong>{controlVisitNumber || '-'}</strong></span>
+                  <span>Jadwal: <strong>{controlScheduleLabel}</strong></span>
+                  {controlInstruction ? <span>Instruksi: <strong>{controlInstruction}</strong></span> : null}
                 </div>
               </div>
-            </section>
+            </div>
           ) : null}
 
-          {entryMode === 'existing' ? (
-            <section className="px-4 py-4 lg:px-5 lg:py-5">
-              <div className="space-y-1">
-                <h2 className="text-sm font-semibold tracking-tight">Pilih Pasien Lama</h2>
-                <p className="text-[11px] leading-5 text-muted-foreground">Cari pasien berdasarkan nama atau nomor rekam medis. Jika pasien belum ada, pindahkan ke mode pasien baru.</p>
+          {/* Card Section 1: Data Pasien */}
+          <div className="border-b border-border/70 p-4 sm:p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-border/60 pb-2.5">
+              <div className="flex items-center gap-2">
+                <div className="h-3.5 w-1 shrink-0 bg-primary/70" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  {entryMode === 'existing' ? '1. Identitas Pasien Terdaftar' : '1. Formulir Pasien Baru'}
+                </span>
               </div>
-              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_220px] xl:items-end">
-                <div className="space-y-1.5">
-                  <Label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Cari Pasien</Label>
+              {entryMode === 'existing' && selectedPatient ? (
+                <Badge variant="outline" className="rounded-none text-[11px] font-mono">
+                  RM: {selectedPatient.medical_record_number}
+                </Badge>
+              ) : null}
+            </div>
+
+            {entryMode === 'existing' ? (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Pilih / Cari Pasien (No. RM atau Nama) *</Label>
                   <SearchableSelect
                     options={patientOptions}
                     value={visitForm.patient_id}
                     onValueChange={(value) => setVisitField('patient_id', value)}
-                    placeholder="Cari pasien berdasarkan No. RM atau nama..."
+                    placeholder="Ketik No. RM atau nama pasien..."
                     searchPlaceholder="Cari pasien..."
                     emptyText="Pasien tidak ditemukan."
                     square
+                    className="h-9 text-xs rounded-none"
                   />
                 </div>
-                {isControlRegistration ? (
-                  <div className="border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
-                    Pendaftaran ini ditandai sebagai pasien kontrol, jadi form tetap diarahkan ke pasien lama yang sudah terdaftar.
+
+                {selectedPatient ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 border border-border/70 bg-muted/15 p-3 text-xs">
+                      <div>
+                        <p className="font-bold text-foreground text-sm">{selectedPatient.full_name}</p>
+                        <p className="font-mono text-muted-foreground">{selectedPatient.medical_record_number}</p>
+                        <p className="text-muted-foreground mt-0.5">
+                          {getPatientGenderLabel(selectedPatient.gender)} · {getPatientAgeLabel(selectedPatient.birth_date)}
+                        </p>
+                      </div>
+                      <div className="space-y-0.5 text-muted-foreground">
+                        <p>NIK: <span className="font-mono text-foreground">{selectedPatient.nik || '-'}</span></p>
+                        <p>Telepon: <span className="text-foreground">{selectedPatient.phone || '-'}</span></p>
+                        <p>
+                          Penjamin:{' '}
+                          <span className="text-foreground">
+                            {getPatientInsuranceLabel(selectedPatient.insurance_type)}{' '}
+                            {selectedPatient.insurance_number ? `(${selectedPatient.insurance_number})` : ''}
+                          </span>
+                        </p>
+                      </div>
+                      <div className="text-muted-foreground">
+                        <p>Alamat:</p>
+                        <p className="text-foreground mt-0.5">{selectedPatient.address || '-'}</p>
+                      </div>
+                    </div>
+
+                    {activeVisitAlert ? (
+                      <div className="border border-destructive/50 bg-destructive/10 p-3 text-xs text-destructive space-y-1.5">
+                        <div className="flex items-center gap-1.5 font-bold">
+                          <AlertTriangle className="h-4 w-4 shrink-0" />
+                          <span>Pasien Masih Memiliki Kunjungan / Pendaftaran Aktif!</span>
+                        </div>
+                        <p className="leading-relaxed">
+                          Pasien ini masih terdaftar pada kunjungan <span className="font-mono font-bold">{activeVisitAlert.visit_number}</span> di <span className="font-semibold">{activeVisitAlert.polyclinic?.name || 'Poliklinik'}</span> ({activeVisitAlert.doctor?.full_name || 'Dokter'}) yang belum selesai sampai transaksi billing. Pasien tidak dapat didaftarkan kembali sebelum pelayanan dan pembayaran billing diselesaikan.
+                        </p>
+                        <div className="flex items-center gap-2 pt-0.5">
+                          <Link
+                            to={`/registration/${activeVisitAlert.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 font-semibold underline hover:opacity-80"
+                          >
+                            Lihat Detail Pendaftaran <ExternalLink className="h-3 w-3" />
+                          </Link>
+                          <span>·</span>
+                          <Link
+                            to={`/emr/${activeVisitAlert.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 font-semibold underline hover:opacity-80"
+                          >
+                            Buka EMR <ExternalLink className="h-3 w-3" />
+                          </Link>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
-                ) : (
-                  <Button type="button" variant="outline" className="rounded-none shadow-none" onClick={() => setEntryMode('new')}>
-                    <UserPlus className="mr-2 h-4 w-4" />
-                    Pindah Ke Pasien Baru
-                  </Button>
-                )}
+                ) : null}
               </div>
+            ) : (
+              <div className="space-y-4">
+                <PatientFormSections
+                  formData={newPatientForm}
+                  setField={setPatientField}
+                  onInputChange={handlePatientInput}
+                  onTextareaChange={handlePatientTextarea}
+                />
+              </div>
+            )}
+          </div>
 
-              {selectedPatient ? (
-                <div className="mt-4 grid gap-4 xl:grid-cols-2">
-                  <div className="border border-border/70 bg-muted/20 px-4 py-4 text-sm">
-                    <p className="font-semibold text-foreground">{selectedPatient.full_name}</p>
-                    <p className="mt-1 font-mono text-xs text-muted-foreground">{selectedPatient.medical_record_number}</p>
-                    <p className="mt-2 text-muted-foreground">{getPatientGenderLabel(selectedPatient.gender)} · {getPatientAgeLabel(selectedPatient.birth_date)}</p>
-                  </div>
-                  <div className="border border-border/70 bg-muted/20 px-4 py-4 text-sm text-muted-foreground">
-                    <p>Telepon: {selectedPatient.phone || '-'}</p>
-                    <p className="mt-1">Alamat: {selectedPatient.address || '-'}</p>
-                    <p className="mt-1">Penjamin: {getPatientInsuranceLabel(selectedPatient.insurance_type)}</p>
-                    <p className="mt-1">No. Penjamin: {selectedPatient.insurance_number || '-'}</p>
-                  </div>
-                </div>
-              ) : null}
-            </section>
-          ) : (
-            <div>
-              <PatientFormSections
-                formData={newPatientForm}
-                setField={setPatientField}
-                onInputChange={handlePatientInput}
-                onTextareaChange={handlePatientTextarea}
-              />
+          {/* Card Section 2: Tujuan Kunjungan Hari Ini */}
+          <div className="p-4 sm:p-5 space-y-4">
+            <div className="flex items-center gap-2 border-b border-border/60 pb-2.5">
+              <div className="h-3.5 w-1 shrink-0 bg-primary/70" />
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                2. Tujuan Kunjungan Hari Ini
+              </span>
             </div>
-          )}
 
-          <section className="px-4 py-4 lg:px-5 lg:py-5">
-            <div className="space-y-1">
-              <h2 className="text-sm font-semibold tracking-tight">Tujuan Kunjungan Hari Ini</h2>
-              <p className="text-[11px] leading-5 text-muted-foreground">Lengkapi poliklinik, dokter, penjamin, tanggal, dan prioritas. Dokter wajib dipilih agar kunjungan dapat dibuat.</p>
-            </div>
-            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              <div className="space-y-1.5">
-                <Label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Poliklinik</Label>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">Poliklinik *</Label>
                 <SearchableSelect
                   options={polyclinicOptions}
                   value={visitForm.polyclinic_id}
@@ -512,10 +640,12 @@ export default function RegistrationCreate() {
                   placeholder="Pilih poliklinik..."
                   searchPlaceholder="Cari poli..."
                   square
+                  className="h-9 text-xs rounded-none"
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Dokter</Label>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">Dokter *</Label>
                 <SearchableSelect
                   options={doctorOptions}
                   value={visitForm.doctor_id}
@@ -523,83 +653,103 @@ export default function RegistrationCreate() {
                   placeholder="Pilih dokter..."
                   searchPlaceholder="Cari dokter..."
                   square
+                  className="h-9 text-xs rounded-none"
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="visit_date" className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Tanggal Kunjungan</Label>
+
+              <div className="space-y-1">
+                <Label htmlFor="visit_date" className="text-xs font-medium">Tanggal Kunjungan *</Label>
                 <div className="relative">
-                  <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <CalendarDays className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     id="visit_date"
                     type="date"
                     value={visitForm.visit_date}
                     onChange={(event) => setVisitField('visit_date', event.target.value)}
-                    className="rounded-none pl-10"
+                    className="h-9 text-xs rounded-none pl-8"
                   />
                 </div>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Pembayaran</Label>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">Pembayaran *</Label>
                 <SearchableSelect
                   options={PAYMENT_OPTIONS}
                   value={visitForm.payment_type}
                   onValueChange={(value) => setVisitField('payment_type', value)}
                   placeholder="Pilih pembayaran..."
                   square
+                  className="h-9 text-xs rounded-none"
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Prioritas</Label>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">Prioritas *</Label>
                 <SearchableSelect
                   options={PRIORITY_OPTIONS}
                   value={visitForm.priority}
                   onValueChange={(value) => setVisitField('priority', value)}
                   placeholder="Pilih prioritas..."
                   square
+                  className="h-9 text-xs rounded-none"
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Tipe Kunjungan</Label>
-                <div className="flex h-10 items-center border border-border/70 bg-muted/10 px-3 text-sm text-muted-foreground">
-                  {entryMode === 'new' ? 'Pasien Baru' : 'Pasien Lama'}
-                </div>
-              </div>
+
               {visitForm.payment_type !== 'umum' ? (
-                <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
-                  <Label htmlFor="insurance_number" className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Nomor Penjamin</Label>
+                <div className="space-y-1">
+                  <Label htmlFor="insurance_number" className="text-xs font-medium">Nomor Kartu Penjamin *</Label>
                   <Input
                     id="insurance_number"
                     value={visitForm.insurance_number}
                     onChange={(event) => setVisitField('insurance_number', event.target.value)}
-                    placeholder="Masukkan nomor BPJS atau asuransi"
-                    className="rounded-none"
+                    placeholder="Masukkan nomor kartu"
+                    className="h-9 text-xs rounded-none font-mono"
                   />
                 </div>
               ) : null}
             </div>
-          </section>
 
-          <section className="px-4 py-4 lg:px-5 lg:py-5">
-            <div className="space-y-1">
-              <h2 className="text-sm font-semibold tracking-tight">Keluhan Dan Catatan Awal</h2>
-              <p className="text-[11px] leading-5 text-muted-foreground">Tuliskan ringkasan keluhan pasien untuk membantu triase awal dan memudahkan petugas poli saat memanggil antrian.</p>
+            <div className="space-y-1 pt-1">
+              <Label htmlFor="complaint" className="text-xs font-medium">Keluhan Utama</Label>
+              <Textarea
+                id="complaint"
+                value={visitForm.complaint}
+                onChange={(event) => setVisitField('complaint', event.target.value)}
+                placeholder="Keluhan utama yang disampaikan pasien..."
+                rows={2}
+                className="text-xs rounded-none min-h-[50px]"
+              />
             </div>
-            <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-              <div className="space-y-1.5">
-                <Label htmlFor="complaint" className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Keluhan Utama</Label>
-                <Textarea
-                  id="complaint"
-                  value={visitForm.complaint}
-                  onChange={(event) => setVisitField('complaint', event.target.value)}
-                  placeholder="Keluhan yang disampaikan pasien..."
-                  rows={6}
-                  className="rounded-none"
-                />
-              </div>
-            </div>
-          </section>
+          </div>
         </div>
-      </MasterDataPageShell>
+      </div>
+
+      {/* Sticky Bottom Actions */}
+      <div className="shrink-0 border-t border-border/70 bg-card/95 px-4 py-3 sm:px-6 backdrop-blur z-20 shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
+        <div className="flex items-center justify-between gap-2.5">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 rounded-none px-3 text-xs shadow-none shrink-0"
+            onClick={() => navigate('/queue')}
+          >
+            <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+            Kembali ke Antrian
+          </Button>
+
+          <Button
+            type="submit"
+            disabled={submitting || checkingActiveVisit || Boolean(activeVisitAlert)}
+            size="sm"
+            className="h-8 rounded-none px-4 text-xs shadow-none"
+            title={activeVisitAlert ? 'Pasien masih memiliki kunjungan aktif yang belum selesai sampai billing' : undefined}
+          >
+            {submitting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+            Simpan Pendaftaran
+          </Button>
+        </div>
+      </div>
     </form>
   );
 }

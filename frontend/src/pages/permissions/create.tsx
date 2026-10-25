@@ -8,8 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { permissionsApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Key, FileText, Package, Tag } from "lucide-react";
-import { MasterDataAsideSection, MasterDataAsideStack, MasterDataLegacySections, MasterDataPageShell } from '@/pages/master-data/shared';
+import { Loader2 } from "lucide-react";
+import { MasterDataPageShell } from '@/pages/master-data/shared';
 
 export default function PermissionCreate() {
   const navigate = useNavigate();
@@ -20,7 +20,7 @@ export default function PermissionCreate() {
     module: "",
     category: "",
     description: "",
-    action: "", // Single action instead of array
+    action: "",
   });
 
   const actionOptions = [
@@ -31,7 +31,6 @@ export default function PermissionCreate() {
     { id: 'assign', label: 'Assign', description: 'Memberikan permission' },
   ];
 
-  // Generate permission name automatically based on module and action
   const generatePermissionName = (module: string, action: string) => {
     if (!module || !action) return "";
     
@@ -48,7 +47,6 @@ export default function PermissionCreate() {
     return `${moduleKey}.${action}`;
   };
 
-  // Auto-generate permission name when module or action change
   useEffect(() => {
     if (formData.module && formData.action) {
       const generatedName = generatePermissionName(formData.module, formData.action);
@@ -67,9 +65,9 @@ export default function PermissionCreate() {
     try {
       const submitData = {
         ...formData,
-        actions: JSON.stringify([formData.action]) // Convert single action to array for backend
+        actions: JSON.stringify([formData.action])
       };
-      delete (submitData as any).action; // Remove action field, use actions instead
+      delete (submitData as any).action;
       
       await permissionsApi.create(submitData);
       toast({
@@ -77,13 +75,12 @@ export default function PermissionCreate() {
         title: "Success!",
         description: "Permission created successfully.",
       });
-      setTimeout(() => navigate("/permissions"), 500);
+      setTimeout(() => navigate("/permissions"), 400);
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Error!",
-        description:
-          error.response?.data?.error || "Failed to create permission.",
+        description: error.response?.data?.error || "Failed to create permission.",
       });
     } finally {
       setLoading(false);
@@ -91,90 +88,92 @@ export default function PermissionCreate() {
   };
 
   return (
-    <form id="permission-create-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <form id="permission-create-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <MasterDataPageShell
         title="Create Permission"
-        subtitle="Define a permission code, module, and action so it can be reused in role management."
+        subtitle="Definisikan kode permission, module, dan action."
         onBack={() => navigate('/permissions')}
-        actions={<Button type="submit" form="permission-create-form" disabled={loading} className="rounded-none shadow-none">{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Permission</Button>}
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Permission Preview" helper="Nama permission akan mengikuti pola module.action saat modul dan action dipilih.">
-                <div className="space-y-1 text-sm">
-                  <p className="font-medium">{formData.name || 'Nama permission belum diisi'}</p>
-                  <p className="text-muted-foreground">Module: {formData.module || '-'}</p>
-                  <p className="text-muted-foreground">Category: {formData.category || '-'}</p>
-                  <p className="text-muted-foreground">Action: {formData.action || '-'}</p>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-            <div>
-              <MasterDataAsideSection title="Deskripsi" helper="Gunakan deskripsi yang jelas agar role editor mudah memahami tujuan permission ini.">
-                <p className="text-sm text-muted-foreground line-clamp-5">{formData.description || 'Deskripsi permission belum diisi.'}</p>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
+        actions={
+          <Button type="submit" form="permission-create-form" disabled={loading} size="sm" className="h-8 px-4 text-xs rounded-none shadow-none">
+            {loading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            Simpan Permission
+          </Button>
         }
       >
-        <MasterDataLegacySections>
-          <div className="space-y-6">
-            <section className="space-y-5 rounded-lg border border-border/80 p-5">
-              <div className="space-y-2">
-                <Label htmlFor="name" className="text-sm font-medium flex items-center gap-2">
-                  <Key className="h-4 w-4 text-muted-foreground" />
-                  Nama Permission
-                </Label>
-                <Input id="name" required placeholder="e.g., users.create" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="h-10" />
+        <div className="space-y-4">
+          <div className="space-y-2.5">
+            <div className="border-b border-border/60 pb-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Detail Permission</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="module" className="text-xs font-medium">Module *</Label>
+                <Input
+                  id="module"
+                  required
+                  placeholder="Contoh: users"
+                  value={formData.module}
+                  onChange={(e) => setFormData({ ...formData, module: e.target.value })}
+                  className="h-9 text-xs rounded-none"
+                />
               </div>
 
-              <div className="grid gap-5 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="module" className="text-sm font-medium flex items-center gap-2">
-                    <Package className="h-4 w-4 text-muted-foreground" />
-                    Module
-                  </Label>
-                  <Input id="module" required placeholder="e.g., users" value={formData.module} onChange={(e) => setFormData({ ...formData, module: e.target.value })} className="h-10" />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="category" className="text-sm font-medium flex items-center gap-2">
-                    <Tag className="h-4 w-4 text-muted-foreground" />
-                    Category
-                  </Label>
-                  <Input id="category" required placeholder="e.g., management" value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} className="h-10" />
-                </div>
+              <div className="space-y-1">
+                <Label htmlFor="category" className="text-xs font-medium">Category *</Label>
+                <Input
+                  id="category"
+                  required
+                  placeholder="Contoh: management"
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  className="h-9 text-xs rounded-none"
+                />
               </div>
 
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Action</Label>
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">Action *</Label>
                 <Select value={formData.action} onValueChange={(value) => setFormData({ ...formData, action: value })}>
-                  <SelectTrigger className="h-10">
+                  <SelectTrigger className="h-9 text-xs rounded-none">
                     <SelectValue placeholder="Pilih action" />
                   </SelectTrigger>
                   <SelectContent>
                     {actionOptions.map((action) => (
                       <SelectItem key={action.id} value={action.id}>
                         <div className="flex flex-col text-left">
-                          <span className="font-medium">{action.label}</span>
-                          <span className="text-xs text-muted-foreground">{action.description}</span>
+                          <span className="font-medium text-xs">{action.label}</span>
+                          <span className="text-[10px] text-muted-foreground">{action.description}</span>
                         </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-            </section>
 
-            <section className="space-y-2 rounded-lg border border-border/80 p-5">
-              <Label htmlFor="description" className="text-sm font-medium flex items-center gap-2">
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                Deskripsi
-              </Label>
-              <Textarea id="description" placeholder="Deskripsi permission..." value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="min-h-[110px]" />
-            </section>
+              <div className="space-y-1">
+                <Label htmlFor="name" className="text-xs font-medium">Nama Permission *</Label>
+                <Input
+                  id="name"
+                  required
+                  placeholder="Contoh: users.create"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="h-9 text-xs rounded-none font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1 pt-1">
+              <Label htmlFor="description" className="text-xs font-medium">Deskripsi</Label>
+              <Textarea
+                id="description"
+                placeholder="Deskripsi fungsi permission ini..."
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className="min-h-[70px] text-xs rounded-none"
+              />
+            </div>
           </div>
-        </MasterDataLegacySections>
+        </div>
       </MasterDataPageShell>
     </form>
   );

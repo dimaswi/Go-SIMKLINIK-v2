@@ -212,9 +212,6 @@ export default function EmployeesPage() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 Data Pegawai
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Kelola master pegawai klinik, profesi, dan akun sistem ({filteredEmployees.length} pegawai)
-              </p>
             </div>
           </div>
 

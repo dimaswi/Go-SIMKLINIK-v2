@@ -2,7 +2,6 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Eye, Edit, Trash2, ArrowUpDown } from "lucide-react"
-import { createSelectColumn } from "@/components/ui/data-table"
 
 interface Role {
   id: number;
@@ -35,7 +34,6 @@ export function createRoleColumns({
   hasDeletePermission,
 }: RoleColumnsProps): ColumnDef<Role>[] {
   return [
-    createSelectColumn<Role>(),
     {
       accessorKey: "name",
       header: ({ column }) => {

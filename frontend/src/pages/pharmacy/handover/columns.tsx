@@ -5,7 +5,7 @@ import type { MedicalRecord } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { getPrescriptionWorkflowLabel } from '@/pages/emr/constants';
 import { buildOrderLines, formatCurrency, formatDateTime, WORKFLOW_BADGE_CLASSNAME } from '../utils';
-import { Loader2, ShoppingBag } from 'lucide-react';
+import { Eye, Loader2, ShoppingBag } from 'lucide-react';
 
 type CreateColumnsOptions = {
   canProcess: boolean;
@@ -70,20 +70,37 @@ export function createColumns({ canProcess, processingRecordId, onOpenDetail, on
     },
     {
       id: 'actions',
-      header: 'Aksi',
+      header: () => <div className="text-right pr-2">Aksi</div>,
       cell: ({ row }) => (
-        <div className="flex items-center justify-end gap-2">
-          <Button type="button" variant="outline" size="sm" className="rounded-none" onClick={() => onOpenDetail(row.original)}>
-            Detail
+        <div className="flex items-center justify-end gap-1">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+            onClick={() => onOpenDetail(row.original)}
+            title="Detail Resep"
+          >
+            <Eye className="h-4 w-4" />
           </Button>
           {canProcess && (
-            <Button type="button" size="sm" className="rounded-none" onClick={() => onHandover(row.original)} disabled={processingRecordId === row.original.id}>
-              {processingRecordId === row.original.id ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <ShoppingBag className="mr-1 h-4 w-4" />}
-              {processingRecordId === row.original.id ? 'Menyerahkan...' : 'Serahkan Resep'}
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+              onClick={() => onHandover(row.original)}
+              disabled={processingRecordId === row.original.id}
+              title="Serahkan Resep ke Pasien"
+            >
+              {processingRecordId === row.original.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShoppingBag className="h-4 w-4" />}
             </Button>
           )}
         </div>
       ),
+      meta: {
+        headerClassName: 'text-right pr-4 whitespace-nowrap',
+        cellClassName: 'text-right pr-4 whitespace-nowrap',
+      },
     },
   ];
 }

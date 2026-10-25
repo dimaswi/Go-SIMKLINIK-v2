@@ -1061,7 +1061,7 @@ export default function EMRSheetPage() {
           prefetchedMonitorMessage={latestAutoSyncMessage}
           statusNote={<span className="font-medium text-muted-foreground">{sheetStatus.label}</span>}
           actions={!workspaceLocked ? (
-            <Button className="gap-1.5 rounded-none shadow-none" onClick={() => setFinalizeOpen(true)} title='Final Kunjungan'>
+            <Button className="h-8 w-8 p-0 rounded-none shadow-none shrink-0" onClick={() => setFinalizeOpen(true)} title='Final Kunjungan'>
               <Lock className="h-4 w-4" />
             </Button>
           ) : visit.status === 'completed' ? (
@@ -1075,7 +1075,7 @@ export default function EMRSheetPage() {
               printingMedicalResume={printingResumeMedical}
               onCancelFinalization={cancelFinalization}
               cancelingFinalization={cancelingFinalization}
-              buttonClassName="rounded-none shadow-none"
+              buttonClassName="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
             />
           ) : undefined}
         />
@@ -1117,7 +1117,7 @@ export default function EMRSheetPage() {
           <span className="text-muted-foreground">{sheetStatus.label}</span>
         )}
         actions={!workspaceLocked ? (
-          <Button className="gap-1.5 rounded-none shadow-none" onClick={() => setFinalizeOpen(true)} title='Final Kunjungan'>
+          <Button className="h-8 w-8 p-0 rounded-none shadow-none shrink-0" onClick={() => setFinalizeOpen(true)} title='Final Kunjungan'>
             <Lock className="h-4 w-4" />
           </Button>
         ) : visit.status === 'completed' ? (
@@ -1131,7 +1131,7 @@ export default function EMRSheetPage() {
             printingMedicalResume={printingResumeMedical}
             onCancelFinalization={cancelFinalization}
             cancelingFinalization={cancelingFinalization}
-            buttonClassName="rounded-none shadow-none"
+            buttonClassName="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
           />
         ) : undefined}
       />
@@ -1141,7 +1141,9 @@ export default function EMRSheetPage() {
           <aside className="border-b border-border/70 bg-background xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden xl:border-b-0 xl:border-r xl:border-r-border/70">
             <div className="border-b border-border/70 px-3 py-3">
               <h2 className="text-sm font-semibold">{activeSheetConfig.label}</h2>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">{activeSheetConfig.helper}</p>
+              {activeSheetConfig.helper && (
+                <p className="mt-0.5 text-[11px] text-muted-foreground">{activeSheetConfig.helper}</p>
+              )}
 
               {activeSheetConfig.kind === 'section-editor' && (
                 <div className="mt-3 space-y-1.5">
@@ -1168,12 +1170,6 @@ export default function EMRSheetPage() {
                     );
                   })}
                 </div>
-              )}
-
-              {activeSheetConfig.kind === 'section-editor' && (
-                <p className="mt-3 text-[10px] leading-4 text-muted-foreground">
-                  Panel kanan menampilkan semua bagian sekaligus. Pilih bagian di kiri untuk mengatur entri aktif yang ingin diedit.
-                </p>
               )}
 
               {!workspaceLocked && editableSection && (
@@ -1328,11 +1324,9 @@ export default function EMRSheetPage() {
                                 <SectionStatusBadge label={sectionStatus.label} tone={sectionStatus.tone} />
                               </div>
                               <p className="mt-0.5 text-[11px] text-muted-foreground">
-                                {isActiveSection
-                                  ? `${sectionRecords.length} entri. Sedang mengedit bagian ini dari panel kiri.`
-                                  : sectionRecord
-                                    ? `${sectionRecords.length} entri. Menampilkan entri terbaru pada bagian ini.`
-                                    : 'Belum ada entri pada bagian ini.'}
+                                {sectionRecords.length > 0
+                                  ? `${sectionRecords.length} entri tercatat`
+                                  : 'Belum ada entri'}
                               </p>
                             </div>
 

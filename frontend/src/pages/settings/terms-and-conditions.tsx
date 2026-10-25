@@ -223,7 +223,7 @@ export default function TermsAndConditionsPage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <MasterDataPageShell
         title={DOCUMENT_TITLE}
         subtitle="Dokumen ketentuan penggunaan internal yang disusun dalam format legal formal untuk akses aplikasi, pencatatan data, keamanan sistem, dan integrasi operasional klinik."

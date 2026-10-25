@@ -910,7 +910,7 @@ export default function IntegrationSettingsPage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <MasterDataPageShell
         title="Integrasi"
         subtitle="Kelola provider integrasi dengan pola katalog di aside dan detail konfigurasi di area konten utama."

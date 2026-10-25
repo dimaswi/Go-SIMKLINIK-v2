@@ -85,9 +85,6 @@ export default function PurchasingIndex() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 Pembelian (PO)
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Kelola pengadaan obat & alkes ke supplier ({filteredData.length} PO)
-              </p>
             </div>
           </div>
 

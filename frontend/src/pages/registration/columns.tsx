@@ -1,7 +1,7 @@
 import type { ColumnDef } from '@tanstack/react-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowUpRight, Ban, UserPlus, Users } from 'lucide-react';
+import { ArrowUpRight, Ban, FileText, UserPlus, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { RegistrationQueueItem } from '@/lib/api';
 
@@ -42,11 +42,17 @@ function ActionsCell({
 
   if (item.status === 'waiting') {
     return (
-      <div className="flex items-center justify-end gap-2">
-        <span className="text-xs text-muted-foreground">Panggil di halaman antrian</span>
-        <Button type="button" variant="outline" size="sm" className="rounded-none text-destructive shadow-none hover:text-destructive" onClick={() => onCancel(item)}>
-          <Ban className="mr-1.5 h-3.5 w-3.5" />
-          Batal
+      <div className="flex items-center justify-end gap-1">
+        <span className="text-[11px] text-muted-foreground">Panggil di antrian</span>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 w-7 p-0 rounded-none text-destructive shadow-none hover:text-destructive shrink-0"
+          onClick={() => onCancel(item)}
+          title="Batalkan Tiket Antrian"
+        >
+          <Ban className="h-3.5 w-3.5" />
         </Button>
       </div>
     );
@@ -54,14 +60,25 @@ function ActionsCell({
 
   if (item.status === 'called' || item.status === 'processing') {
     return (
-      <div className="flex flex-nowrap items-center justify-end gap-2 whitespace-nowrap">
-        <Button type="button" variant="outline" size="sm" className="h-8 rounded-none px-3 shadow-none" onClick={() => onProcess(item, 'existing')}>
-          <Users className="mr-1.5 h-3.5 w-3.5" />
-          Pasien Lama
+      <div className="flex flex-nowrap items-center justify-end gap-1 whitespace-nowrap">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 w-7 p-0 rounded-none shadow-none shrink-0"
+          onClick={() => onProcess(item, 'existing')}
+          title="Daftarkan Pasien Lama"
+        >
+          <Users className="h-3.5 w-3.5" />
         </Button>
-        <Button type="button" size="sm" className="h-8 rounded-none px-3 shadow-none" onClick={() => onProcess(item, 'new')}>
-          <UserPlus className="mr-1.5 h-3.5 w-3.5" />
-          Pasien Baru
+        <Button
+          type="button"
+          size="sm"
+          className="h-7 w-7 p-0 rounded-none shadow-none shrink-0"
+          onClick={() => onProcess(item, 'new')}
+          title="Daftarkan Pasien Baru"
+        >
+          <UserPlus className="h-3.5 w-3.5" />
         </Button>
       </div>
     );
@@ -69,10 +86,26 @@ function ActionsCell({
 
   if (item.status === 'completed' && item.visit_id) {
     return (
-      <div className="flex items-center justify-end gap-2">
-        <Button type="button" variant="outline" size="sm" className="rounded-none shadow-none" onClick={() => navigate(`/emr/${item.visit_id}`)}>
-          <ArrowUpRight className="mr-1.5 h-3.5 w-3.5" />
-          Buka EMR
+      <div className="flex items-center justify-end gap-1">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 w-7 p-0 rounded-none shadow-none shrink-0"
+          onClick={() => navigate(`/registration/${item.visit_id}`)}
+          title="Buka Detail Pendaftaran"
+        >
+          <FileText className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 w-7 p-0 rounded-none shadow-none shrink-0"
+          onClick={() => navigate(`/emr/${item.visit_id}`)}
+          title="Buka EMR Kunjungan"
+        >
+          <ArrowUpRight className="h-3.5 w-3.5" />
         </Button>
       </div>
     );
@@ -92,29 +125,46 @@ export function createColumns({
     {
       header: 'Tiket',
       id: 'ticket_number',
+      meta: {
+        headerClassName: 'py-2 px-3 text-xs font-semibold',
+        cellClassName: 'py-2 px-3 align-middle',
+      },
       cell: ({ row }) => (
-        <div className="min-w-[92px] space-y-1">
-          <p className="text-2xl font-black leading-none text-foreground">
+        <div className="min-w-[80px] flex items-baseline gap-1.5">
+          <span className="font-mono text-base font-black text-foreground leading-none">
             {String(row.original.ticket_number).padStart(3, '0')}
-          </p>
-          <p className="text-xs text-muted-foreground">Diambil {formatTime(row.original.created_at)}</p>
+          </span>
+          <span className="text-[10px] text-muted-foreground font-mono leading-none">
+            {formatTime(row.original.created_at)}
+          </span>
         </div>
       ),
     },
     {
       header: 'Status',
       id: 'status',
+      meta: {
+        headerClassName: 'py-2 px-3 text-xs font-semibold',
+        cellClassName: 'py-2 px-3 align-middle',
+      },
       cell: ({ row }) => {
         const status = STATUS_MAP[row.original.status];
+        const times: string[] = [];
+        if (row.original.called_at) times.push(`Panggil ${formatTime(row.original.called_at)}`);
+        if (row.original.processing_started_at) times.push(`Proses ${formatTime(row.original.processing_started_at)}`);
+
         return (
-          <div className="min-w-[120px] space-y-2">
-            <Badge variant="outline" className={`rounded-none text-xs shadow-none ${status?.className || ''}`}>
-              {status?.label || row.original.status}
-            </Badge>
-            <div className="space-y-1 text-xs text-muted-foreground">
-              <p>Dipanggil: {formatTime(row.original.called_at)}</p>
-              <p>Diproses: {formatTime(row.original.processing_started_at)}</p>
+          <div className="min-w-[120px] flex flex-col gap-0.5">
+            <div>
+              <Badge variant="outline" className={`rounded-none text-[10px] px-1.5 py-0 font-medium shadow-none ${status?.className || ''}`}>
+                {status?.label || row.original.status}
+              </Badge>
             </div>
+            {times.length > 0 ? (
+              <p className="text-[10px] text-muted-foreground font-mono leading-tight">
+                {times.join(' · ')}
+              </p>
+            ) : null}
           </div>
         );
       },
@@ -122,13 +172,29 @@ export function createColumns({
     {
       header: 'Hasil Pendaftaran',
       id: 'registration_result',
+      meta: {
+        headerClassName: 'py-2 px-3 text-xs font-semibold',
+        cellClassName: 'py-2 px-3 align-middle',
+      },
       cell: ({ row }) => {
         const visit = row.original.visit;
         return (
-          <div className="min-w-[160px] space-y-1">
-            <p className="truncate text-sm font-medium text-foreground" title={visit?.patient?.full_name || 'Belum diproses'}>{visit?.patient?.full_name || 'Belum diproses'}</p>
-            <p className="font-mono text-xs text-muted-foreground">{visit?.patient?.medical_record_number || '-'}</p>
-            <p className="truncate text-xs text-muted-foreground" title={visit?.visit_number || 'Belum ada nomor kunjungan'}>{visit?.visit_number || 'Belum ada nomor kunjungan'}</p>
+          <div className="min-w-[170px] space-y-0.5">
+            <div className="flex items-center gap-1.5 truncate">
+              <span className="truncate text-xs font-semibold text-foreground" title={visit?.patient?.full_name || 'Belum diproses'}>
+                {visit?.patient?.full_name || 'Belum diproses'}
+              </span>
+              {visit?.patient?.medical_record_number ? (
+                <span className="font-mono text-[10px] text-muted-foreground shrink-0 bg-muted/60 px-1 py-0 border border-border/50">
+                  RM: {visit.patient.medical_record_number}
+                </span>
+              ) : null}
+            </div>
+            {visit?.visit_number ? (
+              <p className="font-mono text-[10px] text-muted-foreground truncate leading-tight" title={visit.visit_number}>
+                {visit.visit_number}
+              </p>
+            ) : null}
           </div>
         );
       },
@@ -136,12 +202,20 @@ export function createColumns({
     {
       header: 'Tujuan Kunjungan',
       id: 'destination',
+      meta: {
+        headerClassName: 'py-2 px-3 text-xs font-semibold',
+        cellClassName: 'py-2 px-3 align-middle',
+      },
       cell: ({ row }) => {
         const visit = row.original.visit;
         return (
-          <div className="min-w-[160px] space-y-1">
-            <p className="truncate text-sm font-medium text-foreground" title={visit?.polyclinic?.name || '-'}>{visit?.polyclinic?.name || '-'}</p>
-            <p className="truncate text-xs text-muted-foreground" title={visit?.doctor?.full_name || 'Dokter belum dipilih'}>{visit?.doctor?.full_name || 'Dokter belum dipilih'}</p>
+          <div className="min-w-[160px] space-y-0.5">
+            <p className="truncate text-xs font-semibold text-foreground leading-tight" title={visit?.polyclinic?.name || '-'}>
+              {visit?.polyclinic?.name || '-'}
+            </p>
+            <p className="truncate text-[10px] text-muted-foreground leading-tight" title={visit?.doctor?.full_name || 'Dokter belum dipilih'}>
+              {visit?.doctor?.full_name || 'Dokter belum dipilih'}
+            </p>
           </div>
         );
       },
@@ -149,6 +223,10 @@ export function createColumns({
     {
       header: '',
       id: 'actions',
+      meta: {
+        headerClassName: 'py-2 px-3 text-xs font-semibold text-right',
+        cellClassName: 'py-2 px-3 align-middle text-right',
+      },
       cell: ({ row }) => <ActionsCell item={row.original} onProcess={onProcess} onCancel={onCancel} />,
     },
   ];

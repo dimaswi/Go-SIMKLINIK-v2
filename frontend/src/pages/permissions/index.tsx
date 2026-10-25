@@ -119,9 +119,6 @@ export default function PermissionsPage() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 Hak Akses (Permissions)
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Pantau granularitas hak akses modul sistem ({filteredPermissions.length} permission)
-              </p>
             </div>
           </div>
 

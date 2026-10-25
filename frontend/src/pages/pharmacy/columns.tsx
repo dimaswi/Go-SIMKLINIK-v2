@@ -14,7 +14,7 @@ import {
   type PharmacyWorkflowAction,
   WORKFLOW_BADGE_CLASSNAME,
 } from './utils';
-import { ExternalLink, Loader2, PackageCheck, PillBottle, ShoppingBag } from 'lucide-react';
+import { ExternalLink, Eye, Loader2, PackageCheck, PillBottle, ShoppingBag } from 'lucide-react';
 
 type CreateColumnsOptions = {
   canOpenEMR: boolean;
@@ -107,7 +107,7 @@ export function createColumns({
     },
     {
       id: 'actions',
-      header: 'Aksi',
+      header: () => <div className="text-right pr-2">Aksi</div>,
       cell: ({ row }) => {
         const record = row.original;
         const nextAction = canProcessPharmacyWorkflow ? getNextPharmacyAction(record.prescription_workflow_status) : null;
@@ -115,24 +115,41 @@ export function createColumns({
 
         return (
           <div className="flex items-center justify-end gap-1">
-            <Button type="button" variant="ghost" size="sm" className="rounded-none" onClick={() => onOpenDetail(record)}>
-              Detail
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+              onClick={() => onOpenDetail(record)}
+              title="Detail Resep"
+            >
+              <Eye className="h-4 w-4" />
             </Button>
             {canOpenEMR && (
-              <Button asChild type="button" variant="ghost" size="sm" className="rounded-none">
+              <Button asChild type="button" variant="outline" size="sm" className="h-8 w-8 p-0 rounded-none shadow-none shrink-0" title="Buka EMR">
                 <Link to={`/emr/${record.visit_id}`}>
-                  <ExternalLink className="mr-1 h-4 w-4" /> EMR
+                  <ExternalLink className="h-4 w-4" />
                 </Link>
               </Button>
             )}
             {nextAction && (
-              <Button type="button" size="sm" className="rounded-none" onClick={() => onRunAction(record, nextAction)} disabled={isProcessing}>
-                {isProcessing ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <WorkflowActionIcon action={nextAction} className="mr-1 h-4 w-4" />}
-                {isProcessing ? PHARMACY_ACTION_META[nextAction].processingLabel : PHARMACY_ACTION_META[nextAction].label}
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+                onClick={() => onRunAction(record, nextAction)}
+                disabled={isProcessing}
+                title={isProcessing ? PHARMACY_ACTION_META[nextAction].processingLabel : PHARMACY_ACTION_META[nextAction].label}
+              >
+                {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <WorkflowActionIcon action={nextAction} className="h-4 w-4" />}
               </Button>
             )}
           </div>
         );
+      },
+      meta: {
+        headerClassName: 'text-right pr-4 whitespace-nowrap',
+        cellClassName: 'text-right pr-4 whitespace-nowrap',
       },
     },
   ];

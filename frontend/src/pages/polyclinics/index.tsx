@@ -93,9 +93,6 @@ export default function PolyclinicsPage() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">
                 Poliklinik
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Kelola master unit layanan dan poliklinik rawat jalan ({filteredData.length} poliklinik)
-              </p>
             </div>
           </div>
 
