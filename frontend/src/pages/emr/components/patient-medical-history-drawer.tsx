@@ -15,6 +15,7 @@ import {
   type Visit,
   type Prescription,
   type PrescriptionCompound,
+  type MedicalActionItem,
 } from '@/lib/api';
 import { formatDateTime, getPatientAge } from '../utils';
 import { cn } from '@/lib/utils';
@@ -38,6 +39,7 @@ import {
   RefreshCw,
   Search,
   Stethoscope,
+  Syringe,
   Tag,
   X,
 } from 'lucide-react';
@@ -65,6 +67,7 @@ type GroupedVisitHistory = {
   }[];
   prescriptions: Prescription[];
   compounds: PrescriptionCompound[];
+  actions: MedicalActionItem[];
   vitals: {
     bp?: string;
     hr?: string;
@@ -165,6 +168,7 @@ export function PatientMedicalHistoryDrawer({
           diagnoses: [],
           prescriptions: [],
           compounds: [],
+          actions: [],
           vitals: {},
           anamnesis: {},
           suratTypes: [],
@@ -203,6 +207,15 @@ export function PatientMedicalHistoryDrawer({
         for (const c of rec.prescription_compounds) {
           if (!item.compounds.some((existing) => existing.id === c.id)) {
             item.compounds.push(c);
+          }
+        }
+      }
+
+      // Collect actions / procedures
+      if (rec.actions && rec.actions.length > 0) {
+        for (const a of rec.actions) {
+          if (!item.actions.some((existing) => existing.id === a.id)) {
+            item.actions.push(a);
           }
         }
       }
@@ -312,7 +325,13 @@ export function PatientMedicalHistoryDrawer({
         const matchMedicine = v.prescriptions.some(
           (p) => (p.medicine?.name || '').toLowerCase().includes(q)
         );
-        return matchDoc || matchPoli || matchComplaint || matchIllness || matchDiagnosis || matchMedicine;
+        const matchAction = v.actions.some(
+          (a) =>
+            (a.service_name_snapshot || a.medical_service?.name || '').toLowerCase().includes(q) ||
+            (a.service_code_snapshot || '').toLowerCase().includes(q) ||
+            (a.notes || '').toLowerCase().includes(q)
+        );
+        return matchDoc || matchPoli || matchComplaint || matchIllness || matchDiagnosis || matchMedicine || matchAction;
       });
     }
 
@@ -370,7 +389,7 @@ export function PatientMedicalHistoryDrawer({
                   </Badge>
                 </div>
                 <SheetDescription className="text-xs text-muted-foreground mt-0.5">
-                  Arsip longitudinal kunjungan, diagnosa ICD-10, tanda vital, dan terapi obat terdahulu.
+                  Arsip longitudinal kunjungan, diagnosa ICD-10, tanda vital, tindakan, dan terapi obat terdahulu.
                 </SheetDescription>
               </div>
             </div>
@@ -429,7 +448,7 @@ export function PatientMedicalHistoryDrawer({
                 <Input
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Cari diagnosis, keluhan, obat, atau dokter..."
+                  placeholder="Cari diagnosis, tindakan, keluhan, obat, atau dokter..."
                   className="h-8 pl-8 text-xs rounded-none shadow-none bg-background"
                 />
                 {searchQuery && (
@@ -521,6 +540,7 @@ export function PatientMedicalHistoryDrawer({
                 const isExpanded = Boolean(expandedVisits[v.visitId]);
                 const hasVitals = Object.values(v.vitals).some(Boolean);
                 const hasPrescriptions = v.prescriptions.length > 0 || v.compounds.length > 0;
+                const hasActions = v.actions.length > 0;
 
                 return (
                   <div key={v.visitId} className="relative group">
@@ -607,6 +627,15 @@ export function PatientMedicalHistoryDrawer({
                                 </Badge>
                               )}
                             </div>
+                          )}
+
+                          {hasActions && (
+                            <Badge
+                              variant="outline"
+                              className="rounded-none text-[10px] py-0 h-5 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20 font-medium"
+                            >
+                              {v.actions.length} Tindakan
+                            </Badge>
                           )}
 
                           <Button
@@ -829,7 +858,100 @@ export function PatientMedicalHistoryDrawer({
                             </div>
                           )}
 
-                          {/* 5. RESEP OBAT / TERAPI */}
+                          {/* 5. TINDAKAN MEDIS & OPERASI KECIL */}
+                          <div className="pt-3 space-y-2">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+                              <span className="flex items-center gap-1.5">
+                                <Syringe className="h-3.5 w-3.5 text-primary" />
+                                Tindakan Medis / Prosedur ({v.actions.length} Tindakan)
+                              </span>
+                              {hasActions && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-5 px-1.5 text-[10px] gap-1 text-muted-foreground hover:text-foreground"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const actList = v.actions
+                                      .map(
+                                        (a) =>
+                                          `${a.service_name_snapshot || a.medical_service?.name || 'Tindakan'} (${a.service_code_snapshot || '-'}) x${a.quantity || 1}${a.notes ? ` - ${a.notes}` : ''}`
+                                      )
+                                      .join('\n');
+                                    handleCopy(actList, `act-${v.visitId}`);
+                                  }}
+                                >
+                                  {copiedId === `act-${v.visitId}` ? (
+                                    <Check className="h-3 w-3 text-emerald-500" />
+                                  ) : (
+                                    <Copy className="h-3 w-3" />
+                                  )}
+                                  Salin Tindakan
+                                </Button>
+                              )}
+                            </span>
+
+                            {!hasActions ? (
+                              <p className="text-muted-foreground italic">Tidak ada tindakan medis tercatat pada kunjungan ini.</p>
+                            ) : (
+                              <div className="border border-border/80 divide-y divide-border/60 overflow-hidden">
+                                {v.actions.map((act) => {
+                                  const actionName = act.service_name_snapshot || act.medical_service?.name || 'Tindakan Medis';
+                                  const actionCode = act.service_code_snapshot || act.medical_service?.code || '';
+                                  const targets = act.targets || [];
+
+                                  return (
+                                    <div key={act.id} className="p-2.5 flex items-start justify-between gap-3 bg-muted/5 hover:bg-muted/15 transition-colors">
+                                      <div className="space-y-1">
+                                        <p className="font-bold text-foreground text-xs flex items-center gap-1.5">
+                                          <Syringe className="h-3 w-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                          {actionName}
+                                          {actionCode && (
+                                            <Badge variant="outline" className="font-mono text-[10px] py-0 h-4 font-normal">
+                                              {actionCode}
+                                            </Badge>
+                                          )}
+                                        </p>
+
+                                        {act.notes && (
+                                          <p className="text-muted-foreground text-[11px] leading-snug">
+                                            Catatan: <span className="text-foreground">{act.notes}</span>
+                                          </p>
+                                        )}
+
+                                        {targets.length > 0 && (
+                                          <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                                            <span className="text-[10px] text-muted-foreground font-medium">Elemen / Lokasi:</span>
+                                            {targets.map((t, idx) => {
+                                              const label = t.tooth_number
+                                                ? `Gigi ${t.tooth_number}${t.surface_codes && t.surface_codes.length > 0 ? ` (${t.surface_codes.join(',')})` : ''}`
+                                                : t.quadrant
+                                                  ? `Kuadran ${t.quadrant}`
+                                                  : t.arch
+                                                    ? `Rahang ${t.arch}`
+                                                    : t.notes || 'Target Prosedur';
+                                              return (
+                                                <Badge key={idx} variant="secondary" className="rounded-none font-mono text-[10px] py-0 h-4">
+                                                  {label}
+                                                </Badge>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      <Badge variant="secondary" className="font-mono text-xs font-bold rounded-none shrink-0">
+                                        Qty: {act.quantity || 1}
+                                      </Badge>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* 6. RESEP OBAT / TERAPI */}
                           <div className="pt-3 space-y-2">
                             <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
                               <span className="flex items-center gap-1.5">
@@ -913,7 +1035,7 @@ export function PatientMedicalHistoryDrawer({
                             )}
                           </div>
 
-                          {/* 6. SURAT / DOKUMEN KLINIS TERBIT */}
+                          {/* 7. SURAT / DOKUMEN KLINIS TERBIT */}
                           {v.suratTypes.length > 0 && (
                             <div className="pt-3 space-y-1.5">
                               <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">

@@ -2467,6 +2467,9 @@ func GetPatientMedicalRecords(c *gin.Context) {
 		Preload("PrescriptionCompounds").
 		Preload("PrescriptionCompounds.Items").
 		Preload("PrescriptionCompounds.Items.Medicine").
+		Preload("Actions").
+		Preload("Actions.MedicalService").
+		Preload("Actions.Doctor").
 		Where("patient_id = ? OR visit_id IN (SELECT id FROM visits WHERE patient_id = ?)", patientID, patientID).
 		Order("record_date DESC").
 		Order("created_at DESC").
