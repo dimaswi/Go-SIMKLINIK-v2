@@ -6,6 +6,7 @@ import { ControlScheduleWhatsAppDialog } from '@/components/control-schedule-wha
 import { DataTable } from '@/components/ui/data-table';
 import { Input } from '@/components/ui/input';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import { TableDateFilter } from '@/components/ui/table-date-filter';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -281,12 +282,10 @@ export default function ControlSchedulesPage() {
               className="h-9 w-48 sm:w-56 rounded-none text-xs focus:ring-inset"
             />
 
-            <input
-              type="date"
+            <TableDateFilter
               value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-              className="h-9 w-36 border border-border bg-background px-2.5 text-xs outline-none focus:ring-1 focus:ring-ring shrink-0"
-              title="Filter tanggal kontrol"
+              onChange={setDateFilter}
+              title="Filter tanggal kontrol (Kosongkan untuk menampilkan semua tanggal)"
             />
 
             <SearchableSelect

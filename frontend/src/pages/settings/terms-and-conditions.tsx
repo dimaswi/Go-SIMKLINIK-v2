@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  ArrowLeft,
+  CheckCircle2,
   Database,
   Download,
+  FileText,
   HardDrive,
   Loader2,
   PlugZap,
@@ -15,16 +18,11 @@ import { useNavigate } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { downloadBlobResponse } from "@/lib/blob-download";
 import { settingsApi } from "@/lib/api";
 import { setPageTitle } from "@/lib/page-title";
-import {
-  MasterDataAsideSection,
-  MasterDataAsideStack,
-  MasterDataLegacySections,
-  MasterDataPageShell,
-} from "@/pages/master-data/shared";
 import { openPdfDocumentInNewWindow } from "@/pages/emr/print-document";
 
 type TermsArticle = {
@@ -142,6 +140,7 @@ export default function TermsAndConditionsPage() {
   const [printing, setPrinting] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [appName, setAppName] = useState("SIMKLINIK");
+  const [activeTab, setActiveTab] = useState<"articles" | "scope" | "suggestions">("articles");
 
   useEffect(() => {
     setPageTitle("Terms & Conditions");
@@ -193,15 +192,13 @@ export default function TermsAndConditionsPage() {
 
   const handleExportPdf = async () => {
     setExportingPdf(true);
-
     try {
       const response = await settingsApi.printTermsAndConditionsPdf();
       downloadBlobResponse(response, pdfFileName);
-
       toast({
         variant: "success",
         title: "PDF berhasil dibuat",
-        description: `Dokumen ${DOCUMENT_TITLE} berhasil diunduh dengan format PDF yang sama seperti dokumen lain.`,
+        description: `Dokumen ${DOCUMENT_TITLE} berhasil diunduh.`,
       });
     } catch {
       toast({
@@ -214,196 +211,259 @@ export default function TermsAndConditionsPage() {
     }
   };
 
+  const renderSectionHeader = (icon: React.ReactNode, title: string) => (
+    <div className="flex items-center gap-2 text-xs font-bold text-foreground uppercase tracking-wider border-b border-border/60 pb-2 mb-4">
+      {icon}
+      <span>{title}</span>
+    </div>
+  );
+
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div className="flex min-h-[400px] items-center justify-center bg-muted/20">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <MasterDataPageShell
-        title={DOCUMENT_TITLE}
-        subtitle="Dokumen ketentuan penggunaan internal yang disusun dalam format legal formal untuk akses aplikasi, pencatatan data, keamanan sistem, dan integrasi operasional klinik."
-        meta={
-          <>
-            <span>{appName}</span>
-            <span>{DOCUMENT_LABEL}</span>
-            <span>{TERMS_ARTICLES.length} pasal</span>
-            <span>{totalClauses} ayat operasional</span>
-          </>
-        }
-        onBack={() => navigate("/settings")}
-        actions={
-          <>
+    <div className="p-4 lg:p-6 bg-muted/20 min-h-full">
+      {/* Satu Card Utuh Sesuai Standar Detail SIMKLINIK */}
+      <div className="border border-border/80 bg-card shadow-none">
+        {/* Card Header (Baris Atas di dalam Satu Card) */}
+        <div className="flex flex-col gap-3 p-4 border-b border-border xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-3 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+              onClick={() => navigate("/settings")}
+              aria-label="Kembali"
+              title="Kembali ke Settings"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center border border-border/70 bg-muted/20">
+              <FileText className="h-4 w-4 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-base font-bold tracking-tight text-foreground truncate">
+                  Terms & Conditions
+                </h1>
+                <Badge className="h-5 rounded-none border-0 bg-stone-900 px-2 text-[10px] uppercase tracking-wide text-white shadow-none">
+                  {DOCUMENT_LABEL}
+                </Badge>
+                <Badge className="h-5 rounded-none border-0 bg-emerald-600 px-2 text-[10px] uppercase tracking-wide text-white shadow-none">
+                  Berlaku Aktif
+                </Badge>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <Button
               type="button"
               variant="outline"
-              className="rounded-none shadow-none"
+              size="sm"
+              className="h-8 text-xs rounded-none shadow-none"
               onClick={() => void handlePrint()}
               disabled={printing || exportingPdf}
             >
-              {printing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+              {printing ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <Printer className="mr-1.5 size-3.5" />}
               Buka PDF
             </Button>
             <Button
               type="button"
-              variant="outline"
-              className="rounded-none shadow-none"
+              size="sm"
+              className="h-8 text-xs rounded-none shadow-none"
               onClick={() => void handleExportPdf()}
               disabled={printing || exportingPdf}
             >
-              {exportingPdf ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+              {exportingPdf ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <Download className="mr-1.5 size-3.5" />}
               Export PDF
             </Button>
-          </>
-        }
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Dokumen" helper="Identitas dokumen legal yang sedang berlaku pada operasional SIMKLINIK.">
-                <div className="space-y-3 text-sm">
-                  <div className="space-y-2">
-                    <p className="text-base font-semibold tracking-tight text-foreground">{appName}</p>
-                    <div className="flex flex-wrap gap-2">
-                      <Badge className="rounded-none border-0 bg-stone-900 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-white">{DOCUMENT_LABEL}</Badge>
-                      <Badge className="rounded-none border-0 bg-emerald-600 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-white">Berlaku Aktif</Badge>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1 text-[12px] leading-5 text-muted-foreground">
-                    <p>Efektif: {EFFECTIVE_DATE}</p>
-                    <p>Bentuk dokumen: penomoran pasal dengan ayat operasional.</p>
-                    <p>Output tersedia: PDF viewer dan unduh PDF native backend.</p>
-                  </div>
-                </div>
-              </MasterDataAsideSection>
-            </div>
-
-            <div>
-              <MasterDataAsideSection title="Ruang Lingkup" helper="Area penggunaan aplikasi yang diikat oleh dokumen ini.">
-                <div className="space-y-2">
-                  {APPLICABLE_AREAS.map((area) => (
-                    <div key={area} className="border border-border/80 px-3 py-2 text-[12px] leading-5 text-foreground">
-                      {area}
-                    </div>
-                  ))}
-                </div>
-              </MasterDataAsideSection>
-            </div>
-
-            <div>
-              <MasterDataAsideSection title="Prinsip Kunci" helper="Landasan minimum yang harus dipatuhi seluruh pengguna aplikasi.">
-                <div className="space-y-2 text-[12px] leading-5 text-muted-foreground">
-                  {KEY_PRINCIPLES.map((principle) => (
-                    <p key={principle}>{principle}</p>
-                  ))}
-                </div>
-              </MasterDataAsideSection>
-            </div>
-
-            <div>
-              <MasterDataAsideSection title="Saran Penguatan" helper="Rekomendasi saya supaya dokumen Terms & Conditions ini lebih kuat secara operasional.">
-                <div className="space-y-2 text-[12px] leading-5 text-muted-foreground">
-                  {IMPROVEMENT_SUGGESTIONS.map((suggestion) => (
-                    <p key={suggestion}>{suggestion}</p>
-                  ))}
-                </div>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
-        }
-      >
-        <MasterDataLegacySections>
-          <section className="space-y-5 rounded-lg border border-border/80 p-5">
-            <div className="terms-document mx-auto w-full max-w-[860px] space-y-5 bg-white text-slate-900">
-              <div className="terms-cover space-y-4 border border-border/80 px-5 py-5 md:px-7 md:py-7" style={{ breakInside: "avoid-page" }}>
-                <div className="space-y-2 border-b border-border/70 pb-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Dokumen Kebijakan Internal</p>
-                  <h2 className="text-2xl font-semibold tracking-tight text-slate-950">{DOCUMENT_TITLE}</h2>
-                  <p className="text-sm text-slate-600">{appName}</p>
-                </div>
-
-                <div className="grid gap-3 border border-border/70 px-4 py-4 md:grid-cols-3">
-                  <DocumentMetaItem label="Versi Dokumen" value={DOCUMENT_LABEL} />
-                  <DocumentMetaItem label="Tanggal Berlaku" value={EFFECTIVE_DATE} />
-                  <DocumentMetaItem label="Status" value="Aktif" />
-                </div>
-
-                <div className="space-y-3 text-[13px] leading-6 text-slate-700">
-                  <p>
-                    Dokumen ini merupakan ketentuan penggunaan resmi untuk seluruh user internal yang mengakses dan mengoperasikan {appName} dalam kegiatan pelayanan, administrasi, penunjang medis, dan pengelolaan sistem.
-                  </p>
-                  <p>
-                    Dengan menggunakan aplikasi, setiap pengguna dianggap memahami bahwa seluruh input data, perubahan status layanan, penggunaan fitur cetak, proses sinkronisasi, dan aktivitas administrasi digital wajib mengikuti SOP internal klinik, kewenangan jabatan, serta prinsip kerahasiaan data pasien.
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                {TERMS_ARTICLES.map((article, index) => (
-                  <LegalArticleCard key={article.title} article={article} articleNumber={index + 1} />
-                ))}
-              </div>
-
-              <div className="terms-closing space-y-3 border border-border/80 px-5 py-5 text-[13px] leading-6 text-slate-700 md:px-7 md:py-6" style={{ breakInside: "avoid-page" }}>
-                <p className="text-sm font-semibold tracking-tight text-slate-950">Penutup</p>
-                <p>
-                  Dokumen ini menjadi acuan minimum penggunaan sistem pada versi aktif dan tetap dapat ditinjau ulang oleh pengelola aplikasi apabila terjadi perubahan regulasi, penyesuaian proses bisnis, pengembangan modul, atau kebutuhan penguatan keamanan informasi.
-                </p>
-                <p>
-                  Setiap pengguna wajib mematuhi ketentuan ini selama tetap menggunakan {appName} sebagai sistem operasional klinik.
-                </p>
-              </div>
-            </div>
-          </section>
-        </MasterDataLegacySections>
-      </MasterDataPageShell>
-    </div>
-  );
-}
-
-function DocumentMetaItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="space-y-1">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</p>
-      <p className="text-sm font-medium text-slate-950">{value}</p>
-    </div>
-  );
-}
-
-function LegalArticleCard({ article, articleNumber }: { article: TermsArticle; articleNumber: number }) {
-  const Icon = article.icon;
-
-  return (
-    <article className="terms-article space-y-4 border border-border/80 px-5 py-5 md:px-7 md:py-6" style={{ breakInside: "avoid-page" }}>
-      <div className="space-y-3 border-b border-border/70 pb-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center border border-border/80 text-slate-700">
-              <Icon className="h-4 w-4" />
-            </span>
-            <div className="space-y-1">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Pasal {articleNumber}</p>
-              <h3 className="text-base font-semibold tracking-tight text-slate-950">{article.title}</h3>
-            </div>
           </div>
-
-          <Badge variant="outline" className="rounded-none px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-slate-700">
-            {article.clauses.length} ayat
-          </Badge>
         </div>
 
-        <p className="text-[13px] leading-6 text-slate-700">{article.summary}</p>
-      </div>
+        {/* Card Body Langsung di Dalam Card yang Sama */}
+        <div className="p-4 sm:p-5">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            {/* KOLOM KIRI: Card Profil Dokumen & Sidetabs Navigasi */}
+            <div className="lg:col-span-4 xl:col-span-3 space-y-4">
+              <div className="border border-border/70 bg-muted/[0.03] p-4 relative shadow-none">
+                <Badge className="absolute top-3.5 right-3.5 text-[10px] font-bold tracking-wider rounded-md px-2 py-0.5 shadow-none border-0 text-white bg-emerald-600">
+                  AKTIF
+                </Badge>
 
-      <ol className="space-y-3 pl-5 text-[13px] leading-6 text-slate-800 marker:font-semibold marker:text-slate-950">
-        {article.clauses.map((clause) => (
-          <li key={clause}>{clause}</li>
-        ))}
-      </ol>
-    </article>
+                <div className="flex flex-col items-center pt-2">
+                  <div className="size-20 rounded-lg border border-border bg-zinc-950 dark:bg-zinc-900 text-white flex items-center justify-center font-bold shadow-sm">
+                    <FileText className="size-10 text-primary" />
+                  </div>
+                  <h2 className="text-base font-bold text-center mt-3 text-foreground tracking-tight uppercase leading-snug">
+                    {DOCUMENT_TITLE}
+                  </h2>
+                  <p className="text-xs text-muted-foreground text-center mt-0.5 font-mono">
+                    {appName}
+                  </p>
+                  <div className="mt-2.5">
+                    <span className="text-[11px] font-semibold px-2.5 py-0.5 border border-border rounded-md text-foreground bg-muted/30 uppercase tracking-wider">
+                      {DOCUMENT_LABEL}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="border-t border-border/60 my-4" />
+
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">TANGGAL BERLAKU</p>
+                    <p className="font-medium text-foreground mt-0.5">{EFFECTIVE_DATE}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">CAKUPAN</p>
+                    <p className="font-medium text-foreground mt-0.5">{TERMS_ARTICLES.length} Pasal · {totalClauses} Ayat</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">FORMAT OUTPUT</p>
+                    <p className="font-medium text-foreground mt-0.5">PDF Native & Viewer</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sidetabs Navigasi */}
+              <div className="border border-border/70 bg-card p-1.5 space-y-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("articles")}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors rounded-none",
+                    activeTab === "articles"
+                      ? "bg-primary text-primary-foreground font-semibold"
+                      : "text-muted-foreground hover:bg-muted/40 hover:text-foreground font-medium"
+                  )}
+                >
+                  <ShieldCheck className="size-4 shrink-0" />
+                  <span>Pasal Ketentuan ({TERMS_ARTICLES.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("scope")}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors rounded-none",
+                    activeTab === "scope"
+                      ? "bg-primary text-primary-foreground font-semibold"
+                      : "text-muted-foreground hover:bg-muted/40 hover:text-foreground font-medium"
+                  )}
+                >
+                  <CheckCircle2 className="size-4 shrink-0" />
+                  <span>Ruang Lingkup & Prinsip</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("suggestions")}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors rounded-none",
+                    activeTab === "suggestions"
+                      ? "bg-primary text-primary-foreground font-semibold"
+                      : "text-muted-foreground hover:bg-muted/40 hover:text-foreground font-medium"
+                  )}
+                >
+                  <AlertTriangle className="size-4 shrink-0" />
+                  <span>Saran Penguatan</span>
+                </button>
+              </div>
+            </div>
+
+            {/* KOLOM KANAN: Isi Sidetab Aktif */}
+            <div className="lg:col-span-8 xl:col-span-9 min-w-0">
+              {activeTab === "articles" && (
+                <div className="space-y-4">
+                  {renderSectionHeader(<ShieldCheck className="size-4 text-muted-foreground" />, "Pasal & Ayat Ketentuan Penggunaan")}
+                  <div className="space-y-4">
+                    {TERMS_ARTICLES.map((article, index) => {
+                      const Icon = article.icon;
+                      return (
+                        <div key={article.title} className="border border-border/70 p-4 bg-card space-y-3">
+                          <div className="flex items-start gap-3">
+                            <div className="flex size-7 shrink-0 items-center justify-center border border-border/70 bg-muted/20 text-xs font-bold text-primary">
+                              {index + 1}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <Icon className="size-4 text-muted-foreground shrink-0" />
+                                <h3 className="text-sm font-bold text-foreground">
+                                  Pasal {index + 1}: {article.title}
+                                </h3>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {article.summary}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5 pl-10 border-t border-border/50 pt-2.5">
+                            {article.clauses.map((clause, cIdx) => (
+                              <div key={cIdx} className="text-xs leading-relaxed text-foreground flex items-start gap-2">
+                                <span className="font-mono text-[11px] text-muted-foreground shrink-0">({cIdx + 1})</span>
+                                <span>{clause}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "scope" && (
+                <div className="space-y-6">
+                  <div>
+                    {renderSectionHeader(<CheckCircle2 className="size-4 text-muted-foreground" />, "Ruang Lingkup Penerapan")}
+                    <div className="grid gap-2.5 sm:grid-cols-2">
+                      {APPLICABLE_AREAS.map((area, idx) => (
+                        <div key={idx} className="border border-border/70 p-3 bg-card text-xs flex items-center gap-2.5">
+                          <span className="size-2 rounded-full bg-primary shrink-0" />
+                          <span className="font-medium text-foreground">{area}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    {renderSectionHeader(<ShieldCheck className="size-4 text-muted-foreground" />, "Prinsip Kunci Operasional")}
+                    <div className="space-y-2">
+                      {KEY_PRINCIPLES.map((principle, idx) => (
+                        <div key={idx} className="border border-border/70 p-3 bg-card text-xs flex items-start gap-2.5">
+                          <CheckCircle2 className="size-4 text-emerald-600 shrink-0 mt-0.5" />
+                          <span className="text-foreground leading-relaxed">{principle}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "suggestions" && (
+                <div className="space-y-4">
+                  {renderSectionHeader(<AlertTriangle className="size-4 text-muted-foreground" />, "Rekomendasi Penguatan Kebijakan")}
+                  <div className="space-y-2.5">
+                    {IMPROVEMENT_SUGGESTIONS.map((suggestion, idx) => (
+                      <div key={idx} className="border border-border/70 p-3.5 bg-card text-xs flex items-start gap-3">
+                        <div className="flex size-6 shrink-0 items-center justify-center rounded-none border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 font-bold text-[11px]">
+                          {idx + 1}
+                        </div>
+                        <p className="text-foreground leading-relaxed">{suggestion}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

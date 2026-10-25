@@ -236,7 +236,6 @@ export function InformedConsentSheetPage({
             <aside className="space-y-3 xl:min-h-0 xl:overflow-y-auto xl:pr-1">
               <div className="px-0.5">
                 <h2 className="text-[13px] font-semibold tracking-tight">Daftar Consent</h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">Pilih draft consent untuk melihat dan melengkapi detail persetujuan tindakan.</p>
               </div>
               <div className="space-y-2">
                 {consents.map((consent) => {
@@ -299,7 +298,6 @@ export function InformedConsentSheetPage({
 
                   <TableSection
                     title="Form Informed Consent"
-                    helper="Draft ini dibuat otomatis dari tindakan. Lengkapi pemberi persetujuan atau wali, keputusan pasien, saksi, manfaat, risiko, dan catatan sebelum finalisasi kunjungan."
                   >
                     <TableRow>
                       <TableCell label="Nama Tindakan" colSpan={2}>

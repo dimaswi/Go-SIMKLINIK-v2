@@ -9,9 +9,9 @@ import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Textarea } from '@/components/ui/textarea';
 import { regionsApi, type Patient, type RegionDistrict, type RegionProvince, type RegionRegency, type RegionVillage } from '@/lib/api';
 import { compactAddress, getPatientAge } from '@/pages/emr/utils';
-import { ArrowLeft, UserPlus } from 'lucide-react';
+import { ArrowLeft, Sparkles, UserPlus } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
+import { cn, generateDummyNik } from '@/lib/utils';
 
 type SelectOption = { value: string; label: string };
 
@@ -459,6 +459,7 @@ export function PatientFormField({
   type = 'text',
   placeholder,
   required = false,
+  action,
 }: {
   label: string;
   name: keyof PatientFormData;
@@ -467,13 +468,17 @@ export function PatientFormField({
   type?: string;
   placeholder?: string;
   required?: boolean;
+  action?: ReactNode;
 }) {
   return (
     <div className="space-y-1">
-      <Label htmlFor={String(name)} className="text-xs font-medium">
-        {label}
-        {required ? <span className="ml-0.5 text-destructive">*</span> : null}
-      </Label>
+      <div className="flex items-center justify-between">
+        <Label htmlFor={String(name)} className="text-xs font-medium">
+          {label}
+          {required ? <span className="ml-0.5 text-destructive">*</span> : null}
+        </Label>
+        {action}
+      </div>
       <Input
         id={String(name)}
         name={String(name)}
@@ -903,7 +908,26 @@ export function PatientFormSections({
       <PatientSection title="Identitas Pasien" helper="Isi identitas inti pasien sebagai dasar registrasi, pencarian, dan keterkaitan dengan kunjungan berikutnya.">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <PatientFormField label="Nama Lengkap" name="full_name" value={formData.full_name} onChange={onInputChange} placeholder="Masukkan nama lengkap" required />
-          <PatientFormField label="NIK" name="nik" value={formData.nik} onChange={onInputChange} placeholder="16 digit NIK" />
+          <PatientFormField
+            label="NIK"
+            name="nik"
+            value={formData.nik}
+            onChange={onInputChange}
+            placeholder="16 digit NIK"
+            action={
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-5 px-1.5 text-[10px] text-primary hover:text-primary/90 font-medium hover:bg-primary/5 rounded-none"
+                onClick={() => setField('nik', generateDummyNik())}
+                title="Generate NIK 16 digit sementara jika pasien tidak membawa identitas/KTP"
+              >
+                <Sparkles className="mr-1 h-3 w-3 text-amber-500" />
+                Generate Dummy
+              </Button>
+            }
+          />
           <PatientSelectField label="Kota / Kabupaten Lahir" value={selectedBirthRegencyId} onValueChange={handleBirthPlaceChange} options={birthRegencyOptions} placeholder="Pilih kota / kabupaten lahir" noneLabel="Belum dipilih" />
           <PatientFormField label="Tanggal Lahir" name="birth_date" type="date" value={formData.birth_date} onChange={onInputChange} />
           <PatientSelectField label="Jenis Kelamin" value={formData.gender} onValueChange={(value) => setField('gender', value)} options={GENDER_OPTIONS} placeholder="Pilih jenis kelamin" required />

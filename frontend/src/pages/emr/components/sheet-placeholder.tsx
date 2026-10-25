@@ -26,7 +26,7 @@ export function SheetPlaceholder({ sheet, visit, recordsBySection }: SheetPlaceh
 
   return (
     <div className="space-y-3">
-      <TableSection title={sheet.label} helper={sheet.helper}>
+      <TableSection title={sheet.label}>
         <TableRow>
           <TableCell label="Status Implementasi" colSpan={2}>
             <p className="text-sm text-foreground/90">

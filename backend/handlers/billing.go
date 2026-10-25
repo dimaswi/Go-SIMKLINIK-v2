@@ -1033,24 +1033,32 @@ func CancelPayment(c *gin.Context) {
 
 // GetCashierQueue returns visits ready for billing
 func GetCashierQueue(c *gin.Context) {
-	dateFilter := c.DefaultQuery("date", time.Now().Format("2006-01-02"))
+	dateFilter := c.Query("date")
+	hasDateParam := c.Request.URL.Query().Has("date")
 	search := c.Query("search")
-
-	parsedDate, err := time.ParseInLocation("2006-01-02", dateFilter, time.Local)
-	if err != nil {
-		parsedDate = time.Now()
-	}
-
-	startOfDay := time.Date(parsedDate.Year(), parsedDate.Month(), parsedDate.Day(), 0, 0, 0, 0, parsedDate.Location())
-	endOfDay := startOfDay.AddDate(0, 0, 1)
 
 	// Only finalized visits should enter cashier queue for payment processing.
 	query := database.DB.Model(&models.Visit{}).
 		Preload("Patient").
 		Preload("Polyclinic").
 		Preload("Doctor").
-		Where("visit_date >= ? AND visit_date < ?", startOfDay, endOfDay).
 		Where("status = ?", "completed")
+
+	if hasDateParam && (dateFilter == "" || dateFilter == "all") {
+		// Do not filter by date: show all
+	} else {
+		dateStr := dateFilter
+		if !hasDateParam {
+			dateStr = time.Now().Format("2006-01-02")
+		}
+		parsedDate, err := time.ParseInLocation("2006-01-02", dateStr, time.Local)
+		if err != nil {
+			parsedDate = time.Now()
+		}
+		startOfDay := time.Date(parsedDate.Year(), parsedDate.Month(), parsedDate.Day(), 0, 0, 0, 0, parsedDate.Location())
+		endOfDay := startOfDay.AddDate(0, 0, 1)
+		query = query.Where("visit_date >= ? AND visit_date < ?", startOfDay, endOfDay)
+	}
 
 	if search != "" {
 		searchPattern := "%" + strings.ToLower(search) + "%"

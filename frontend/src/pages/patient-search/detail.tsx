@@ -2,8 +2,29 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DataTable } from "@/components/ui/data-table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ChevronRight, FileText, Loader2, UserRoundSearch } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Building,
+  ChevronRight,
+  CreditCard,
+  Edit,
+  FileText,
+  History,
+  Loader2,
+  MapPin,
+  Phone,
+  PlusCircle,
+  Printer,
+  Search,
+  ShieldCheck,
+  User,
+  UserCheck,
+  Users,
+} from "lucide-react";
 import {
   billingApi,
   informedConsentsApi,
@@ -19,15 +40,61 @@ import {
 } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { setPageTitle } from "@/lib/page-title";
-import { formatDate, formatDateTime } from "@/pages/emr/utils";
+import { formatDate } from "@/pages/emr/utils";
 import { isAxiosError } from "axios";
 import { cn } from "@/lib/utils";
+
+function getInitials(name?: string | null): string {
+  if (!name) return "PS";
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+function formatReligion(val?: string | null): string {
+  if (!val) return "-";
+  const v = val.trim().toLowerCase();
+  switch (v) {
+    case "islam":
+      return "Islam";
+    case "kristen":
+      return "Kristen";
+    case "katolik":
+      return "Katolik";
+    case "hindu":
+      return "Hindu";
+    case "buddha":
+      return "Buddha";
+    case "konghucu":
+      return "Konghucu";
+    default:
+      return val.charAt(0).toUpperCase() + val.slice(1);
+  }
+}
+
+function formatMaritalStatus(val?: string | null): string {
+  if (!val) return "-";
+  const v = val.trim().toLowerCase();
+  switch (v) {
+    case "single":
+    case "belum_kawin":
+    case "belum kawin":
+      return "Belum Kawin";
+    case "married":
+    case "kawin":
+      return "Kawin";
+    case "divorced":
+    case "cerai":
+    case "cerai hidup":
+      return "Cerai Hidup";
+    case "cerai mati":
+      return "Cerai Mati";
+    default:
+      return val.charAt(0).toUpperCase() + val.slice(1);
+  }
+}
 import {
-  PatientDetailItem,
-  PatientPageShell,
-  getPatientAddressLabel,
   getPatientAgeLabel,
-  getPatientEmergencyLabel,
   getPatientGenderLabel,
   getPatientInsuranceLabel,
 } from "@/pages/patients/shared";
@@ -208,20 +275,6 @@ export default function PatientSearchDetail() {
       nextParams.set("tab", resolvedTab);
     }
     setSearchParams(nextParams, { replace: true });
-  };
-
-  const buildDetailUrl = (
-    patientId: number,
-    tab: PatientSearchDetailTab = activeTab,
-  ) => {
-    const params = new URLSearchParams(listFilterParams);
-    if (tab === "detail") {
-      params.delete("tab");
-    } else {
-      params.set("tab", tab);
-    }
-
-    return `/patient-search/${patientId}${params.toString() ? `?${params.toString()}` : ""}`;
   };
 
   const normalizeRecordLabel = (value?: string | null) => {
@@ -508,10 +561,10 @@ export default function PatientSearchDetail() {
               recordDate: record.record_date || record.created_at || group.visitDate,
               statusLabel:
                 sourceType === "laboratory-result" ||
-                sourceType === "laboratory-ticket"
+                  sourceType === "laboratory-ticket"
                   ? normalizeRecordLabel(record.laboratory_workflow_status || "-")
                   : sourceType === "radiology-result" ||
-                      sourceType === "radiology-ticket"
+                    sourceType === "radiology-ticket"
                     ? normalizeRecordLabel(record.radiology_workflow_status || "-")
                     : normalizeRecordLabel(record.status || "Draft"),
               primaryMedicalRecordId: record.id,
@@ -536,10 +589,10 @@ export default function PatientSearchDetail() {
             currentNode.recordDate = record.record_date || record.created_at || group.visitDate;
             currentNode.statusLabel =
               sourceType === "laboratory-result" ||
-              sourceType === "laboratory-ticket"
+                sourceType === "laboratory-ticket"
                 ? normalizeRecordLabel(record.laboratory_workflow_status || "-")
                 : sourceType === "radiology-result" ||
-                    sourceType === "radiology-ticket"
+                  sourceType === "radiology-ticket"
                   ? normalizeRecordLabel(record.radiology_workflow_status || "-")
                   : normalizeRecordLabel(record.status || "Draft");
             currentNode.entryGroupKey = entryGroupKey || currentNode.entryGroupKey;
@@ -567,11 +620,11 @@ export default function PatientSearchDetail() {
           );
           const consentTimestamp = new Date(
             consent.consent_date ||
-              consent.updated_at ||
-              consent.created_at ||
-              relatedRecord?.record_date ||
-              group.visitDate ||
-              "",
+            consent.updated_at ||
+            consent.created_at ||
+            relatedRecord?.record_date ||
+            group.visitDate ||
+            "",
           ).getTime();
           const safeConsentTimestamp = Number.isFinite(consentTimestamp)
             ? consentTimestamp
@@ -1024,7 +1077,7 @@ export default function PatientSearchDetail() {
         title: "Gagal memuat detail pasien",
         description: isAxiosError<{ error?: string }>(error)
           ? error.response?.data?.error ||
-            "Data pasien tidak dapat ditampilkan."
+          "Data pasien tidak dapat ditampilkan."
           : "Data pasien tidak dapat ditampilkan.",
       });
       setPatient(null);
@@ -1041,6 +1094,277 @@ export default function PatientSearchDetail() {
     setPageTitle("Detail Pasien Hasil Pencarian");
     void loadPatient();
   }, [loadPatient]);
+
+  const visitColumns = useMemo<ColumnDef<Visit>[]>(
+    () => [
+      {
+        accessorKey: "visit_number",
+        header: "No. Kunjungan",
+        meta: {
+          headerClassName: "py-3 px-3.5 text-sm font-bold text-foreground",
+          cellClassName: "py-3 px-3.5 align-middle",
+        },
+        cell: ({ row }) => (
+          <div className="min-w-[130px] space-y-0.5">
+            <span className="font-mono text-sm sm:text-base font-bold text-foreground">
+              {row.original.visit_number}
+            </span>
+            <p className="text-xs text-muted-foreground font-mono">
+              {(row.original as any).visit_type || "Rawat Jalan"}
+            </p>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "visit_date",
+        header: "Tanggal",
+        meta: {
+          headerClassName: "py-3 px-3.5 text-sm font-bold text-foreground",
+          cellClassName: "py-3 px-3.5 align-middle",
+        },
+        cell: ({ row }) => (
+          <div className="min-w-[120px] space-y-0.5">
+            <span className="whitespace-nowrap text-sm font-semibold text-foreground">
+              {formatDate(row.original.visit_date)}
+            </span>
+            <p className="text-xs text-muted-foreground font-mono">
+              {row.original.created_at ? new Date(row.original.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-'}
+            </p>
+          </div>
+        ),
+      },
+      {
+        id: "polyclinic",
+        header: "Poliklinik",
+        meta: {
+          headerClassName: "py-3 px-3.5 text-sm font-bold text-foreground",
+          cellClassName: "py-3 px-3.5 align-middle",
+        },
+        cell: ({ row }) => (
+          <div className="min-w-[140px] space-y-0.5">
+            <span className="text-sm font-bold text-foreground">
+              {(row.original as any).polyclinic?.name || "-"}
+            </span>
+            <p className="text-xs text-muted-foreground">
+              {(row.original as any).polyclinic?.code || "Poli Klinik"}
+            </p>
+          </div>
+        ),
+      },
+      {
+        id: "doctor",
+        header: "Dokter",
+        meta: {
+          headerClassName: "py-3 px-3.5 text-sm font-bold text-foreground",
+          cellClassName: "py-3 px-3.5 align-middle",
+        },
+        cell: ({ row }) => (
+          <div className="min-w-[150px] space-y-0.5">
+            <span className="text-sm font-semibold text-foreground">
+              {(row.original as any).doctor?.full_name || "-"}
+            </span>
+            <p className="text-xs text-muted-foreground">
+              {(row.original as any).doctor?.specialization || "Dokter Pemeriksa"}
+            </p>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "complaint",
+        header: "Keluhan",
+        meta: {
+          headerClassName: "py-3 px-3.5 text-sm font-bold text-foreground",
+          cellClassName: "py-3 px-3.5 align-middle",
+        },
+        cell: ({ row }) => (
+          <div className="min-w-[190px] max-w-[280px] space-y-0.5">
+            <span className="text-sm text-foreground/95 font-medium line-clamp-1" title={row.original.complaint || "-"}>
+              {row.original.complaint || "-"}
+            </span>
+            <p className="text-xs text-muted-foreground font-mono truncate">
+              {(row.original as any).diagnoses?.[0]?.diagnosis_name || "Pemeriksaan Umum"}
+            </p>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "status",
+        header: "Status",
+        meta: {
+          headerClassName: "py-3 px-3.5 text-sm font-bold text-foreground",
+          cellClassName: "py-3 px-3.5 align-middle",
+        },
+        cell: ({ row }) => (
+          <div className="min-w-[140px] space-y-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge
+                variant="outline"
+                className="h-6 rounded-none px-2.5 text-xs uppercase font-mono shadow-none font-semibold"
+              >
+                {STATUS_LABEL[row.original.status] || row.original.status}
+              </Badge>
+              <Badge
+                variant="secondary"
+                className="h-6 rounded-none px-2.5 text-xs uppercase font-mono shadow-none font-semibold"
+              >
+                {QUEUE_LABEL[row.original.queue_status] || row.original.queue_status}
+              </Badge>
+            </div>
+          </div>
+        ),
+      },
+    ],
+    [],
+  );
+
+  const invoiceColumns = useMemo<ColumnDef<Invoice>[]>(
+    () => [
+      {
+        accessorKey: "invoice_number",
+        header: "No. Invoice",
+        meta: {
+          headerClassName: "py-3 px-3.5 text-sm font-bold text-foreground",
+          cellClassName: "py-3 px-3.5 align-middle",
+        },
+        cell: ({ row }) => (
+          <div className="min-w-[140px] space-y-0.5">
+            <span className="font-mono text-sm sm:text-base font-bold text-foreground">
+              {row.original.invoice_number}
+            </span>
+            <p className="text-xs text-muted-foreground font-mono">
+              {(row.original as any).payment_method || "Invoice Tagihan"}
+            </p>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "invoice_date",
+        header: "Tanggal",
+        meta: {
+          headerClassName: "py-3 px-3.5 text-sm font-bold text-foreground",
+          cellClassName: "py-3 px-3.5 align-middle",
+        },
+        cell: ({ row }) => (
+          <div className="min-w-[120px] space-y-0.5">
+            <span className="whitespace-nowrap text-sm font-semibold text-foreground">
+              {formatDate(row.original.invoice_date)}
+            </span>
+            <p className="text-xs text-muted-foreground font-mono">
+              {row.original.created_at ? new Date(row.original.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-'}
+            </p>
+          </div>
+        ),
+      },
+      {
+        id: "visit_number",
+        header: "Kunjungan",
+        meta: {
+          headerClassName: "py-3 px-3.5 text-sm font-bold text-foreground",
+          cellClassName: "py-3 px-3.5 align-middle",
+        },
+        cell: ({ row }) => (
+          <div className="min-w-[140px] space-y-0.5">
+            <span className="font-mono text-sm font-bold text-foreground">
+              {row.original.visit?.visit_number || "-"}
+            </span>
+            <p className="text-xs text-muted-foreground">
+              {row.original.visit?.polyclinic?.name || "1 transaksi"}
+            </p>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "total_amount",
+        header: () => <div className="text-right">Total Tagihan</div>,
+        meta: {
+          headerClassName: "py-3 px-3.5 text-sm font-bold text-foreground text-right",
+          cellClassName: "py-3 px-3.5 align-middle text-right",
+        },
+        cell: ({ row }) => (
+          <div className="text-right space-y-0.5 min-w-[120px]">
+            <div className="font-mono text-sm sm:text-[15px] font-bold text-foreground">
+              Rp {Number(row.original.total_amount || 0).toLocaleString("id-ID")}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Total Nominal
+            </p>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "paid_amount",
+        header: () => <div className="text-right">Terbayar</div>,
+        meta: {
+          headerClassName: "py-3 px-3.5 text-sm font-bold text-foreground text-right",
+          cellClassName: "py-3 px-3.5 align-middle text-right",
+        },
+        cell: ({ row }) => (
+          <div className="text-right space-y-0.5 min-w-[120px]">
+            <div className="font-mono text-sm sm:text-[15px] font-bold text-emerald-600 dark:text-emerald-400">
+              Rp {Number(row.original.paid_amount || 0).toLocaleString("id-ID")}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Jumlah Terbayar
+            </p>
+          </div>
+        ),
+      },
+      {
+        id: "outstanding",
+        header: () => <div className="text-right">Sisa Tagihan</div>,
+        meta: {
+          headerClassName: "py-3 px-3.5 text-sm font-bold text-foreground text-right",
+          cellClassName: "py-3 px-3.5 align-middle text-right",
+        },
+        cell: ({ row }) => {
+          const sisa = Math.max(
+            0,
+            Number(row.original.total_amount || 0) - Number(row.original.paid_amount || 0),
+          );
+          return (
+            <div className="text-right space-y-0.5 min-w-[120px]">
+              <div
+                className={`font-mono text-sm sm:text-[15px] font-bold ${
+                  sisa > 0 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"
+                }`}
+              >
+                Rp {sisa.toLocaleString("id-ID")}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {sisa > 0 ? "Kurang Bayar" : "Lunas"}
+              </p>
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: "status",
+        header: "Status",
+        meta: {
+          headerClassName: "py-3 px-3.5 text-sm font-bold text-foreground",
+          cellClassName: "py-3 px-3.5 align-middle",
+        },
+        cell: ({ row }) => {
+          const st = (row.original.status || "").toLowerCase();
+          const isPaid = st === "paid" || st === "lunas";
+          return (
+            <div className="min-w-[100px] space-y-0.5">
+              <Badge
+                className={
+                  isPaid
+                    ? "h-6 sm:h-7 rounded-none border-0 bg-emerald-600 text-white px-3 text-xs font-mono uppercase shadow-none font-bold inline-flex items-center"
+                    : "h-6 sm:h-7 rounded-none border-0 bg-amber-500 text-white px-3 text-xs font-mono uppercase shadow-none font-bold inline-flex items-center"
+                }
+              >
+                {row.original.status || "-"}
+              </Badge>
+            </div>
+          );
+        },
+      },
+    ],
+    [],
+  );
 
   if (loading) {
     return (
@@ -1077,645 +1401,680 @@ export default function PatientSearchDetail() {
     value || fallback;
 
   return (
-    <PatientPageShell
-      title={patient.full_name}
-      subtitle="Halaman detail pasien khusus hasil pencarian cepat dari app header."
-      onBack={() => navigate(backUrl)}
-      badges={
-        <>
-          <Badge
-            variant="secondary"
-            className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none"
-          >
-            {patient.medical_record_number}
-          </Badge>
-          <Badge
-            className={
-              patient.is_active
-                ? "h-5 rounded-none border-0 bg-emerald-600 px-2 text-[10px] uppercase tracking-wide text-white shadow-none"
-                : "h-5 rounded-none border-0 bg-rose-600 px-2 text-[10px] uppercase tracking-wide text-white shadow-none"
-            }
-          >
-            {patient.is_active ? "Pasien Aktif" : "Nonaktif"}
-          </Badge>
-          <Badge
-            variant="outline"
-            className="h-5 rounded-none px-2 text-[10px] font-medium shadow-none"
-          >
-            {getPatientGenderLabel(patient.gender)}
-          </Badge>
-        </>
-      }
-      meta={
-        <>
-          <span>Usia {ageLabel}</span>
-          <span>Telepon {formatValue(patient.phone)}</span>
-          <span>
-            Asuransi {getPatientInsuranceLabel(patient.insurance_type)}
-          </span>
-          <span>{visits.length} riwayat kunjungan</span>
-          <span>{invoices.length} riwayat pembayaran</span>
-          <span>{medicalRecords.length} rekam medis</span>
-        </>
-      }
-      actions={
-        <>
-          <Button
-            className="gap-1.5 rounded-none shadow-none"
-            onClick={() =>
-              navigate(`/registration/create?patient_id=${patient.id}`)
-            }
-          >
-            Daftarkan Kunjungan
-          </Button>
-          <Button
-            variant="outline"
-            className="gap-1.5 rounded-none shadow-none"
-            onClick={() => navigate(`/patients/${patient.id}`)}
-          >
-            <UserRoundSearch className="h-4 w-4" />
-            Buka Data Master
-          </Button>
-        </>
-      }
-    >
-      {hasListFilters ? (
-        <div className="border-b border-border/70 px-4 py-3 lg:px-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold tracking-tight text-foreground/95">
-                List Hasil Pencarian
-              </p>
-              <p className="text-[11px] text-muted-foreground">
-                {loadingMatchedPatients
-                  ? "Memuat kandidat pasien..."
-                  : `${matchedPatients.length} data ditemukan dari filter aktif`}
-              </p>
-            </div>
+    <div className="p-4 lg:p-6 bg-muted/20 min-h-full">
+      {/* Satu Card Utuh Menggabungkan Header dan Body Sesuai Index SIMKLINIK */}
+      <div className="border border-border/80 bg-card shadow-none">
+        {/* Card Header (Baris Atas di dalam Satu Card) */}
+        <div className="flex flex-col gap-3 p-4 border-b border-border xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-3 shrink-0">
             <Button
               variant="outline"
-              className="h-7 rounded-none px-2 text-[11px] uppercase tracking-wide shadow-none"
+              size="sm"
+              className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
               onClick={() => navigate(backUrl)}
+              aria-label="Kembali"
+              title="Kembali"
             >
-              Buka List Lengkap
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center border border-border/70 bg-muted/20">
+              <User className="h-4 w-4 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-base font-bold tracking-tight text-foreground truncate">
+                  Profil & Data Pasien
+                </h1>
+                <Badge variant="secondary" className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide font-mono shadow-none">
+                  {patient.medical_record_number}
+                </Badge>
+                <Badge className={patient.is_active !== false ? "h-5 rounded-none border-0 bg-emerald-600 px-2 text-[10px] uppercase tracking-wide text-white shadow-none" : "h-5 rounded-none border-0 bg-rose-600 px-2 text-[10px] uppercase tracking-wide text-white shadow-none"}>
+                  {patient.is_active !== false ? "Pasien Aktif" : "Nonaktif"}
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5 hidden sm:block">
+                Informasi administratif, identitas lengkap, dan riwayat rekam medis pasien
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {hasListFilters ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 h-8 text-xs rounded-none border-primary/40 text-primary hover:bg-primary/5 shadow-none"
+                onClick={() => navigate(backUrl)}
+                title="Buka kembali daftar hasil pencarian"
+              >
+                <Search className="size-3.5" />
+                Hasil Pencarian {!loadingMatchedPatients && matchedPatients.length > 0 ? `(${matchedPatients.length})` : ""}
+              </Button>
+            ) : null}
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 h-8 text-xs rounded-none border-amber-500/80 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 shadow-none"
+              onClick={() => navigate(`/patients/${patient.id}/edit`)}
+            >
+              <Edit className="size-3.5" />
+              Edit
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 h-8 text-xs rounded-none shadow-none"
+              onClick={() => navigate(`/registration/create?patient_id=${patient.id}`)}
+            >
+              <PlusCircle className="size-3.5" />
+              Daftarkan Kunjungan
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 h-8 text-xs rounded-none shadow-none"
+              onClick={() => window.print()}
+            >
+              <Printer className="size-3.5" />
+              Cetak Label Pasien
             </Button>
           </div>
+        </div>
 
-          {!loadingMatchedPatients && matchedPatients.length > 1 ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {matchedPatients.map((candidate) => {
-                const isCurrentPatient =
-                  Number(candidate.id) === Number(patient.id);
+        {/* Card Body Langsung di Dalam Card yang Sama Tanpa Pemisah */}
+        <div className="p-4 sm:p-5">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            {/* KOLOM KIRI: Card Profil Pasien */}
+            <div className="lg:col-span-4 xl:col-span-3 space-y-4">
+              <div className="border border-border/70 bg-muted/[0.03] p-4 relative shadow-none">
+                {/* Badge ACTIVE di pojok kanan atas */}
+                <Badge className="absolute top-3.5 right-3.5 bg-emerald-600 hover:bg-emerald-600 text-white text-[10px] font-bold tracking-wider rounded-md px-2 py-0.5 shadow-none border-0">
+                  {patient.is_active !== false ? "ACTIVE" : "INACTIVE"}
+                </Badge>
 
-                return (
-                  <Button
-                    key={candidate.id}
-                    type="button"
-                    variant="outline"
-                    className={cn(
-                      "h-8 rounded-none border-border/70 px-3 text-left text-xs shadow-none",
-                      isCurrentPatient &&
-                        "border-foreground bg-foreground text-background hover:bg-foreground hover:text-background",
+                {/* Avatar / Foto Pasien di Tengah */}
+                <div className="flex flex-col items-center pt-2">
+                  <div className="size-24 rounded-lg overflow-hidden border border-border bg-zinc-950 dark:bg-zinc-900 text-white flex items-center justify-center font-bold text-2xl shadow-sm">
+                    {patient.photo ? (
+                      <img src={patient.photo} alt={patient.full_name} className="size-full object-cover" />
+                    ) : (
+                      <span>{getInitials(patient.full_name)}</span>
                     )}
-                    onClick={() => navigate(buildDetailUrl(candidate.id))}
-                  >
-                    <span className="truncate">
-                      {candidate.full_name || "-"} ·{" "}
-                      {candidate.medical_record_number || "-"}
+                  </div>
+
+                  <h2 className="text-base font-bold text-center mt-3 text-foreground tracking-tight uppercase leading-snug">
+                    {patient.full_name || "-"}
+                  </h2>
+                  <p className="text-xs text-muted-foreground text-center mt-1 font-mono">
+                    {patient.medical_record_number || "-"} • {patient.nik || "-"}
+                  </p>
+
+                  <div className="mt-2.5">
+                    <span className="text-[11px] font-semibold px-2.5 py-0.5 border border-border rounded-md text-foreground bg-muted/30 uppercase tracking-wider">
+                      {patient.occupation || patient.insurance_type || "PASIEN UMUM"}
                     </span>
-                  </Button>
-                );
-              })}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+                  </div>
+                </div>
 
-      <Tabs
-        value={activeTab}
-        onValueChange={handleTabChange}
-        className="space-y-0"
-      >
-        <div className="border-b border-border/70 px-4 pt-2 lg:px-5">
-          <TabsList className="h-auto w-full justify-start rounded-none border-0 bg-transparent p-0">
-            <TabsTrigger
-              value="detail"
-              className="rounded-none border-0 border-b-[3px] border-transparent bg-transparent px-3 py-2 text-sm text-muted-foreground shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
-            >
-              Detail
-            </TabsTrigger>
-            <TabsTrigger
-              value="pembayaran"
-              className="rounded-none border-0 border-b-[3px] border-transparent bg-transparent px-3 py-2 text-sm text-muted-foreground shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
-            >
-              Riwayat Pembayaran
-            </TabsTrigger>
-            <TabsTrigger
-              value="kunjungan"
-              className="rounded-none border-0 border-b-[3px] border-transparent bg-transparent px-3 py-2 text-sm text-muted-foreground shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
-            >
-              Riwayat Kunjungan
-            </TabsTrigger>
-            <TabsTrigger
-              value="rekam-medis"
-              className="rounded-none border-0 border-b-[3px] border-transparent bg-transparent px-3 py-2 text-sm text-muted-foreground shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
-            >
-              Rekam Medis
-            </TabsTrigger>
-          </TabsList>
-        </div>
+                {/* Divider */}
+                <div className="border-t border-border/60 my-4" />
 
-        <TabsContent value="detail" className="mt-0 divide-y divide-border/70">
-          <div className="grid gap-6 xl:grid-cols-2">
-            <div className="grid gap-x-6 gap-y-4  bg-muted/[0.03] p-4 md:grid-cols-2">
-              <PatientDetailItem
-                label="Nama Lengkap"
-                value={patient.full_name}
-              />
-              <PatientDetailItem
-                label="No. Rekam Medis"
-                value={patient.medical_record_number}
-              />
-              <PatientDetailItem label="NIK" value={formatValue(patient.nik)} />
-              <PatientDetailItem
-                label="Tempat Lahir"
-                value={formatValue(patient.birth_place)}
-              />
-              <PatientDetailItem
-                label="Tanggal Lahir"
-                value={
-                  patient.birth_date
-                    ? `${formatDate(patient.birth_date)}${ageLabel !== "-" ? ` (${ageLabel})` : ""}`
-                    : "-"
-                }
-              />
-              <PatientDetailItem
-                label="Golongan Darah"
-                value={formatValue(patient.blood_type)}
-              />
-              <PatientDetailItem
-                label="Status Pernikahan"
-                value={formatValue(patient.marital_status)}
-              />
-              <PatientDetailItem
-                label="Pekerjaan"
-                value={formatValue(patient.occupation)}
-              />
-            </div>
-
-            <div className="grid gap-x-6 gap-y-4  bg-muted/[0.03] p-4 md:grid-cols-2">
-              <PatientDetailItem
-                label="Alamat Lengkap"
-                value={formatValue(patient.address)}
-              />
-              <PatientDetailItem
-                label="RT / RW"
-                value={
-                  patient.rt || patient.rw
-                    ? `${patient.rt || "-"}/${patient.rw || "-"}`
-                    : "-"
-                }
-              />
-              <PatientDetailItem
-                label="Kelurahan"
-                value={formatValue(patient.kelurahan)}
-              />
-              <PatientDetailItem
-                label="Kecamatan"
-                value={formatValue(patient.kecamatan)}
-              />
-              <PatientDetailItem
-                label="Kota / Kabupaten"
-                value={formatValue(patient.city)}
-              />
-              <PatientDetailItem
-                label="Provinsi"
-                value={formatValue(patient.province)}
-              />
-              <PatientDetailItem
-                label="Kode Pos"
-                value={formatValue(patient.postal_code)}
-              />
-              <PatientDetailItem
-                label="Telepon"
-                value={formatValue(patient.phone)}
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-x-6 gap-y-4  bg-muted/[0.03] p-4 md:grid-cols-2 xl:grid-cols-3">
-            <PatientDetailItem
-              label="Orang Tua / Wali"
-              value={formatValue(patient.emergency_contact_name)}
-            />
-            <PatientDetailItem
-              label="Kontak Darurat"
-              value={getPatientEmergencyLabel(patient)}
-            />
-            <PatientDetailItem
-              label="Alamat Ringkas"
-              value={getPatientAddressLabel(patient)}
-            />
-            <PatientDetailItem
-              label="Tipe Asuransi"
-              value={getPatientInsuranceLabel(patient.insurance_type)}
-            />
-            {patient.insurance_type !== "umum" ? (
-              <PatientDetailItem
-                label="Nomor Asuransi"
-                value={formatValue(patient.insurance_number)}
-              />
-            ) : null}
-            <PatientDetailItem
-              label="Alergi"
-              value={formatValue(patient.allergies, "Tidak ada data alergi")}
-            />
-            <PatientDetailItem
-              label="Catatan Tambahan"
-              value={formatValue(patient.notes, "Tidak ada catatan tambahan")}
-            />
-            <PatientDetailItem
-              label="Terakhir Diubah"
-              value={formatDateTime(patient.updated_at)}
-            />
-          </div>
-        </TabsContent>
-
-        <TabsContent value="pembayaran" className="mt-0">
-          {invoices.length === 0 ? (
-            <div className="border border-dashed border-border/70 bg-muted/10 px-4 py-8 text-center text-sm text-muted-foreground">
-              Belum ada riwayat pembayaran.
-            </div>
-          ) : (
-            <div className="overflow-hidden  bg-background">
-              <div className="divide-y divide-border/70">
-                {invoices.map((invoice) => {
-                  const paidAmount = Number(invoice.paid_amount || 0);
-                  const totalAmount = Number(invoice.total_amount || 0);
-                  const outstandingAmount = Math.max(
-                    totalAmount - paidAmount,
-                    0,
-                  );
-
-                  return (
-                    <div
-                      key={invoice.id}
-                      className="grid gap-3 px-4 py-4 lg:grid-cols-[180px_220px_minmax(0,1fr)_170px]"
-                    >
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium text-foreground/95">
-                          {formatDate(invoice.invoice_date)}
-                        </p>
-                        <p className="text-[11px] font-mono text-muted-foreground">
-                          {invoice.invoice_number}
-                        </p>
-                      </div>
-
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium text-foreground/95">
-                          Visit {invoice.visit?.visit_number || "-"}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground">
-                          {invoice.payments && invoice.payments.length > 0
-                            ? `${invoice.payments.length} transaksi`
-                            : "Belum ada transaksi"}
-                        </p>
-                      </div>
-
-                      <div className="space-y-1">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                          Nominal
-                        </p>
-                        <p className="text-sm leading-6 text-foreground/95">
-                          Total Rp {totalAmount.toLocaleString("id-ID")} ·
-                          Terbayar Rp {paidAmount.toLocaleString("id-ID")} ·
-                          Sisa Rp {outstandingAmount.toLocaleString("id-ID")}
-                        </p>
-                      </div>
-
-                      <div className="flex flex-wrap items-start gap-2 lg:justify-end">
-                        <Badge
-                          variant="outline"
-                          className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none"
-                        >
-                          {invoice.status || "-"}
-                        </Badge>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="kunjungan" className="mt-0">
-          {visits.length === 0 ? (
-            <div className="border border-dashed border-border/70 bg-muted/10 px-4 py-8 text-center text-sm text-muted-foreground">
-              Belum ada riwayat kunjungan.
-            </div>
-          ) : (
-            <div className="overflow-hidden  bg-background">
-              <div className="divide-y divide-border/70">
-                {visits.map((visit) => (
-                  <div
-                    key={visit.id}
-                    className="grid gap-3 px-4 py-4 lg:grid-cols-[180px_220px_minmax(0,1fr)_170px]"
-                  >
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-foreground/95">
-                        {formatDate(visit.visit_date)}
+                {/* Info List Atribut Pasien */}
+                <div className="space-y-3.5">
+                  <div className="flex items-start gap-2.5 text-xs">
+                    <User className="size-4 text-muted-foreground shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">GENDER / UMUR</p>
+                      <p className="font-medium text-foreground mt-0.5">
+                        {getPatientGenderLabel(patient.gender)} • {ageLabel}
                       </p>
-                      <p className="text-[11px] font-mono text-muted-foreground">
-                        {visit.visit_number}
-                      </p>
-                    </div>
-
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-foreground/95">
-                        {visit.polyclinic?.name || "-"}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {visit.doctor?.full_name || "-"}
-                      </p>
-                    </div>
-
-                    <div className="space-y-1">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                        Keluhan
-                      </p>
-                      <p className="text-sm leading-6 text-foreground/95">
-                        {formatValue(visit.complaint)}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-wrap items-start gap-2 lg:justify-end">
-                      <Badge
-                        variant="outline"
-                        className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none"
-                      >
-                        {STATUS_LABEL[visit.status] || visit.status}
-                      </Badge>
-                      <Badge
-                        variant="secondary"
-                        className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none"
-                      >
-                        {QUEUE_LABEL[visit.queue_status] || visit.queue_status}
-                      </Badge>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </TabsContent>
 
-        <TabsContent value="rekam-medis" className="mt-0">
-          {medicalRecordGroups.length === 0 ? (
-            <div className="border border-dashed border-border/70 bg-muted/10 px-4 py-8 text-center text-sm text-muted-foreground">
-              Belum ada rekam medis untuk pasien ini.
-            </div>
-          ) : (
-            <div className="grid min-h-[520px] overflow-hidden  bg-background lg:grid-cols-[340px_minmax(0,1fr)]">
-              <div className="border-b border-border/70 lg:border-b-0 lg:border-r lg:border-border/70">
-                <div className="border-b border-border/70 px-4 py-3">
-                  <p className="text-sm font-semibold tracking-tight text-foreground/95">
-                    Riwayat Registrasi
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {medicalRecordGroups.length} registrasi ·{" "}
-                    {totalMedicalRecordPdfNodes} PDF
-                  </p>
+                  <div className="flex items-start gap-2.5 text-xs">
+                    <Phone className="size-4 text-muted-foreground shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">KONTAK</p>
+                      <p className="font-medium text-foreground mt-0.5">
+                        {patient.phone || "-"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5 text-xs">
+                    <MapPin className="size-4 text-muted-foreground shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">DOMISILI</p>
+                      <p className="font-medium text-foreground mt-0.5 leading-relaxed">
+                        {patient.address ? `${patient.address}, ${patient.city || ""}` : "-"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5 text-xs">
+                    <Building className="size-4 text-muted-foreground shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">ASURANSI / PENJAMIN</p>
+                      <p className="font-medium text-foreground mt-0.5">
+                        {getPatientInsuranceLabel(patient.insurance_type)} {patient.insurance_number ? `• No. ${patient.insurance_number}` : ""}
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="max-h-[520px] overflow-auto p-3">
-                  {medicalRecordGroups.map((group, groupIndex) => {
-                    const isGroupLast =
-                      groupIndex === medicalRecordGroups.length - 1;
-                    const isCollapsed =
-                      collapsedVisitNodes[group.visitId] ?? false;
-
-                    return (
-                      <div
-                        key={`${group.visitId}-${group.visitNumber}`}
-                        className="relative pb-3 pl-7 last:pb-0"
-                      >
-                        {!isGroupLast ? (
-                          <div className="absolute bottom-0 left-3 top-6 w-px bg-border/70" />
-                        ) : null}
-                        <div className="absolute left-2 top-4 h-2 w-2 rounded-full bg-foreground/60" />
-                        <div className="absolute left-3 top-5 h-px w-3 bg-border/70" />
-
-                        <button
-                          type="button"
-                          className="flex w-full items-center justify-between gap-2  bg-muted/[0.02] px-2.5 py-2 text-left transition-colors hover:bg-muted/30"
-                          onClick={() => toggleVisitNode(group.visitId)}
-                        >
-                          <div className="flex min-w-0 items-start gap-2">
-                            <ChevronRight
-                              className={cn(
-                                "mt-[1px] h-3.5 w-3.5 shrink-0 transition-transform",
-                                !isCollapsed && "rotate-90",
-                              )}
-                            />
-                            <div className="min-w-0">
-                              <p className="truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-foreground/90">
-                                {group.visitNumber}
-                              </p>
-                              <p className="truncate text-[10px] text-muted-foreground">
-                                {formatDate(group.visitDate)} ·{" "}
-                                {group.polyclinicName}
-                              </p>
-                            </div>
-                          </div>
-                          <Badge
-                            variant="outline"
-                            className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none"
-                          >
-                            {group.pdfNodes.length}
-                          </Badge>
-                        </button>
-
-                        {!isCollapsed ? (
-                          <div className="mt-1.5 space-y-1 pl-4">
-                            {group.pdfNodes.map((node, recordIndex) => {
-                              const isActiveRecord =
-                                selectedMedicalRecordNodeKey === node.key;
-                              const isLastRecord =
-                                recordIndex === group.pdfNodes.length - 1;
-
-                              return (
-                                <div key={node.key} className="relative pl-5">
-                                  {!isLastRecord ? (
-                                    <div className="absolute bottom-[-8px] left-1.5 top-3.5 w-px bg-border/70" />
-                                  ) : null}
-                                  <div className="absolute left-1.5 top-3.5 h-px w-3 bg-border/70" />
-                                  <div
-                                    className={cn(
-                                      "absolute left-1 top-[11px] h-1.5 w-1.5 rounded-full",
-                                      isActiveRecord
-                                        ? "bg-foreground"
-                                        : "bg-muted-foreground/60",
-                                    )}
-                                  />
-
-                                  <button
-                                    type="button"
-                                    className={cn(
-                                      "flex w-full items-center justify-between gap-2 border px-2 py-1.5 text-left text-[11px] transition-colors",
-                                      isActiveRecord
-                                        ? "border-foreground bg-foreground text-background"
-                                        : "border-border/70 bg-background text-foreground/90 hover:bg-muted/30",
-                                    )}
-                                    onClick={() =>
-                                      setSelectedMedicalRecordNodeKey(node.key)
-                                    }
-                                  >
-                                    <span className="flex min-w-0 items-center gap-1.5">
-                                      <FileText
-                                        className={cn(
-                                          "h-3.5 w-3.5 shrink-0",
-                                          isActiveRecord
-                                            ? "text-background"
-                                            : "text-muted-foreground",
-                                        )}
-                                      />
-                                      <span className="truncate">
-                                        {node.title}
-                                      </span>
-                                    </span>
-                                    <span
-                                      className={cn(
-                                        "font-mono text-[10px]",
-                                        isActiveRecord
-                                          ? "text-background/90"
-                                          : "text-muted-foreground",
-                                      )}
-                                    >
-                                      {getPdfNodeIdentifierLabel(node)}
-                                    </span>
-                                  </button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="flex min-h-[520px] flex-col">
-                {selectedMedicalRecordNode ? (
-                  <>
-                    <div className="border-b border-border/70 px-4 py-3">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold tracking-tight text-foreground/95">
-                            {selectedMedicalRecordNode.title}
-                          </p>
-                          <p className="mt-1 text-[11px] text-muted-foreground">
-                            {formatDate(selectedMedicalRecordNode.recordDate)} ·{" "}
-                            {selectedMedicalRecordNode.visitNumber}
-                          </p>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge
-                            variant="outline"
-                            className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none"
-                          >
-                            {selectedMedicalRecordNode.statusLabel || "-"}
-                          </Badge>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="h-8 rounded-none px-2 text-[11px] uppercase tracking-wide shadow-none"
-                            onClick={() => {
-                              if (selectedMedicalRecordPdfUrl) {
-                                window.open(
-                                  selectedMedicalRecordPdfUrl,
-                                  "_blank",
-                                );
-                              }
-                            }}
-                            disabled={
-                              !selectedMedicalRecordPdfUrl ||
-                              openingPdfNodeKey === selectedMedicalRecordNode.key
-                            }
-                          >
-                            {openingPdfNodeKey === selectedMedicalRecordNode.key ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <FileText className="h-3.5 w-3.5" />
-                            )}
-                            Buka Di Tab Baru
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex-1 bg-muted/[0.02] p-3">
-                      {openingPdfNodeKey === selectedMedicalRecordNode.key ? (
-                        <div className="flex h-full min-h-[420px] flex-col items-center justify-center gap-3 border border-dashed border-border/70 bg-background text-muted-foreground">
-                          <Loader2 className="h-6 w-6 animate-spin" />
-                          <p className="text-sm">Menyiapkan PDF blob...</p>
-                        </div>
-                      ) : selectedMedicalRecordPdfError ? (
-                        <div className="flex h-full min-h-[420px] flex-col items-center justify-center gap-3 border border-dashed border-destructive/40 bg-background px-4 text-center text-muted-foreground">
-                          <FileText className="h-8 w-8 text-destructive/70" />
-                          <p className="text-sm text-foreground">
-                            Gagal memuat PDF rekam medis
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {selectedMedicalRecordPdfError}
-                          </p>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="h-8 rounded-none px-2 text-[11px] uppercase tracking-wide shadow-none"
-                            onClick={() => {
-                              if (selectedMedicalRecordNode) {
-                                void loadMedicalRecordPdfForViewer(
-                                  selectedMedicalRecordNode,
-                                );
-                              }
-                            }}
-                          >
-                            Muat Ulang
-                          </Button>
-                        </div>
-                      ) : selectedMedicalRecordPdfUrl ? (
-                        <iframe
-                          key={selectedMedicalRecordNode.key}
-                          title={`PDF Rekam Medis ${selectedMedicalRecordNode.key}`}
-                          src={selectedMedicalRecordPdfUrl}
-                          className="h-full min-h-[420px] w-full  bg-background"
-                        />
-                      ) : (
-                        <div className="flex h-full min-h-[420px] flex-col items-center justify-center gap-3 border border-dashed border-border/70 bg-background text-muted-foreground">
-                          <FileText className="h-8 w-8 text-muted-foreground/60" />
-                          <p className="text-sm">
-                            PDF belum tersedia untuk ditampilkan
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-muted-foreground">
-                    <FileText className="h-10 w-10 text-muted-foreground/60" />
-                    <p className="text-sm">
-                      Pilih dokumen dari sidebar untuk melihat rekam medis
+                {/* Box Status Berbingkai Merah Muda Sesuai Gambar 2 */}
+                <div className="mt-5 rounded-lg border border-rose-200 dark:border-rose-950 bg-rose-50/60 dark:bg-rose-950/20 p-3.5 space-y-2.5">
+                  <p className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider flex items-center gap-1">
+                    <span>▾</span> STATUS PASIEN & REKAM MEDIS
+                  </p>
+                  <div>
+                    <p className="text-[10px] text-muted-foreground uppercase font-semibold">STATUS & KATEGORI</p>
+                    <p className="text-xs font-medium text-foreground mt-0.5">
+                      {patient.is_active !== false ? "Pasien Aktif" : "Nonaktif"} • {getPatientInsuranceLabel(patient.insurance_type)}
                     </p>
                   </div>
-                )}
+                  <div>
+                    <p className="text-[10px] text-muted-foreground uppercase font-semibold">RIWAYAT KUNJUNGAN</p>
+                    <p className="text-xs font-medium text-foreground mt-0.5">
+                      {visits.length} Kunjungan {visits[0] ? `(Terakhir: ${formatDate(visits[0].visit_date)})` : ""}
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
-          )}
-        </TabsContent>
-      </Tabs>
-    </PatientPageShell>
+
+            {/* KOLOM KANAN: Main Tabbed Panel */}
+            <div className="lg:col-span-8 xl:col-span-9">
+              <Tabs
+                value={activeTab}
+                onValueChange={handleTabChange}
+                className="space-y-4"
+              >
+                <TabsList className="h-auto w-full justify-start rounded-none border-b border-border/70 bg-transparent p-0 gap-6">
+                  <TabsTrigger
+                    value="detail"
+                    className="rounded-none border-0 border-b-2 border-transparent bg-transparent pb-3 pt-1 px-1 text-sm font-semibold text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:text-foreground flex items-center gap-2"
+                  >
+                    <UserCheck className="size-4" />
+                    Detail Profil
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="kunjungan"
+                    className="rounded-none border-0 border-b-2 border-transparent bg-transparent pb-3 pt-1 px-1 text-sm font-semibold text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:text-foreground flex items-center gap-2"
+                  >
+                    <History className="size-4" />
+                    Rekap Kunjungan
+                    <span className="ml-1 rounded-full bg-muted px-1.5 py-0.2 text-[10px] font-mono text-muted-foreground">{visits.length}</span>
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="pembayaran"
+                    className="rounded-none border-0 border-b-2 border-transparent bg-transparent pb-3 pt-1 px-1 text-sm font-semibold text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:text-foreground flex items-center gap-2"
+                  >
+                    <CreditCard className="size-4" />
+                    Riwayat Pembayaran
+                    <span className="ml-1 rounded-full bg-muted px-1.5 py-0.2 text-[10px] font-mono text-muted-foreground">{invoices.length}</span>
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="rekam-medis"
+                    className="rounded-none border-0 border-b-2 border-transparent bg-transparent pb-3 pt-1 px-1 text-sm font-semibold text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:text-foreground flex items-center gap-2"
+                  >
+                    <FileText className="size-4" />
+                    Rekam Medis & Dokumen
+                    <span className="ml-1 rounded-full bg-muted px-1.5 py-0.2 text-[10px] font-mono text-muted-foreground">{medicalRecords.length}</span>
+                  </TabsTrigger>
+                </TabsList>
+
+                {/* TAB DETAIL PROFIL (Sesuai Gambar 2) */}
+                <TabsContent value="detail" className="mt-0 space-y-6 pt-2">
+                  {/* 1. IDENTITAS LENGKAP */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-xs font-bold text-foreground uppercase tracking-wider">
+                      <User className="size-4 text-muted-foreground" />
+                      <span>IDENTITAS LENGKAP</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-y-4 gap-x-6 text-xs">
+                      <div>
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase">TEMPAT LAHIR</p>
+                        <p className="font-medium text-foreground mt-1 text-[13px]">{formatValue(patient.birth_place)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase">TANGGAL LAHIR</p>
+                        <p className="font-medium text-foreground mt-1 text-[13px]">{patient.birth_date ? formatDate(patient.birth_date) : "-"}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase">GOLONGAN DARAH</p>
+                        <p className="font-medium text-foreground mt-1 text-[13px]">{formatValue(patient.blood_type)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase">AGAMA</p>
+                        <p className="font-medium text-foreground mt-1 text-[13px]">{formatReligion(patient.religion)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase">STATUS KAWIN</p>
+                        <p className="font-medium text-foreground mt-1 text-[13px]">{formatMaritalStatus(patient.marital_status)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase">PENDIDIKAN TERAKHIR</p>
+                        <p className="font-medium text-foreground mt-1 text-[13px]">{formatValue(patient.education)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-border/60" />
+
+                  {/* 2. INFORMASI ALAMAT */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-xs font-bold text-foreground uppercase tracking-wider">
+                      <MapPin className="size-4 text-muted-foreground" />
+                      <span>INFORMASI ALAMAT</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-y-4 gap-x-6 text-xs">
+                      <div className="sm:col-span-2">
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase">ALAMAT LENGKAP (KTP & DOMISILI)</p>
+                        <p className="font-medium text-foreground mt-1 text-[13px] leading-relaxed">{formatValue(patient.address)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase">KOTA / KABUPATEN</p>
+                        <p className="font-medium text-foreground mt-1 text-[13px]">{formatValue(patient.city)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase">PROVINSI</p>
+                        <p className="font-medium text-foreground mt-1 text-[13px]">{formatValue(patient.province)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase">KECAMATAN / KELURAHAN</p>
+                        <p className="font-medium text-foreground mt-1 text-[13px]">{patient.kecamatan || "-"} / {patient.kelurahan || "-"}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase">KODE POS / RT RW</p>
+                        <p className="font-medium text-foreground mt-1 text-[13px]">
+                          {formatValue(patient.postal_code)} {patient.rt || patient.rw ? `• RT ${patient.rt || "-"}/RW ${patient.rw || "-"}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-border/60" />
+
+                  {/* 3. KELUARGA & PENANGGUNG JAWAB */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-xs font-bold text-foreground uppercase tracking-wider">
+                      <Users className="size-4 text-muted-foreground" />
+                      <span>KELUARGA & PENANGGUNG JAWAB</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-y-4 gap-x-6 text-xs">
+                      <div>
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase">NAMA PENANGGUNG JAWAB (PJ)</p>
+                        <p className="font-medium text-foreground mt-1 text-[13px]">{formatValue(patient.emergency_contact_name)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase">HUBUNGAN PJ</p>
+                        <p className="font-medium text-foreground mt-1 text-[13px]">{formatValue(patient.emergency_contact_relation)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase">NO. TELP PJ</p>
+                        <p className="font-medium text-foreground mt-1 text-[13px]">{formatValue(patient.emergency_contact_phone)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-border/60" />
+
+                  {/* 4. LEGALITAS, BPJS & JAMINAN KESEHATAN */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-xs font-bold text-foreground uppercase tracking-wider">
+                      <ShieldCheck className="size-4 text-muted-foreground" />
+                      <span>LEGALITAS, BPJS & JAMINAN KESEHATAN</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-y-4 gap-x-6 text-xs">
+                      <div>
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase">NOMOR NIK (KTP)</p>
+                        <p className="font-medium text-foreground mt-1 text-[13px] font-mono">{formatValue(patient.nik)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase">BPJS KESEHATAN / ASURANSI</p>
+                        <p className="font-medium text-foreground mt-1 text-[13px]">
+                          {formatValue(patient.insurance_number)} ({getPatientInsuranceLabel(patient.insurance_type)})
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase">ID SATUSEHAT PASIEN</p>
+                        <p className="font-medium text-foreground mt-1 text-[13px] font-mono truncate">
+                          {patient.satusehat_patient_id || "Belum Terhubung"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-border/60" />
+
+                  {/* 5. CATATAN KLINIS & ALERGI */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-xs font-bold text-foreground uppercase tracking-wider">
+                      <AlertTriangle className="size-4 text-muted-foreground" />
+                      <span>CATATAN KLINIS & ALERGI</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-6 text-xs">
+                      <div>
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase">RIWAYAT ALERGI</p>
+                        <p className="font-medium text-rose-600 dark:text-rose-400 mt-1 text-[13px]">{formatValue(patient.allergies, "Tidak ada riwayat alergi")}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase">CATATAN KHUSUS</p>
+                        <p className="font-medium text-foreground mt-1 text-[13px] leading-relaxed">{formatValue(patient.notes, "Tidak ada catatan tambahan")}</p>
+                      </div>
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="pembayaran" className="mt-4">
+                  <div className="border border-border/80 bg-card rounded-none overflow-hidden shadow-none">
+                    <div className="flex items-center justify-between border-b border-border/80 bg-muted/20 px-4 py-3">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">
+                        Riwayat Tagihan & Pembayaran
+                      </h3>
+                      <Badge variant="outline" className="h-6 rounded-none px-2.5 text-xs font-mono font-semibold">
+                        Total {invoices.length} Pembayaran
+                      </Badge>
+                    </div>
+                    <div className="p-0">
+                      <DataTable
+                        columns={invoiceColumns}
+                        data={invoices}
+                        borderless={false}
+                        showSearch={false}
+                        pageSize={10}
+                        emptyMessage={
+                          <div className="p-10 text-center text-sm text-muted-foreground">
+                            Belum ada riwayat pembayaran untuk pasien ini.
+                          </div>
+                        }
+                      />
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="kunjungan" className="mt-4">
+                  <div className="border border-border/80 bg-card rounded-none overflow-hidden shadow-none">
+                    <div className="flex items-center justify-between border-b border-border/80 bg-muted/20 px-4 py-3">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">
+                        Rekap Riwayat Kunjungan Pasien
+                      </h3>
+                      <Badge variant="outline" className="h-6 rounded-none px-2.5 text-xs font-mono font-semibold">
+                        Total {visits.length} Kunjungan
+                      </Badge>
+                    </div>
+                    <div className="p-0">
+                      <DataTable
+                        columns={visitColumns}
+                        data={visits}
+                        borderless={false}
+                        showSearch={false}
+                        pageSize={10}
+                        emptyMessage={
+                          <div className="p-10 text-center text-sm text-muted-foreground">
+                            Belum ada riwayat kunjungan untuk pasien ini.
+                          </div>
+                        }
+                      />
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="rekam-medis" className="mt-0">
+                  {medicalRecordGroups.length === 0 ? (
+                    <div className="border border-dashed border-border/70 bg-muted/10 px-4 py-8 text-center text-sm text-muted-foreground">
+                      Belum ada rekam medis untuk pasien ini.
+                    </div>
+                  ) : (
+                    <div className="grid min-h-[520px] overflow-hidden  bg-background lg:grid-cols-[340px_minmax(0,1fr)]">
+                      <div className="border-b border-border/70 lg:border-b-0 lg:border-r lg:border-border/70">
+                        <div className="border-b border-border/70 px-4 py-3">
+                          <p className="text-sm font-semibold tracking-tight text-foreground/95">
+                            Riwayat Registrasi
+                          </p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {medicalRecordGroups.length} registrasi ·{" "}
+                            {totalMedicalRecordPdfNodes} PDF
+                          </p>
+                        </div>
+
+                        <div className="max-h-[520px] overflow-auto p-3">
+                          {medicalRecordGroups.map((group, groupIndex) => {
+                            const isGroupLast =
+                              groupIndex === medicalRecordGroups.length - 1;
+                            const isCollapsed =
+                              collapsedVisitNodes[group.visitId] ?? false;
+
+                            return (
+                              <div
+                                key={`${group.visitId}-${group.visitNumber}`}
+                                className="relative pb-3 pl-7 last:pb-0"
+                              >
+                                {!isGroupLast ? (
+                                  <div className="absolute bottom-0 left-3 top-6 w-px bg-border/70" />
+                                ) : null}
+                                <div className="absolute left-2 top-4 h-2 w-2 rounded-full bg-foreground/60" />
+                                <div className="absolute left-3 top-5 h-px w-3 bg-border/70" />
+
+                                <button
+                                  type="button"
+                                  className="flex w-full items-center justify-between gap-2  bg-muted/[0.02] px-2.5 py-2 text-left transition-colors hover:bg-muted/30"
+                                  onClick={() => toggleVisitNode(group.visitId)}
+                                >
+                                  <div className="flex min-w-0 items-start gap-2">
+                                    <ChevronRight
+                                      className={cn(
+                                        "mt-[1px] h-3.5 w-3.5 shrink-0 transition-transform",
+                                        !isCollapsed && "rotate-90",
+                                      )}
+                                    />
+                                    <div className="min-w-0">
+                                      <p className="truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-foreground/90">
+                                        {group.visitNumber}
+                                      </p>
+                                      <p className="truncate text-[10px] text-muted-foreground">
+                                        {formatDate(group.visitDate)} ·{" "}
+                                        {group.polyclinicName}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <Badge
+                                    variant="outline"
+                                    className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none"
+                                  >
+                                    {group.pdfNodes.length}
+                                  </Badge>
+                                </button>
+
+                                {!isCollapsed ? (
+                                  <div className="mt-1.5 space-y-1 pl-4">
+                                    {group.pdfNodes.map((node, recordIndex) => {
+                                      const isActiveRecord =
+                                        selectedMedicalRecordNodeKey === node.key;
+                                      const isLastRecord =
+                                        recordIndex === group.pdfNodes.length - 1;
+
+                                      return (
+                                        <div key={node.key} className="relative pl-5">
+                                          {!isLastRecord ? (
+                                            <div className="absolute bottom-[-8px] left-1.5 top-3.5 w-px bg-border/70" />
+                                          ) : null}
+                                          <div className="absolute left-1.5 top-3.5 h-px w-3 bg-border/70" />
+                                          <div
+                                            className={cn(
+                                              "absolute left-1 top-[11px] h-1.5 w-1.5 rounded-full",
+                                              isActiveRecord
+                                                ? "bg-foreground"
+                                                : "bg-muted-foreground/60",
+                                            )}
+                                          />
+
+                                          <button
+                                            type="button"
+                                            className={cn(
+                                              "flex w-full items-center justify-between gap-2 border px-2 py-1.5 text-left text-[11px] transition-colors",
+                                              isActiveRecord
+                                                ? "border-foreground bg-foreground text-background"
+                                                : "border-border/70 bg-background text-foreground/90 hover:bg-muted/30",
+                                            )}
+                                            onClick={() =>
+                                              setSelectedMedicalRecordNodeKey(node.key)
+                                            }
+                                          >
+                                            <span className="flex min-w-0 items-center gap-1.5">
+                                              <FileText
+                                                className={cn(
+                                                  "h-3.5 w-3.5 shrink-0",
+                                                  isActiveRecord
+                                                    ? "text-background"
+                                                    : "text-muted-foreground",
+                                                )}
+                                              />
+                                              <span className="truncate">
+                                                {node.title}
+                                              </span>
+                                            </span>
+                                            <span
+                                              className={cn(
+                                                "font-mono text-[10px]",
+                                                isActiveRecord
+                                                  ? "text-background/90"
+                                                  : "text-muted-foreground",
+                                              )}
+                                            >
+                                              {getPdfNodeIdentifierLabel(node)}
+                                            </span>
+                                          </button>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="flex min-h-[520px] flex-col">
+                        {selectedMedicalRecordNode ? (
+                          <>
+                            <div className="border-b border-border/70 px-4 py-3">
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold tracking-tight text-foreground/95">
+                                    {selectedMedicalRecordNode.title}
+                                  </p>
+                                  <p className="mt-1 text-[11px] text-muted-foreground">
+                                    {formatDate(selectedMedicalRecordNode.recordDate)} ·{" "}
+                                    {selectedMedicalRecordNode.visitNumber}
+                                  </p>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge
+                                    variant="outline"
+                                    className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide shadow-none"
+                                  >
+                                    {selectedMedicalRecordNode.statusLabel || "-"}
+                                  </Badge>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="h-8 rounded-none px-2 text-[11px] uppercase tracking-wide shadow-none"
+                                    onClick={() => {
+                                      if (selectedMedicalRecordPdfUrl) {
+                                        window.open(
+                                          selectedMedicalRecordPdfUrl,
+                                          "_blank",
+                                        );
+                                      }
+                                    }}
+                                    disabled={
+                                      !selectedMedicalRecordPdfUrl ||
+                                      openingPdfNodeKey === selectedMedicalRecordNode.key
+                                    }
+                                  >
+                                    {openingPdfNodeKey === selectedMedicalRecordNode.key ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <FileText className="h-3.5 w-3.5" />
+                                    )}
+                                    Buka Di Tab Baru
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex-1 bg-muted/[0.02] p-3">
+                              {openingPdfNodeKey === selectedMedicalRecordNode.key ? (
+                                <div className="flex h-full min-h-[420px] flex-col items-center justify-center gap-3 border border-dashed border-border/70 bg-background text-muted-foreground">
+                                  <Loader2 className="h-6 w-6 animate-spin" />
+                                  <p className="text-sm">Menyiapkan PDF blob...</p>
+                                </div>
+                              ) : selectedMedicalRecordPdfError ? (
+                                <div className="flex h-full min-h-[420px] flex-col items-center justify-center gap-3 border border-dashed border-destructive/40 bg-background px-4 text-center text-muted-foreground">
+                                  <FileText className="h-8 w-8 text-destructive/70" />
+                                  <p className="text-sm text-foreground">
+                                    Gagal memuat PDF rekam medis
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {selectedMedicalRecordPdfError}
+                                  </p>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="h-8 rounded-none px-2 text-[11px] uppercase tracking-wide shadow-none"
+                                    onClick={() => {
+                                      if (selectedMedicalRecordNode) {
+                                        void loadMedicalRecordPdfForViewer(
+                                          selectedMedicalRecordNode,
+                                        );
+                                      }
+                                    }}
+                                  >
+                                    Muat Ulang
+                                  </Button>
+                                </div>
+                              ) : selectedMedicalRecordPdfUrl ? (
+                                <iframe
+                                  key={selectedMedicalRecordNode.key}
+                                  title={`PDF Rekam Medis ${selectedMedicalRecordNode.key}`}
+                                  src={selectedMedicalRecordPdfUrl}
+                                  className="h-full min-h-[420px] w-full  bg-background"
+                                />
+                              ) : (
+                                <div className="flex h-full min-h-[420px] flex-col items-center justify-center gap-3 border border-dashed border-border/70 bg-background text-muted-foreground">
+                                  <FileText className="h-8 w-8 text-muted-foreground/60" />
+                                  <p className="text-sm">
+                                    PDF belum tersedia untuk ditampilkan
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </>
+                        ) : (
+                          <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-muted-foreground">
+                            <FileText className="h-10 w-10 text-muted-foreground/60" />
+                            <p className="text-sm">
+                              Pilih dokumen dari sidebar untuk melihat rekam medis
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
+

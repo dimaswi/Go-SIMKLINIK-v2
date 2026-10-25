@@ -131,6 +131,8 @@ func CreateUser(c *gin.Context) {
 
 type UpdateUserRequest struct {
 	FullName string `json:"full_name"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
 	RoleID   uint   `json:"role_id"`
 	IsActive *bool  `json:"is_active"`
 }
@@ -152,6 +154,15 @@ func UpdateUser(c *gin.Context) {
 
 	if req.FullName != "" {
 		user.FullName = req.FullName
+	}
+	if req.Email != "" {
+		user.Email = req.Email
+	}
+	if req.Password != "" {
+		if err := user.HashPassword(req.Password); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+			return
+		}
 	}
 	if req.RoleID > 0 {
 		user.RoleID = req.RoleID

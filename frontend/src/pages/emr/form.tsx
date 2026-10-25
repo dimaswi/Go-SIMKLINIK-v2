@@ -604,7 +604,6 @@ export default function EMRFormPage() {
           <aside className="border-b border-border/70 bg-background xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden xl:border-b-0 xl:border-r xl:border-r-border/70">
             <div className="border-b border-border/70 px-3 py-3">
               <h2 className="text-sm font-semibold">Riwayat Entri {activeSectionConfig?.label}</h2>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">Pilih entri di kiri, isi detail di kanan.</p>
               {!workspaceLocked && (
                 <div className="mt-2 grid grid-cols-2 gap-1.5">
                   <Button variant="outline" className="gap-1.5 rounded-none shadow-none" onClick={createEntry} disabled={creating}>

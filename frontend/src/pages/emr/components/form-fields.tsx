@@ -25,15 +25,14 @@ type TableSectionProps = {
   tableClassName?: string;
 };
 
-export function TableSection({ title, helper, children, tableClassName }: TableSectionProps) {
-  const hasHeading = Boolean(title || helper);
+export function TableSection({ title, children, tableClassName }: TableSectionProps) {
+  const hasHeading = Boolean(title);
 
   return (
     <section className={hasHeading ? 'space-y-1.5' : undefined}>
       {hasHeading && (
         <div className="px-0.5">
           {title ? <h3 className="text-[13px] font-semibold tracking-tight">{title}</h3> : null}
-          {helper && <p className="mt-0.5 text-xs text-muted-foreground">{helper}</p>}
         </div>
       )}
       <div className="overflow-x-auto">
@@ -61,12 +60,11 @@ type TableCellProps = {
   className?: string;
 };
 
-export function TableCell({ label, helper, children, colSpan = 1, className }: TableCellProps) {
+export function TableCell({ label, children, colSpan = 1, className }: TableCellProps) {
   return (
     <td colSpan={colSpan} className={cn('align-top border-b border-r border-border/70 p-0', className)}>
       <div className="border-b border-border/60 px-2.5 py-1.5">
         <Label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/85">{label}</Label>
-        {helper && <p className="mt-1 text-xs text-muted-foreground">{helper}</p>}
       </div>
       <div className="p-2.5">{children}</div>
     </td>

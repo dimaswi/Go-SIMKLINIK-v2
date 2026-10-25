@@ -5,8 +5,8 @@ import { AxiosError } from 'axios';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { DataTable } from '@/components/ui/data-table';
-import { Input } from '@/components/ui/input';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import { TableDateFilter } from '@/components/ui/table-date-filter';
 import { useToast } from '@/hooks/use-toast';
 import { getLocalISODate } from '@/lib/utils';
 import { billingApi } from '@/lib/api';
@@ -59,7 +59,7 @@ export default function KasirIndexPage() {
 
   const loadData = useCallback(async () => {
     const [queueRes, invoiceParams] = await Promise.all([
-      billingApi.getQueue(date, search),
+      billingApi.getQueue(date || 'all', search),
       (() => {
         const params = new URLSearchParams({ per_page: '50' });
         if (statusFilter) params.append('status', statusFilter);
@@ -401,12 +401,10 @@ export default function KasirIndexPage() {
               </button>
             </div>
 
-            <Input
-              type="date"
+            <TableDateFilter
               value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="h-9 w-36 rounded-none text-xs shrink-0"
-              title="Filter tanggal transaksi"
+              onChange={setDate}
+              title="Filter tanggal transaksi (Kosongkan untuk menampilkan semua tanggal)"
             />
 
             <SearchableSelect

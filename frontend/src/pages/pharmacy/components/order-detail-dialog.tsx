@@ -20,7 +20,7 @@ import {
   getRecordStockSummary,
   getRecordTotalPrice,
 } from '../utils';
-import { CalendarClock, ClipboardList, CloudUpload, Download, Eye, Loader2, PillBottle, Stethoscope, UserRound, type LucideIcon } from 'lucide-react';
+import { CalendarClock, CheckCircle2, ClipboardList, CloudUpload, Download, Eye, Loader2, PillBottle, Stethoscope, UserRound, type LucideIcon } from 'lucide-react';
 
 type OrderDetailDialogProps = {
   order: MedicalRecord | null;
@@ -207,7 +207,12 @@ export function OrderDetailDialog({
                                       </Badge>
                                       {item.satusehatMedicationRequestId ? (
                                         <Badge variant="outline" className="rounded-none border-emerald-300 bg-emerald-50 px-1.5 py-0 text-[9px] uppercase tracking-[0.14em] text-emerald-700">
-                                          SATUSEHAT Tersinkron
+                                          <CheckCircle2 className="mr-1 h-3 w-3 inline text-emerald-600" />
+                                          Tersinkron
+                                        </Badge>
+                                      ) : item.kind === 'non-racikan' ? (
+                                        <Badge variant="outline" className="rounded-none border-border bg-muted/30 px-1.5 py-0 text-[9px] uppercase tracking-[0.14em] text-muted-foreground">
+                                          Belum Sync
                                         </Badge>
                                       ) : null}
                                     </div>

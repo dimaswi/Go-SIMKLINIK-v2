@@ -258,7 +258,7 @@ export function buildDraft(record?: MedicalRecord, visit?: Visit): MedicalRecord
     review_of_systems: record?.review_of_systems || '',
     clinical_alert: record?.clinical_alert || '',
     allergy_notes: record?.allergy_notes || visit?.patient?.allergies || '',
-    subjective: record?.subjective || visit?.complaint || '',
+    subjective: record?.sheet_key === 'pengkajian-awal-gigi' ? (record?.subjective || '') : (record?.subjective || visit?.complaint || ''),
     bp_systolic: record?.bp_systolic || 0,
     bp_diastolic: record?.bp_diastolic || 0,
     heart_rate: record?.heart_rate || 0,

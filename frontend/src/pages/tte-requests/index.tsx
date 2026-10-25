@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DataTable } from "@/components/ui/data-table";
+import { TableDateFilter } from "@/components/ui/table-date-filter";
 import { api, tteApi, type TteInboxItem } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { setPageTitle } from "@/lib/page-title";
@@ -403,12 +404,10 @@ export default function TTERequestsPage() {
               className="h-9 w-52 sm:w-60 rounded-none text-xs focus:ring-inset"
             />
 
-            <input
-              type="date"
+            <TableDateFilter
               value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-              className="h-9 w-36 border border-border bg-background px-2.5 text-xs outline-none focus:ring-1 focus:ring-ring shrink-0"
-              title="Filter tanggal permintaan TTE"
+              onChange={setDateFilter}
+              title="Filter tanggal permintaan TTE (Kosongkan untuk menampilkan semua tanggal)"
             />
 
             <Button

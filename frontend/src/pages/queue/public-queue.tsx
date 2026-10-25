@@ -354,9 +354,6 @@ export default function PublicQueuePage() {
             <form onSubmit={handleSubmit} className="space-y-3">
               {/* NIK Input */}
               <div className="space-y-1">
-                <Label htmlFor="nik" className="text-xs font-medium text-foreground">
-                  NIK (Nomor Induk Kependudukan) *
-                </Label>
                 <Input
                   id="nik"
                   type="text"

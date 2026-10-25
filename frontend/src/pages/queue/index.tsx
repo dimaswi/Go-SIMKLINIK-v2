@@ -39,7 +39,7 @@ import {
   Users,
 } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
-import { cn, getLocalISODate } from '@/lib/utils';
+import { cn, generateDummyNik, getLocalISODate } from '@/lib/utils';
 import { openPdfDocumentInNewWindow } from '../emr/print-document';
 
 type QueueBuckets = {
@@ -199,7 +199,7 @@ export default function QueueDashboard() {
 
     doctorsApi.getAll('is_active=true').then((res) => {
       setAllDoctors(res.data.data || []);
-    }).catch(() => {});
+    }).catch(() => { });
   }, [toast]);
 
   useEffect(() => {
@@ -643,10 +643,10 @@ export default function QueueDashboard() {
           const latestTime = item.completed_at
             ? { label: 'Selesai', time: formatShortTime(item.completed_at) }
             : item.processing_started_at
-            ? { label: 'Diproses', time: formatShortTime(item.processing_started_at) }
-            : item.called_at
-            ? { label: 'Dipanggil', time: formatShortTime(item.called_at) }
-            : null;
+              ? { label: 'Diproses', time: formatShortTime(item.processing_started_at) }
+              : item.called_at
+                ? { label: 'Dipanggil', time: formatShortTime(item.called_at) }
+                : null;
 
           return (
             <div className="space-y-0.5 py-0.5">
@@ -1037,117 +1037,117 @@ export default function QueueDashboard() {
                 </div>
               ) : null}
 
-          {hasQueuePolyclinicAccess && (currentCall || nextWaiting) ? (
-            <div className="grid gap-3 border-b border-border/70 px-4 py-3 lg:grid-cols-2">
-              <div className="border border-border/70 bg-muted/20 px-3 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Sedang Konsultasi</p>
-                    <p className="mt-1 text-4xl font-black leading-none tracking-tight text-foreground">{currentCall ? String(currentCall.queue_number).padStart(3, '0') : '---'}</p>
+              {hasQueuePolyclinicAccess && (currentCall || nextWaiting) ? (
+                <div className="grid gap-3 border-b border-border/70 px-4 py-3 lg:grid-cols-2">
+                  <div className="border border-border/70 bg-muted/20 px-3 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Sedang Konsultasi</p>
+                        <p className="mt-1 text-4xl font-black leading-none tracking-tight text-foreground">{currentCall ? String(currentCall.queue_number).padStart(3, '0') : '---'}</p>
+                      </div>
+                      {currentCall?.priority === 'urgent' ? (
+                        <Badge variant="outline" className="rounded-none border-orange-300 bg-orange-100 text-orange-700 shadow-none">
+                          <Siren className="mr-1 h-3.5 w-3.5" />
+                          Urgent
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+                      <p className="font-semibold text-foreground">{currentCall?.patient?.full_name || 'Belum ada pasien di ruang konsultasi'}</p>
+                      <p>No. RM: {currentCall?.patient?.medical_record_number || '-'}</p>
+                      <p>Poli: {currentCall?.polyclinic?.name || currentPolyclinic?.name || '-'}</p>
+                      <p>Dokter: {currentCall?.doctor?.full_name || 'Belum ditentukan'}</p>
+                    </div>
                   </div>
-                  {currentCall?.priority === 'urgent' ? (
-                    <Badge variant="outline" className="rounded-none border-orange-300 bg-orange-100 text-orange-700 shadow-none">
-                      <Siren className="mr-1 h-3.5 w-3.5" />
-                      Urgent
-                    </Badge>
-                  ) : null}
-                </div>
-                <div className="mt-2 space-y-1 text-sm text-muted-foreground">
-                  <p className="font-semibold text-foreground">{currentCall?.patient?.full_name || 'Belum ada pasien di ruang konsultasi'}</p>
-                  <p>No. RM: {currentCall?.patient?.medical_record_number || '-'}</p>
-                  <p>Poli: {currentCall?.polyclinic?.name || currentPolyclinic?.name || '-'}</p>
-                  <p>Dokter: {currentCall?.doctor?.full_name || 'Belum ditentukan'}</p>
-                </div>
-              </div>
 
-              <div className="border border-border/70 bg-muted/10 px-3 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Siap Dipanggil Berikutnya</p>
-                <p className="mt-1 text-base font-semibold tracking-tight text-foreground">
-                  {nextWaiting ? `${String(nextWaiting.queue_number).padStart(3, '0')} · ${nextWaiting.patient?.full_name || '-'}` : 'Belum ada pasien yang menunggu'}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">{nextWaiting ? `${nextWaiting.polyclinic?.name || '-'} · ${nextWaiting.doctor?.full_name || 'Dokter belum dipilih'}` : 'Pasien berikutnya akan muncul di sini.'}</p>
-                {nextWaiting ? (
-                  <Button type="button" variant="outline" className="mt-3 rounded-none shadow-none" onClick={() => navigate(`/emr/${nextWaiting.id}`)}>
-                    <ArrowUpRight className="mr-2 h-4 w-4" />
-                    Buka EMR Pasien Berikutnya
-                  </Button>
-                ) : null}
+                  <div className="border border-border/70 bg-muted/10 px-3 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Siap Dipanggil Berikutnya</p>
+                    <p className="mt-1 text-base font-semibold tracking-tight text-foreground">
+                      {nextWaiting ? `${String(nextWaiting.queue_number).padStart(3, '0')} · ${nextWaiting.patient?.full_name || '-'}` : 'Belum ada pasien yang menunggu'}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">{nextWaiting ? `${nextWaiting.polyclinic?.name || '-'} · ${nextWaiting.doctor?.full_name || 'Dokter belum dipilih'}` : 'Pasien berikutnya akan muncul di sini.'}</p>
+                    {nextWaiting ? (
+                      <Button type="button" variant="outline" className="mt-3 rounded-none shadow-none" onClick={() => navigate(`/emr/${nextWaiting.id}`)}>
+                        <ArrowUpRight className="mr-2 h-4 w-4" />
+                        Buka EMR Pasien Berikutnya
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="grid min-h-0 flex-1 gap-4 overflow-hidden px-4 py-4 lg:grid-cols-2 2xl:grid-cols-4">
+                <Lane title="Menunggu" count={queueData.waiting.length}>
+                  {!hasQueuePolyclinicAccess ? (
+                    <p className="py-6 text-center text-sm text-muted-foreground">Belum ada poli yang dapat ditampilkan pada akun ini.</p>
+                  ) : queueData.waiting.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-muted-foreground">Belum ada pasien yang menunggu.</p>
+                  ) : queueData.waiting.map((visit) => (
+                    <QueueTicket key={visit.id} visit={visit} />
+                  ))}
+                </Lane>
+
+                <Lane title="Konsultasi" count={queueData.in_consultation.length}>
+                  {!hasQueuePolyclinicAccess ? (
+                    <p className="py-6 text-center text-sm text-muted-foreground">Belum ada poli yang dapat ditampilkan pada akun ini.</p>
+                  ) : queueData.in_consultation.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-muted-foreground">Belum ada pasien di ruang konsultasi.</p>
+                  ) : queueData.in_consultation.map((visit) => (
+                    <QueueTicket
+                      key={visit.id}
+                      visit={visit}
+                      actions={
+                        <>
+                          <Button type="button" size="sm" className="rounded-none shadow-none" onClick={() => navigate(`/emr/${visit.id}`)}>
+                            <FileText className="mr-1.5 h-3.5 w-3.5" />
+                            Buka EMR
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="rounded-none shadow-none"
+                            onClick={() => void updateStatus(visit.id, { queue_status: 'done', status: 'completed' })}
+                          >
+                            Selesaikan
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="rounded-none text-destructive shadow-none hover:text-destructive"
+                            onClick={() => void updateStatus(visit.id, { queue_status: 'cancelled', status: 'cancelled' })}
+                          >
+                            Batalkan
+                          </Button>
+                        </>
+                      }
+                    />
+                  ))}
+                </Lane>
+
+                <Lane title="Selesai" count={queueData.done.length}>
+                  {!hasQueuePolyclinicAccess ? (
+                    <p className="py-6 text-center text-sm text-muted-foreground">Belum ada poli yang dapat ditampilkan pada akun ini.</p>
+                  ) : queueData.done.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-muted-foreground">Belum ada antrian yang selesai.</p>
+                  ) : queueData.done.map((visit) => (
+                    <QueueTicket key={visit.id} visit={visit} />
+                  ))}
+                </Lane>
+
+                <Lane title="Dibatalkan" count={queueData.cancelled.length}>
+                  {!hasQueuePolyclinicAccess ? (
+                    <p className="py-6 text-center text-sm text-muted-foreground">Belum ada poli yang dapat ditampilkan pada akun ini.</p>
+                  ) : queueData.cancelled.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-muted-foreground">Belum ada antrian yang dibatalkan.</p>
+                  ) : queueData.cancelled.map((visit) => (
+                    <QueueTicket key={visit.id} visit={visit} />
+                  ))}
+                </Lane>
               </div>
             </div>
-          ) : null}
-
-          <div className="grid min-h-0 flex-1 gap-4 overflow-hidden px-4 py-4 lg:grid-cols-2 2xl:grid-cols-4">
-            <Lane title="Menunggu" count={queueData.waiting.length}>
-              {!hasQueuePolyclinicAccess ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">Belum ada poli yang dapat ditampilkan pada akun ini.</p>
-              ) : queueData.waiting.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">Belum ada pasien yang menunggu.</p>
-              ) : queueData.waiting.map((visit) => (
-                <QueueTicket key={visit.id} visit={visit} />
-              ))}
-            </Lane>
-
-            <Lane title="Konsultasi" count={queueData.in_consultation.length}>
-              {!hasQueuePolyclinicAccess ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">Belum ada poli yang dapat ditampilkan pada akun ini.</p>
-              ) : queueData.in_consultation.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">Belum ada pasien di ruang konsultasi.</p>
-              ) : queueData.in_consultation.map((visit) => (
-                <QueueTicket
-                  key={visit.id}
-                  visit={visit}
-                  actions={
-                    <>
-                      <Button type="button" size="sm" className="rounded-none shadow-none" onClick={() => navigate(`/emr/${visit.id}`)}>
-                        <FileText className="mr-1.5 h-3.5 w-3.5" />
-                        Buka EMR
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="rounded-none shadow-none"
-                        onClick={() => void updateStatus(visit.id, { queue_status: 'done', status: 'completed' })}
-                      >
-                        Selesaikan
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="rounded-none text-destructive shadow-none hover:text-destructive"
-                        onClick={() => void updateStatus(visit.id, { queue_status: 'cancelled', status: 'cancelled' })}
-                      >
-                        Batalkan
-                      </Button>
-                    </>
-                  }
-                />
-              ))}
-            </Lane>
-
-            <Lane title="Selesai" count={queueData.done.length}>
-              {!hasQueuePolyclinicAccess ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">Belum ada poli yang dapat ditampilkan pada akun ini.</p>
-              ) : queueData.done.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">Belum ada antrian yang selesai.</p>
-              ) : queueData.done.map((visit) => (
-                <QueueTicket key={visit.id} visit={visit} />
-              ))}
-            </Lane>
-
-            <Lane title="Dibatalkan" count={queueData.cancelled.length}>
-              {!hasQueuePolyclinicAccess ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">Belum ada poli yang dapat ditampilkan pada akun ini.</p>
-              ) : queueData.cancelled.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">Belum ada antrian yang dibatalkan.</p>
-              ) : queueData.cancelled.map((visit) => (
-                <QueueTicket key={visit.id} visit={visit} />
-              ))}
-            </Lane>
-          </div>
-        </div>
-      )}
+          )}
         </div>
       </div>
 
@@ -1229,7 +1229,26 @@ export default function QueueDashboard() {
 
           <form onSubmit={takeRegistrationTicketWithData} className="space-y-2.5 py-2">
             <div className="space-y-1">
-              <Label className="text-xs font-medium">NIK (16 Digit) *</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-medium">NIK (16 Digit) *</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-1.5 text-[11px] text-blue-500 hover:text-primary/80 font-medium hover:bg-primary/5 rounded-none"
+                  onClick={() => {
+                    const dummy = generateDummyNik();
+                    setTicketForm((prev) => ({
+                      ...prev,
+                      nik: dummy,
+                      patient_name: prev.patient_name || '',
+                    }));
+                  }}
+                  title="Buat NIK 16 digit sementara jika pasien tidak membawa identitas/KTP"
+                >
+                  Generate NIK Dummy
+                </Button>
+              </div>
               <Input
                 value={ticketForm.nik}
                 onChange={(e) => setTicketForm((prev) => ({ ...prev, nik: e.target.value.replace(/\D/g, '').slice(0, 16) }))}

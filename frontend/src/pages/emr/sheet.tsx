@@ -1141,9 +1141,6 @@ export default function EMRSheetPage() {
           <aside className="border-b border-border/70 bg-background xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden xl:border-b-0 xl:border-r xl:border-r-border/70">
             <div className="border-b border-border/70 px-3 py-3">
               <h2 className="text-sm font-semibold">{activeSheetConfig.label}</h2>
-              {activeSheetConfig.helper && (
-                <p className="mt-0.5 text-[11px] text-muted-foreground">{activeSheetConfig.helper}</p>
-              )}
 
               {activeSheetConfig.kind === 'section-editor' && (
                 <div className="mt-3 space-y-1.5">

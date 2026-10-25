@@ -5,24 +5,21 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import {
-  CommandDialog,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandSeparator,
-  CommandShortcut,
-} from '@/components/ui/command';
+  Dialog,
+  DialogContent,
+} from '@/components/ui/dialog';
 import { usePermission } from '@/hooks/usePermission';
 import { useToast } from '@/hooks/use-toast';
 import { patientsApi, settingsApi, type Patient } from '@/lib/api';
 import { isAxiosError } from 'axios';
+import { cn } from '@/lib/utils';
 import {
+  CornerDownLeft,
   Loader2,
   Moon,
   Search,
   Sun,
-  UserRound,
+  X,
 } from 'lucide-react';
 
 type RouteMeta = {
@@ -194,12 +191,29 @@ function readStoredBPJSEnabled() {
   return parseSatusehatEnabledFlag(localStorage.getItem(BPJS_ENABLED_STORAGE_KEY), false);
 }
 
+function getInitials(name?: string | null): string {
+  if (!name) return 'PS';
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+function getAgeFromBirthDate(birthDate?: string | null): number | null {
+  if (!birthDate) return null;
+  const d = new Date(birthDate);
+  if (isNaN(d.getTime())) return null;
+  const ageDifMs = Date.now() - d.getTime();
+  const ageDate = new Date(ageDifMs);
+  return Math.abs(ageDate.getUTCFullYear() - 1970);
+}
+
 function AppHeader() {
   const location = useLocation();
   const navigate = useNavigate();
   const { hasPermission } = usePermission();
   const { toast } = useToast();
   const headerRef = useRef<HTMLElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [patientSearchKeyword, setPatientSearchKeyword] = useState('');
   const [searchingPatient, setSearchingPatient] = useState(false);
@@ -207,6 +221,7 @@ function AppHeader() {
   const [commandLoading, setCommandLoading] = useState(false);
   const [commandResults, setCommandResults] = useState<Patient[]>([]);
   const [commandResultTotal, setCommandResultTotal] = useState(0);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [satusehatEnabled, setSatusehatEnabled] = useState<boolean>(() => readStoredSatusehatEnabled());
   const [bpjsEnabled, setBpjsEnabled] = useState<boolean>(() => readStoredBPJSEnabled());
   const canUsePatientSearch = hasPermission('patients.view');
@@ -580,78 +595,157 @@ function AppHeader() {
         </button>
       ) : null}
 
-      <CommandDialog open={isSearchCommandOpen} onOpenChange={setIsSearchCommandOpen}>
-        <CommandInput
-          placeholder="Ketik nama pasien atau No. Rekam Medis..."
-          value={patientSearchKeyword}
-          onValueChange={setPatientSearchKeyword}
-        />
-        <CommandList>
-          {patientSearchKeyword.trim() ? (
-            <>
-              <CommandGroup heading="Aksi Pencarian">
-                <CommandItem onSelect={() => void runPatientSearch(patientSearchKeyword)} disabled={searchingPatient}>
-                  {searchingPatient ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
-                  <span>Cari "{patientSearchKeyword.trim()}"</span>
-                  <CommandShortcut>Enter</CommandShortcut>
-                </CommandItem>
-              </CommandGroup>
+      {/* Global Spotlight Patient Search Modal (Sesuai Gambar 1) */}
+      <Dialog open={isSearchCommandOpen} onOpenChange={setIsSearchCommandOpen}>
+        <DialogContent className="max-w-2xl p-0 gap-0 overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-background shadow-2xl [&>button]:hidden">
+          {/* Top Search Input Bar */}
+          <div className="flex items-center gap-3 px-5 py-4 border-b border-border/70 bg-background">
+            <Search className="size-5 text-muted-foreground/80 shrink-0" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={patientSearchKeyword}
+              onChange={(e) => setPatientSearchKeyword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  if (commandResults.length > 0) {
+                    setSelectedIndex((prev) => (prev + 1) % commandResults.length);
+                  }
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  if (commandResults.length > 0) {
+                    setSelectedIndex((prev) => (prev - 1 + commandResults.length) % commandResults.length);
+                  }
+                } else if (e.key === 'Enter') {
+                  e.preventDefault();
+                  if (commandResults.length > 0 && commandResults[selectedIndex]) {
+                    handleQuickResultSelect(commandResults[selectedIndex].id);
+                  } else if (patientSearchKeyword.trim()) {
+                    void runPatientSearch(patientSearchKeyword);
+                  }
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setIsSearchCommandOpen(false);
+                }
+              }}
+              placeholder="Ketik nama pasien, NIK, atau No. Rekam Medis..."
+              autoFocus
+              className="flex-1 bg-transparent text-sm sm:text-base outline-none placeholder:text-muted-foreground/50 text-foreground font-normal"
+            />
+            {patientSearchKeyword ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setPatientSearchKeyword('');
+                  searchInputRef.current?.focus();
+                }}
+                className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                title="Hapus kata kunci"
+              >
+                <X className="size-4" />
+              </button>
+            ) : null}
+            <kbd className="hidden sm:inline-flex items-center rounded border border-border/80 bg-muted/60 px-1.5 py-0.5 text-[11px] font-mono font-medium text-muted-foreground shadow-2xs">
+              ESC
+            </kbd>
+          </div>
 
-              <CommandSeparator />
+          {/* Body List Item */}
+          <div className="p-4 max-h-[380px] min-h-[140px] overflow-y-auto space-y-2.5">
+            {commandLoading ? (
+              <div className="flex flex-col items-center justify-center py-10 text-muted-foreground text-sm gap-2">
+                <Loader2 className="size-6 animate-spin text-primary" />
+                <span>Mencari data pasien...</span>
+              </div>
+            ) : commandResults.length > 0 ? (
+              commandResults.map((patient, index) => {
+                const isSelected = index === selectedIndex;
+                const initials = getInitials(patient.full_name);
+                const age = getAgeFromBirthDate(patient.birth_date);
+                const gender = patient.gender === 'L' ? 'Laki-laki' : patient.gender === 'P' ? 'Perempuan' : '';
 
-              <CommandGroup heading="Hasil Di Modal">
-                {commandLoading ? (
-                  <CommandItem disabled>
-                    <Loader2 className="size-4 animate-spin" />
-                    <span>Mencari data pasien...</span>
-                  </CommandItem>
-                ) : commandResults.length > 0 ? (
-                  <>
-                    {commandResults.map((patient) => (
-                      <CommandItem key={patient.id} onSelect={() => handleQuickResultSelect(patient.id)}>
-                        <UserRound className="size-4" />
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-foreground">{patient.full_name || '-'}</p>
-                          <p className="truncate text-xs text-muted-foreground">No. RM {patient.medical_record_number || '-'}</p>
+                return (
+                  <div
+                    key={patient.id}
+                    onClick={() => handleQuickResultSelect(patient.id)}
+                    onMouseEnter={() => setSelectedIndex(index)}
+                    className={cn(
+                      "group relative flex items-center justify-between gap-3 p-3.5 rounded-xl border cursor-pointer transition-all duration-150",
+                      isSelected
+                        ? "border-zinc-400 dark:border-zinc-600 bg-zinc-100/90 dark:bg-zinc-800/90 shadow-sm"
+                        : "border-zinc-200/90 dark:border-zinc-800/90 bg-zinc-50/60 dark:bg-zinc-900/60 hover:bg-zinc-100/70 dark:hover:bg-zinc-800/70"
+                    )}
+                  >
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      {/* Avatar Inisial Kotak Hitam Sesuai Gambar 1 */}
+                      <div className="size-11 rounded-lg bg-zinc-950 dark:bg-zinc-900 text-white font-bold text-sm tracking-wider flex items-center justify-center shrink-0 shadow-sm uppercase border border-zinc-800">
+                        {initials}
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-[15px] font-semibold text-foreground group-hover:text-primary transition-colors">
+                            {patient.full_name || '-'}
+                          </span>
+                          <span className="inline-flex items-center rounded-full border border-emerald-400/80 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider shrink-0">
+                            {patient.is_active !== false ? 'ACTIVE' : 'INACTIVE'}
+                          </span>
                         </div>
-                      </CommandItem>
-                    ))}
+                        <p className="truncate text-xs text-muted-foreground mt-0.5">
+                          {patient.medical_record_number || '-'}
+                          <span className="mx-1.5 opacity-60">•</span>
+                          NIK: {patient.nik || '-'}
+                          <span className="mx-1.5 opacity-60">•</span>
+                          {patient.occupation || (gender && age ? `${gender}, ${age} th` : patient.city || 'Pasien')}
+                        </p>
+                      </div>
+                    </div>
 
-                    {commandResultTotal > commandResults.length ? (
-                      <CommandItem disabled>
-                        <span>Menampilkan {commandResults.length} dari {commandResultTotal} data. Persempit kata kunci untuk hasil lebih spesifik.</span>
-                      </CommandItem>
-                    ) : null}
-                  </>
-                ) : (
-                  <CommandItem disabled>
-                    <span>Tidak ada hasil untuk kata kunci ini.</span>
-                  </CommandItem>
-                )}
-              </CommandGroup>
+                    <div className="shrink-0 flex items-center gap-1.5">
+                      <span className={cn(
+                        "text-xs font-medium px-2.5 py-1 rounded-md flex items-center gap-1 transition-colors",
+                        isSelected
+                          ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-semibold shadow-xs"
+                          : "bg-zinc-200/70 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 group-hover:text-foreground"
+                      )}>
+                        Buka <CornerDownLeft className="size-3" />
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            ) : patientSearchKeyword.trim() ? (
+              <div className="text-center py-10 text-muted-foreground text-sm">
+                Tidak ada pasien ditemukan untuk kata kunci "{patientSearchKeyword}".
+              </div>
+            ) : (
+              <div className="text-center py-10 text-muted-foreground text-sm">
+                Ketik nama pasien, NIK, atau No. Rekam Medis untuk mencari...
+              </div>
+            )}
+          </div>
 
-              {commandResultTotal > 1 ? (
-                <>
-                  <CommandSeparator />
-                  <CommandGroup heading="Lanjutan">
-                    <CommandItem onSelect={() => {
-                      const listParams = new URLSearchParams({ q: patientSearchKeyword.trim() });
-                      setIsSearchCommandOpen(false);
-                      navigate(`/patient-search?${listParams.toString()}`);
-                    }}>
-                      <Search className="size-4" />
-                      <span>Buka halaman list lengkap</span>
-                      <CommandShortcut>{commandResultTotal} data</CommandShortcut>
-                    </CommandItem>
-                  </CommandGroup>
-                </>
-              ) : null}
-            </>
-          ) : (
-            ''
-          )}
-        </CommandList>
-      </CommandDialog>
+          {/* Footer Bar Sesuai Gambar 1 */}
+          <div className="border-t border-border/70 bg-muted/30 px-5 py-3 flex items-center justify-between text-xs text-muted-foreground">
+            <div className="flex items-center gap-4">
+              <span className="inline-flex items-center gap-1.5">
+                <kbd className="rounded border bg-background px-1.5 py-0.5 text-[10px] font-mono shadow-2xs">↑</kbd>
+                <kbd className="rounded border bg-background px-1.5 py-0.5 text-[10px] font-mono shadow-2xs">↓</kbd>
+                <span>Navigasi</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <kbd className="rounded border bg-background px-1.5 py-0.5 text-[10px] font-mono shadow-2xs">↵</kbd>
+                <span>Pilih</span>
+              </span>
+            </div>
+            <span className="text-[11px] text-muted-foreground/80 hidden sm:inline">
+              {commandResultTotal > 0 ? `Total ${commandResultTotal} pasien · ` : ''}
+              Gunakan pencarian untuk akses cepat data profil & rekap
+            </span>
+          </div>
+        </DialogContent>
+      </Dialog>
     </header>
   );
 }

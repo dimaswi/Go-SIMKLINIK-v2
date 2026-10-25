@@ -4,11 +4,12 @@ import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import { TableDateFilter } from '@/components/ui/table-date-filter';
 import { registrationQueueApi, type RegistrationQueueItem } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { CalendarDays, Loader2, RefreshCw } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
-import { getLocalISODate } from '@/lib/utils';
+import { cn, getLocalISODate } from '@/lib/utils';
 import { createColumns } from './columns';
 
 const STATUS_OPTIONS = [
@@ -24,23 +25,36 @@ export default function RegistrationIndex() {
   const { toast } = useToast();
   const [data, setData] = useState<RegistrationQueueItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
   const [dateFilter, setDateFilter] = useState(getLocalISODate());
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [cancelId, setCancelId] = useState<number | null>(null);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
     try {
       const params = new URLSearchParams();
       if (statusFilter) params.set('status', statusFilter);
-      if (dateFilter) params.set('date', dateFilter);
+      if (dateFilter) {
+        params.set('date', dateFilter);
+      } else {
+        params.set('date', 'all');
+      }
       const response = await registrationQueueApi.getAll(params.toString());
       setData(response.data.data || []);
     } catch {
       toast({ variant: 'destructive', title: 'Error!', description: 'Gagal memuat antrian pendaftaran.' });
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      } else {
+        setRefreshing(false);
+      }
     }
   }, [dateFilter, statusFilter, toast]);
 
@@ -56,23 +70,28 @@ export default function RegistrationIndex() {
     navigate(`/registration/create?ticket_id=${item.id}&mode=${mode}`);
   }, [navigate]);
 
-  const confirmCancel = useCallback(() => {
+  const confirmCancel = useCallback(async () => {
     if (!cancelId) {
       return;
     }
 
-    registrationQueueApi.updateStatus(cancelId, { status: 'cancelled' })
-      .then(() => {
-        toast({ variant: 'success', title: 'Berhasil!', description: 'Tiket pendaftaran dibatalkan.' });
-        void loadData();
-      })
-      .catch((error: any) => {
-        toast({ variant: 'destructive', title: 'Error!', description: error.response?.data?.error || 'Gagal membatalkan tiket.' });
-      })
-      .finally(() => {
-        setDeleteDialogOpen(false);
-        setCancelId(null);
+    try {
+      await registrationQueueApi.updateStatus(cancelId, { status: 'cancelled' });
+      setData((current) =>
+        current.map((item) => (item.id === cancelId ? { ...item, status: 'cancelled' } : item))
+      );
+      toast({ variant: 'success', title: 'Berhasil!', description: 'Tiket pendaftaran dibatalkan.' });
+      void loadData(true);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error!',
+        description: error.response?.data?.error || 'Gagal membatalkan tiket.',
       });
+    } finally {
+      setDeleteDialogOpen(false);
+      setCancelId(null);
+    }
   }, [cancelId, loadData, toast]);
 
 
@@ -129,11 +148,10 @@ export default function RegistrationIndex() {
               </div>
             ) : null}
 
-            <input
-              type="date"
+            <TableDateFilter
               value={dateFilter}
-              onChange={(event) => setDateFilter(event.target.value)}
-              className="h-9 w-36 border border-border/70 bg-background px-2.5 text-xs outline-none focus:ring-1 focus:ring-ring"
+              onChange={setDateFilter}
+              title="Filter tanggal antrian (Kosongkan untuk menampilkan semua tanggal)"
             />
 
             <SearchableSelect
@@ -151,9 +169,10 @@ export default function RegistrationIndex() {
               variant="outline"
               size="sm"
               className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
-              onClick={() => void loadData()}
+              onClick={() => void loadData(true)}
+              disabled={refreshing}
             >
-              <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+              <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", refreshing && "animate-spin")} />
               Segarkan
             </Button>
           </div>

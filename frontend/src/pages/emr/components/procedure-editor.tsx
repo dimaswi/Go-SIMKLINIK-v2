@@ -275,7 +275,6 @@ function getSurfaceConditionLabel(condition: OdontogramSurfaceCondition) {
 function SetupSummaryCard({
   label,
   value,
-  helper,
 }: {
   label: string;
   value: string;
@@ -285,14 +284,12 @@ function SetupSummaryCard({
     <div className="border border-border/70 bg-background/90 px-3 py-3">
       <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
       <p className="mt-1 text-sm font-medium text-foreground/95">{value}</p>
-      {helper ? <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{helper}</p> : null}
     </div>
   );
 }
 
 function ModalPanel({
   title,
-  helper,
   headerRight,
   className,
   children,
@@ -305,12 +302,11 @@ function ModalPanel({
 }) {
   return (
     <section className={cn('border border-border/70 bg-background/95 p-4 shadow-sm', className)}>
-      <div className="mb-3 space-y-1">
+      <div className="mb-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <p className="min-w-0 text-sm font-semibold tracking-tight text-foreground sm:whitespace-nowrap">{title}</p>
           {headerRight ? <div className="w-full sm:w-[420px] sm:shrink-0">{headerRight}</div> : null}
         </div>
-        {helper ? <p className="text-xs leading-5 text-muted-foreground">{helper}</p> : null}
       </div>
       {children}
     </section>

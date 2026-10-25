@@ -4,6 +4,7 @@ import * as React from "react"
 import type {
   ColumnDef,
   ColumnFiltersState,
+  PaginationState,
   SortingState,
   VisibilityState,
 } from "@tanstack/react-table"
@@ -51,6 +52,7 @@ interface DataTableProps<TData, TValue> {
   emptyMessage?: React.ReactNode
   showSelectionSummary?: boolean
   borderless?: boolean
+  autoResetPageIndex?: boolean
 }
 
 export function DataTable<TData, TValue>({
@@ -67,12 +69,23 @@ export function DataTable<TData, TValue>({
   emptyMessage = "No results.",
   showSelectionSummary = true,
   borderless = true,
+  autoResetPageIndex = false,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
   const [rowSelection, setRowSelection] = React.useState({})
   const [globalFilter, setGlobalFilter] = React.useState("")
+  const [pagination, setPagination] = React.useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: pageSize || 10,
+  })
+
+  React.useEffect(() => {
+    if (pageSize) {
+      setPagination((prev) => (prev.pageSize === pageSize ? prev : { ...prev, pageSize }))
+    }
+  }, [pageSize])
 
   const hasSelectColumn = React.useMemo(() => {
     return (columns as any[]).some((col) => col.id === "select" || col.accessorKey === "select")
@@ -81,15 +94,23 @@ export function DataTable<TData, TValue>({
   const table = useReactTable({
     data,
     columns,
+    autoResetPageIndex: autoResetPageIndex ?? false,
     onSortingChange: setSorting,
-    onColumnFiltersChange: setColumnFilters,
+    onColumnFiltersChange: (updater) => {
+      setColumnFilters(updater)
+      setPagination((prev) => ({ ...prev, pageIndex: 0 }))
+    },
+    onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
-    onGlobalFilterChange: setGlobalFilter,
+    onGlobalFilterChange: (updater) => {
+      setGlobalFilter(updater)
+      setPagination((prev) => ({ ...prev, pageIndex: 0 }))
+    },
     globalFilterFn: "includesString",
     state: {
       sorting,
@@ -97,13 +118,19 @@ export function DataTable<TData, TValue>({
       columnVisibility,
       rowSelection,
       globalFilter,
-    },
-    initialState: {
-      pagination: {
-        pageSize: pageSize || 10,
-      },
+      pagination,
     },
   })
+
+  const pageCount = table.getPageCount()
+  React.useEffect(() => {
+    if (pageCount > 0 && pagination.pageIndex >= pageCount) {
+      setPagination((prev) => ({
+        ...prev,
+        pageIndex: Math.max(0, pageCount - 1),
+      }))
+    }
+  }, [pageCount, pagination.pageIndex])
 
   const hasToolbar = showSearch || showColumnVisibility || Boolean(toolbarActions)
 
@@ -117,51 +144,23 @@ export function DataTable<TData, TValue>({
                 placeholder={searchPlaceholder}
                 value={globalFilter ?? ""}
                 onChange={(event) => setGlobalFilter(event.target.value)}
-                className="w-full max-w-sm"
+                className="w-full max-w-sm rounded-none text-xs"
               />
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            {/* {showColumnVisibility && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline">
-                    Columns <ChevronDown className="ml-2 h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {table
-                    .getAllColumns()
-                    .filter((column: any) => column.getCanHide())
-                    .map((column: any) => {
-                      return (
-                        <DropdownMenuCheckboxItem
-                          key={column.id}
-                          className="capitalize"
-                          checked={column.getIsVisible()}
-                          onCheckedChange={(value) =>
-                            column.toggleVisibility(!!value)
-                          }
-                        >
-                          {column.id}
-                        </DropdownMenuCheckboxItem>
-                      )
-                    })}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )} */}
             {toolbarActions}
           </div>
         </div>
       )}
 
-      <div className={cn("w-full overflow-hidden", borderless ? "border-0 rounded-none" : "rounded-md border")}>
+      <div className={cn("w-full overflow-hidden", borderless ? "border-0 rounded-none" : "rounded-none border border-border/80 bg-card")}>
         {/* Table */}
         <div className="w-full overflow-x-auto">
           <Table className={cn("w-full min-w-full", fixedLayout ? "table-fixed" : undefined)}>
-            <TableHeader>
+            <TableHeader className="bg-muted/40 border-b border-border/80">
               {table.getHeaderGroups().map((headerGroup: any) => (
-                <TableRow key={headerGroup.id}>
+                <TableRow key={headerGroup.id} className="hover:bg-transparent border-b border-border/80">
                   {headerGroup.headers.map((header: any) => {
                     const headerMeta = header.column.columnDef.meta as { headerClassName?: string } | undefined
                     const headerSize = header.getSize?.()
@@ -189,6 +188,7 @@ export function DataTable<TData, TValue>({
                   <TableRow
                     key={row.id}
                     data-state={row.getIsSelected() && "selected"}
+                    className="border-b border-border/60 hover:bg-muted/30 transition-colors"
                   >
                     {row.getVisibleCells().map((cell: any) => {
                       const cellMeta = cell.column.columnDef.meta as { cellClassName?: string } | undefined

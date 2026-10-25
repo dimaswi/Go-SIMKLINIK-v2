@@ -390,9 +390,8 @@ export function OdontogramSheetPage({
 					<aside className="border-b border-border/70 bg-background xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden xl:border-b-0 xl:border-r xl:border-r-border/70">
 						<div className="border-b border-border/70 px-3 py-3">
 							<h2 className="text-sm font-semibold">Odontogram SVG</h2>
-							<p className="mt-0.5 text-[11px] text-muted-foreground">Klik langsung pada permukaan gigi untuk membuka inspector permukaan, atau klik tanda whole tooth untuk membuka inspector gigi.</p>
 
-							<div className="mt-3 grid grid-cols-2 gap-1.5">
+							<div className="mt-2.5 grid grid-cols-2 gap-1.5">
 								<Button variant="outline" className="gap-1.5 rounded-none shadow-none" onClick={createEntry} disabled={creating || workspaceLocked}>
 									{creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FilePlus2 className="h-4 w-4" />}
 									Tambah Entri
@@ -410,8 +409,6 @@ export function OdontogramSheetPage({
 									</Button>
 								</div>
 							)}
-
-							<p className="mt-3 text-[10px] leading-4 text-muted-foreground">Setiap entri menyimpan snapshot odontogram yang berbeda, sehingga Anda bisa membuat multi-entri dalam satu kunjungan.</p>
 						</div>
 
 						<div className="bg-background xl:min-h-0 xl:flex-1 xl:overflow-y-auto">

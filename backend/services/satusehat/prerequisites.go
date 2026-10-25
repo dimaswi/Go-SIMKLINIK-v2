@@ -1,6 +1,7 @@
 package satusehat
 
 import (
+	"fmt"
 	"strings"
 
 	"starter/backend/models"
@@ -82,7 +83,7 @@ func BuildMedicationRequestPrerequisites(prescription models.Prescription, confi
 		makePrerequisite("medicine-form", "Bentuk Sediaan", false, strings.TrimSpace(medicine.Form) != "", strings.TrimSpace(medicine.Form), "Form obat lazim dipakai pada resource Medication untuk membentuk master farmasi yang konsisten.", "Lengkapi bentuk sediaan pada master obat."),
 		makePrerequisite("manufacturer", "Manufacturer", false, strings.TrimSpace(medicine.Manufacturer) != "", strings.TrimSpace(medicine.Manufacturer), "Collection contoh Medication juga menyertakan manufacturer pada resource master obat.", "Lengkapi pabrikan obat atau siapkan mapping Organization manufacturer."),
 		makePrerequisite("organization", "Organization Faskes", false, strings.TrimSpace(config.OrganizationID) != "", strings.TrimSpace(config.OrganizationID), "Organization dipakai pada identifier Medication dan performer dispenseRequest di contoh SATUSEHAT.", "Isi Organization ID SATUSEHAT pada settings."),
-		makePrerequisite("medicine-quantity", "Jumlah Resep", true, prescription.Quantity > 0, strings.TrimSpace(firstNonEmptyText(kfaCode, medicineName)), "Quantity resep tetap diperlukan untuk membentuk MedicationRequest.", "Pastikan quantity resep terisi."),
+		makePrerequisite("medicine-quantity", "Jumlah Resep", true, prescription.Quantity > 0, fmt.Sprintf("%d %s", prescription.Quantity, firstNonEmptyText(medicine.Unit.Name, "Pcs")), "Quantity resep tetap diperlukan untuk membentuk MedicationRequest.", "Pastikan quantity resep terisi."),
 	}
 }
 
@@ -106,7 +107,7 @@ func BuildMedicationDispensePrerequisites(dispensing models.Dispensing, config C
 		makePrerequisite("medicine-form", "Bentuk Sediaan", false, strings.TrimSpace(medicine.Form) != "", strings.TrimSpace(medicine.Form), "Bentuk sediaan membantu membentuk resource Medication yang konsisten dengan referensi SATUSEHAT.", "Lengkapi bentuk sediaan pada master obat."),
 		makePrerequisite("manufacturer", "Manufacturer", false, strings.TrimSpace(medicine.Manufacturer) != "", strings.TrimSpace(medicine.Manufacturer), "Manufacturer juga muncul pada contoh resource Medication di collection SATUSEHAT.", "Lengkapi pabrikan obat atau siapkan mapping Organization manufacturer."),
 		makePrerequisite("organization", "Organization Faskes", false, strings.TrimSpace(config.OrganizationID) != "", strings.TrimSpace(config.OrganizationID), "Organization dipakai sebagai performer pada alur farmasi SATUSEHAT.", "Isi Organization ID SATUSEHAT pada settings."),
-		makePrerequisite("medicine-quantity", "Jumlah Dispensing", true, dispensing.Quantity > 0, strings.TrimSpace(firstNonEmptyText(kfaCode, medicineName)), "Quantity dispensing tetap diperlukan untuk membentuk MedicationDispense.", "Pastikan quantity dispensing terisi."),
+		makePrerequisite("medicine-quantity", "Jumlah Dispensing", true, dispensing.Quantity > 0, fmt.Sprintf("%d %s", dispensing.Quantity, firstNonEmptyText(medicine.Unit.Name, "Pcs")), "Quantity dispensing tetap diperlukan untuk membentuk MedicationDispense.", "Pastikan quantity dispensing terisi."),
 	}
 }
 

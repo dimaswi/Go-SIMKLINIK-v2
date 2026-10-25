@@ -17,6 +17,7 @@ import { Loader2, RefreshCw } from 'lucide-react';
 type SatusehatResultState = {
   title: string;
   description?: string;
+  errorMessage?: string;
   payload: unknown;
 };
 
@@ -109,17 +110,25 @@ export default function PharmacyCompletedIndex() {
     setPreviewingPrescriptionId(prescriptionId);
     try {
       const response = await satusehatApi.previewResource('prescription', prescriptionId);
+      const previewData = response.data?.data ?? response.data;
       setSatusehatResult({
         title: 'Preview SATUSEHAT MedicationRequest',
-        description: `Payload prescription ID ${prescriptionId} yang akan dikirim ke SATUSEHAT.`,
-        payload: response.data?.data ?? response.data,
+        description: `Payload prescription ID #${prescriptionId} yang akan dikirim ke SATUSEHAT.`,
+        payload: previewData,
       });
     } catch (error) {
-      const requestError = error as AxiosError<{ error?: string }>;
+      const requestError = error as AxiosError<{ error?: string; data?: unknown }>;
+      const errorMessage = requestError.response?.data?.error || requestError.message || 'Terjadi kesalahan saat membuat preview SATUSEHAT untuk prescription ini.';
       toast({
         variant: 'destructive',
         title: 'Gagal membuat preview SATUSEHAT resep',
-        description: requestError.response?.data?.error || 'Terjadi kesalahan saat membuat preview SATUSEHAT untuk prescription ini.',
+        description: errorMessage,
+      });
+      setSatusehatResult({
+        title: 'Preview SATUSEHAT - Data Belum Lengkap',
+        description: 'Periksa kekurangan data master atau pasien di bawah ini.',
+        errorMessage,
+        payload: requestError.response?.data?.data || null,
       });
     } finally {
       setPreviewingPrescriptionId(null);
@@ -134,24 +143,24 @@ export default function PharmacyCompletedIndex() {
       setSelectedOrder((current) => current ? refreshedOrders.find((item) => item.id === current.id) || null : current);
       toast({ title: response.data?.message || 'MedicationRequest berhasil disinkronkan ke SATUSEHAT' });
       setSatusehatResult({
-        title: 'Hasil sinkronisasi MedicationRequest',
-        description: `Respons sinkronisasi untuk prescription ID ${prescriptionId}.`,
+        title: 'Hasil Sinkronisasi MedicationRequest',
+        description: `Respons sinkronisasi untuk prescription ID #${prescriptionId}.`,
         payload: response.data?.data ?? response.data,
       });
     } catch (error) {
       const requestError = error as AxiosError<{ error?: string; data?: unknown }>;
+      const errorMessage = requestError.response?.data?.error || requestError.message || 'Terjadi kesalahan saat mengirim MedicationRequest ke SATUSEHAT.';
       toast({
         variant: 'destructive',
         title: 'Gagal sinkron SATUSEHAT resep',
-        description: requestError.response?.data?.error || 'Terjadi kesalahan saat mengirim MedicationRequest ke SATUSEHAT.',
+        description: errorMessage,
       });
-      if (requestError.response?.data?.data) {
-        setSatusehatResult({
-          title: 'Payload MedicationRequest belum siap',
-          description: 'Backend mengembalikan payload yang masih perlu dilengkapi sebelum sinkronisasi bisa dilakukan.',
-          payload: requestError.response.data.data,
-        });
-      }
+      setSatusehatResult({
+        title: 'Gagal Sinkronisasi SATUSEHAT',
+        description: 'Pengiriman data ke SATUSEHAT Kemenkes ditolak atau belum siap.',
+        errorMessage,
+        payload: requestError.response?.data?.data || null,
+      });
     } finally {
       setSyncingPrescriptionId(null);
     }
@@ -240,6 +249,7 @@ export default function PharmacyCompletedIndex() {
         open={Boolean(satusehatResult)}
         title={satusehatResult?.title || 'Hasil SATUSEHAT'}
         description={satusehatResult?.description}
+        errorMessage={satusehatResult?.errorMessage}
         payload={satusehatResult?.payload || {}}
         onOpenChange={(open) => {
           if (!open) {

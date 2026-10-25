@@ -38,6 +38,7 @@ func PrintControlLetter(c *gin.Context) {
 	var visit models.Visit
 	if err := database.DB.
 		Preload("Patient").
+		Preload("Doctor.Employee").
 		Preload("Doctor").
 		Preload("Polyclinic").
 		First(&visit, uint(visitID)).Error; err != nil {
@@ -140,36 +141,175 @@ func renderControlLetterPDF(hospitalInfo initialAssessmentHospitalInfo, data con
 	defer clearInitialAssessmentPDFPageContentStartOverrides(pdf)
 	tteSignature := loadTTESignedSignatureByDocumentKeyWithBaseURL(buildTTEControlLetterDocumentKey(data.Visit.ID), data.ValidationBaseURL)
 
-	pdf.SetMargins(initialAssessmentPDFMarginLeft, initialAssessmentPDFMarginTop, initialAssessmentPDFMarginRight)
-	pdf.SetAutoPageBreak(true, initialAssessmentPDFMarginBottom)
+	marginLeft := 20.0
+	marginRight := 20.0
+	marginTop := 12.0
+	marginBottom := 12.0
+	contentWidth := 210.0 - marginLeft - marginRight
+	startX := marginLeft
+	endX := 210.0 - marginRight
+
+	pdf.SetMargins(marginLeft, marginTop, marginRight)
+	pdf.SetAutoPageBreak(false, marginBottom)
 	pdf.AliasNbPages("")
-	pdf.SetTitle("Surat Kontrol", false)
+	documentTitle := "SURAT KETERANGAN KONTROL"
+	pdf.SetTitle(documentTitle, false)
 	pdf.SetAuthor(data.PrintedByLabel, false)
 	pdf.SetCreator("SIMKLINIK", false)
-	pdf.SetHeaderFuncMode(func() {
-		if pdf.PageNo() != 1 {
-			return
-		}
-		addInitialAssessmentPDFHeader(pdf, hospitalInfo, "SURAT KONTROL", fallbackText(data.Visit.VisitNumber))
-	}, true)
-	pdf.SetFooterFunc(func() {
-		pdf.SetY(-8)
-		pdf.SetFont("Arial", "", 8)
-		pdf.SetTextColor(90, 90, 90)
-		pdf.CellFormat(90, 4, "Dicetak: "+formatDateTimeIndonesian(data.GeneratedAt), "", 0, "L", false, 0, "")
-		pdf.CellFormat(0, 4, fmt.Sprintf("Halaman %d/{nb}", pdf.PageNo()), "", 0, "R", false, 0, "")
-		pdf.SetTextColor(0, 0, 0)
-	})
-
 	pdf.AddPage()
-	pdf.SetY(initialAssessmentPDFPageContentStartForPDF(pdf, pdf.PageNo()))
 
-	addInitialAssessmentCompactFieldSection(pdf, "INFORMASI DOKUMEN", data.DocumentFields, "")
-	addInitialAssessmentCompactFieldSection(pdf, "DATA PASIEN", data.PatientFields, "Data pasien tidak tersedia.")
-	addInitialAssessmentCompactFieldSection(pdf, "DATA KUNJUNGAN", data.VisitFields, "Data kunjungan tidak tersedia.")
-	addInitialAssessmentFieldSection(pdf, "PERNYATAAN KONTROL", []initialAssessmentPrintField{{Label: "Ringkasan", Value: data.Statement}}, "-")
-	addInitialAssessmentFieldSection(pdf, "DETAIL KONTROL", data.ControlFields, "Detail kontrol belum diisi.")
-	addOrderPrintSignatureSectionWithTTE(pdf, hospitalInfo, data.GeneratedAt, "Pasien / Keluarga", data.Visit.Patient.FullName, "Dokter Pemeriksa", data.Visit.Doctor.FullName, tteSignature)
+	// 1. KOP Surat Resmi Puskesmas
+	kopBottomY := drawOfficialSuratKop(pdf, hospitalInfo)
+
+	// 2. Judul & Nomor Surat
+	officialNumber := generateOfficialSuratNumber(hospitalInfo, "surat-kontrol", data.Visit, data.Visit.ID)
+	pdf.SetY(kopBottomY + 3.0)
+	pdf.SetFont("Arial", "BU", 13)
+	pdf.SetTextColor(0, 0, 0)
+	pdf.CellFormat(contentWidth, 6.0, documentTitle, "", 1, "C", false, 0, "")
+
+	pdf.SetFont("Arial", "", 10)
+	pdf.CellFormat(contentWidth, 5.0, "Nomor : "+officialNumber, "", 1, "C", false, 0, "")
+
+	// 3. Kalimat Pembuka
+	pdf.SetY(pdf.GetY() + 4.0)
+	pdf.SetFont("Arial", "", 9.5)
+	instName := fallbackText(hospitalInfo.Name)
+	openingText := fmt.Sprintf("Kami yang bertanda tangan dibawah ini Dokter %s, dengan ini menerangkan bahwa :", instName)
+	pdf.MultiCell(contentWidth, 5.0, openingText, "", "L", false)
+
+	// 4. Biodata Pasien
+	pdf.SetY(pdf.GetY() + 2.5)
+	indentX := startX + 6.0
+	labelWidth := 40.0
+	sepWidth := 4.0
+	valWidth := endX - indentX - labelWidth - sepWidth
+
+	patient := data.Visit.Patient
+	birthDateStr := "-"
+	if patient.BirthDate != nil && !patient.BirthDate.IsZero() {
+		birthDateStr = patient.BirthDate.Format("02-01-2006")
+	}
+	birthPlaceDate := birthDateStr
+	if strings.TrimSpace(patient.BirthPlace) != "" {
+		birthPlaceDate = formatTitleCase(patient.BirthPlace) + ", " + birthDateStr
+	}
+
+	biodataItems := []struct {
+		label  string
+		value  string
+		isBold bool
+	}{
+		{"Nama", strings.ToUpper(fallbackText(patient.FullName)), true},
+		{"Jenis Kelamin", formatGenderIndonesian(patient.Gender), false},
+		{"Tempat, Tgl Lahir", birthPlaceDate, false},
+		{"Warga Negara", "Indonesia", false},
+		{"Agama", formatReligionIndonesian(patient.Religion), false},
+		{"Pekerjaan", formatOccupationIndonesian(patient.Occupation), false},
+		{"Alamat", formatPatientOfficialAddress(patient), false},
+	}
+
+	for _, item := range biodataItems {
+		currY := pdf.GetY()
+		pdf.SetXY(indentX, currY)
+		pdf.SetFont("Arial", "", 9.5)
+		pdf.CellFormat(labelWidth, 4.8, item.label, "", 0, "L", false, 0, "")
+		pdf.CellFormat(sepWidth, 4.8, ":", "", 0, "C", false, 0, "")
+
+		if item.isBold {
+			pdf.SetFont("Arial", "B", 9.5)
+		} else {
+			pdf.SetFont("Arial", "", 9.5)
+		}
+		if item.label == "Alamat" {
+			pdf.MultiCell(valWidth, 4.8, item.value, "", "L", false)
+		} else {
+			pdf.CellFormat(valWidth, 4.8, item.value, "", 1, "L", false, 0, "")
+		}
+	}
+
+	// 5. Data Kontrol Ulang (Box 2 Kolom Bergaris)
+	pdf.SetY(pdf.GetY() + 3.0)
+	pdf.SetFont("Arial", "B", 9.5)
+	pdf.SetX(indentX)
+	pdf.CellFormat(contentWidth-6.0, 5.0, "Rencana Kontrol Ulang :", "", 1, "L", false, 0, "")
+
+	boxX := indentX
+	boxWidth := endX - boxX - 4.0
+	boxY := pdf.GetY() + 1.0
+	boxHeight := 24.0
+
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.3)
+	pdf.Rect(boxX, boxY, boxWidth, boxHeight, "D")
+
+	halfWidth := boxWidth / 2.0
+	pdf.Line(boxX+halfWidth, boxY, boxX+halfWidth, boxY+boxHeight)
+
+	controlSchedule := "-"
+	if data.Outcome.FollowUpAt != nil && !data.Outcome.FollowUpAt.IsZero() {
+		controlSchedule = formatDateTimeIndonesian(*data.Outcome.FollowUpAt)
+	}
+
+	leftColItems := []struct {
+		label string
+		val   string
+	}{
+		{"Jadwal Kontrol", controlSchedule},
+		{"Poliklinik Tujuan", fallbackText(data.Visit.Polyclinic.Name)},
+		{"Dokter Pemeriksa", formatDoctorOfficialName(data.Visit.Doctor.FullName)},
+	}
+
+	rightColItems := []struct {
+		label string
+		val   string
+	}{
+		{"Diagnosa / Kondisi", fallbackText(data.Outcome.DischargeCondition)},
+		{"Instruksi Kontrol", fallbackText(data.Outcome.FollowUpInstruction)},
+		{"Catatan", fallbackText(data.Outcome.Notes)},
+	}
+
+	rowH := 7.0
+	colLabelW := 32.0
+	colSepW := 3.0
+
+	for i, item := range leftColItems {
+		rY := boxY + 1.5 + (float64(i) * rowH)
+		pdf.SetXY(boxX+3.0, rY)
+		pdf.SetFont("Arial", "", 9.0)
+		pdf.CellFormat(colLabelW, rowH-1, item.label, "", 0, "L", false, 0, "")
+		pdf.CellFormat(colSepW, rowH-1, ":", "", 0, "C", false, 0, "")
+		pdf.CellFormat(halfWidth-colLabelW-colSepW-6.0, rowH-1, item.val, "", 0, "L", false, 0, "")
+	}
+
+	for i, item := range rightColItems {
+		rY := boxY + 1.5 + (float64(i) * rowH)
+		pdf.SetXY(boxX+halfWidth+3.0, rY)
+		pdf.SetFont("Arial", "", 9.0)
+		pdf.CellFormat(colLabelW, rowH-1, item.label, "", 0, "L", false, 0, "")
+		pdf.CellFormat(colSepW, rowH-1, ":", "", 0, "C", false, 0, "")
+		pdf.CellFormat(halfWidth-colLabelW-colSepW-6.0, rowH-1, item.val, "", 0, "L", false, 0, "")
+	}
+
+	// 6. Pernyataan Penutup
+	pdf.SetY(boxY + boxHeight + 4.5)
+	pdf.SetFont("Arial", "", 9.5)
+	pdf.MultiCell(contentWidth, 5.0, "Pasien dianjurkan untuk datang kontrol ulang sesuai dengan jadwal dan instruksi di atas dengan membawa surat ini dan dokumen pendukung yang diperlukan.", "", "L", false)
+
+	pdf.SetY(pdf.GetY() + 4.5)
+	pdf.MultiCell(contentWidth, 5.0, "Demikian surat keterangan kontrol ini kami buat dengan sebenarnya untuk dapat dipergunakan sebagaimana mestinya.", "", "L", false)
+
+	// 7. Area Tanda Tangan Dokter & TTE (Rata Kanan)
+	sigWidth := 75.0
+	sigX := endX - sigWidth
+	sigY := pdf.GetY() + 8.0
+	if sigY < 170.0 {
+		sigY = 170.0
+	}
+	if sigY > 215.0 {
+		sigY = 215.0
+	}
+	drawOfficialDoctorSignature(pdf, sigX, sigY, sigWidth, hospitalInfo.City, data.GeneratedAt, data.Visit.Doctor, tteSignature)
 
 	var output bytes.Buffer
 	if err := pdf.Output(&output); err != nil {

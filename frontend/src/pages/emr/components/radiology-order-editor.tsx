@@ -147,8 +147,7 @@ function RadiologyOrderResultDialog({
         </ScrollArea>
 
         <DialogFooter className="border-t border-border/70 bg-background/95 px-5 py-4">
-          <p className="mr-auto text-xs leading-5 text-muted-foreground">Seluruh detail hasil ditampilkan di modal ini agar tampilan daftar order tetap ringkas.</p>
-          <Button type="button" variant="outline" className="rounded-none" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="outline" className="rounded-none ml-auto" onClick={() => onOpenChange(false)}>
             Tutup
           </Button>
         </DialogFooter>

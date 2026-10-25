@@ -339,7 +339,9 @@ func buildMedicalRecordDraftEntry(visit models.Visit, sectionType string, allerg
 
 	if sectionType == "anamnesis" {
 		record.ChiefComplaint = visit.Complaint
-		record.Subjective = visit.Complaint
+		if sheetKey != "pengkajian-awal-gigi" {
+			record.Subjective = visit.Complaint
+		}
 	}
 
 	if sectionType == "prescription" {
@@ -666,13 +668,18 @@ func CreateMedicalRecord(c *gin.Context) {
 		DoctorID:       visit.DoctorID,
 		PolyclinicID:   visit.PolyclinicID,
 		SectionType:    sectionType,
-		EntryGroupKey:  strings.TrimSpace(req.EntryGroupKey),
-		SheetKey:       sheetKey,
-		RecordDate:     time.Now(),
-		ChiefComplaint: visit.Complaint,
-		AllergyNotes:   allergyNotes,
-		Subjective:     visit.Complaint,
-		Status:         "draft",
+		EntryGroupKey: strings.TrimSpace(req.EntryGroupKey),
+		SheetKey:      sheetKey,
+		RecordDate:    time.Now(),
+		AllergyNotes:  allergyNotes,
+		Status:        "draft",
+	}
+
+	if sectionType == "anamnesis" {
+		record.ChiefComplaint = visit.Complaint
+		if sheetKey != "pengkajian-awal-gigi" {
+			record.Subjective = visit.Complaint
+		}
 	}
 
 	if sectionType == "prescription" {

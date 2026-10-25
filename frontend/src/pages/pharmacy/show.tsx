@@ -2,11 +2,13 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AxiosError } from 'axios';
 import {
+  AlertCircle,
   ArrowLeft,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
+  Clock,
   CloudUpload,
   CornerDownRight,
   Eye,
@@ -108,7 +110,13 @@ const INITIAL_FORM_PAYLOAD: PharmacyPrescriptionFormPayload = {
 type SatusehatResultState = {
   title: string;
   description?: string;
+  errorMessage?: string;
   payload: unknown;
+};
+
+type SyncErrorDetail = {
+  message: string;
+  payload?: unknown;
 };
 
 export default function PharmacyShow() {
@@ -162,6 +170,7 @@ export default function PharmacyShow() {
   const [previewingPrescriptionId, setPreviewingPrescriptionId] = useState<number | null>(null);
   const [syncingPrescriptionId, setSyncingPrescriptionId] = useState<number | null>(null);
   const [satusehatResult, setSatusehatResult] = useState<SatusehatResultState | null>(null);
+  const [syncErrors, setSyncErrors] = useState<Record<number, SyncErrorDetail>>({});
 
   // Collapsible state for racikan ingredients
   const [expandedCompoundIds, setExpandedCompoundIds] = useState<Record<number, boolean>>({});
@@ -536,17 +545,25 @@ export default function PharmacyShow() {
     setPreviewingPrescriptionId(prescriptionId);
     try {
       const response = await satusehatApi.previewResource('prescription', prescriptionId);
+      const previewData = response.data?.data ?? response.data;
       setSatusehatResult({
         title: 'Preview SATUSEHAT MedicationRequest',
-        description: `Payload prescription ID ${prescriptionId} yang akan dikirim ke SATUSEHAT.`,
-        payload: response.data?.data ?? response.data,
+        description: `Payload prescription ID #${prescriptionId} yang akan dikirim ke SATUSEHAT.`,
+        payload: previewData,
       });
     } catch (error) {
-      const requestError = error as AxiosError<{ error?: string }>;
+      const requestError = error as AxiosError<{ error?: string; data?: unknown }>;
+      const errorMessage = requestError.response?.data?.error || requestError.message || 'Terjadi kesalahan saat preview SATUSEHAT.';
       toast({
         variant: 'destructive',
         title: 'Gagal membuat preview SATUSEHAT',
-        description: requestError.response?.data?.error || 'Terjadi kesalahan saat preview SATUSEHAT.',
+        description: errorMessage,
+      });
+      setSatusehatResult({
+        title: 'Preview SATUSEHAT - Data Belum Lengkap',
+        description: 'Periksa kekurangan data master atau pasien di bawah ini.',
+        errorMessage,
+        payload: requestError.response?.data?.data || null,
       });
     } finally {
       setPreviewingPrescriptionId(null);
@@ -558,27 +575,39 @@ export default function PharmacyShow() {
     setSyncingPrescriptionId(prescriptionId);
     try {
       const response = await satusehatApi.syncResource('prescription', prescriptionId);
+      setSyncErrors((prev) => {
+        const next = { ...prev };
+        delete next[prescriptionId];
+        return next;
+      });
       await loadOrderDetail();
       toast({ title: response.data?.message || 'MedicationRequest berhasil disinkronkan ke SATUSEHAT' });
       setSatusehatResult({
-        title: 'Hasil sinkronisasi MedicationRequest',
-        description: `Respons sinkronisasi untuk prescription ID ${prescriptionId}.`,
+        title: 'Hasil Sinkronisasi MedicationRequest',
+        description: `Prescription ID #${prescriptionId} berhasil disinkronkan ke SATUSEHAT.`,
         payload: response.data?.data ?? response.data,
       });
     } catch (error) {
       const requestError = error as AxiosError<{ error?: string; data?: unknown }>;
+      const errorMessage = requestError.response?.data?.error || requestError.message || 'Terjadi kesalahan saat sinkronisasi ke SATUSEHAT.';
+      setSyncErrors((prev) => ({
+        ...prev,
+        [prescriptionId]: {
+          message: errorMessage,
+          payload: requestError.response?.data?.data || null,
+        },
+      }));
       toast({
         variant: 'destructive',
         title: 'Gagal sinkron SATUSEHAT',
-        description: requestError.response?.data?.error || 'Terjadi kesalahan saat sinkronisasi ke SATUSEHAT.',
+        description: errorMessage,
       });
-      if (requestError.response?.data?.data) {
-        setSatusehatResult({
-          title: 'Payload MedicationRequest belum siap',
-          description: 'Lengkapi data master atau pasien sebelum sinkronisasi.',
-          payload: requestError.response.data.data,
-        });
-      }
+      setSatusehatResult({
+        title: 'Gagal Sinkronisasi SATUSEHAT',
+        description: 'Pengiriman data ke SATUSEHAT Kemenkes ditolak atau belum siap.',
+        errorMessage,
+        payload: requestError.response?.data?.data || null,
+      });
     } finally {
       setSyncingPrescriptionId(null);
     }
@@ -615,6 +644,9 @@ export default function PharmacyShow() {
   const totalPrice = getRecordTotalPrice(order);
   const prescriptions = order.prescriptions || [];
   const compounds = order.prescription_compounds || [];
+
+  const syncedPrescriptionsCount = prescriptions.filter((p) => Boolean(p.satusehat_medication_request_id)).length;
+  const failedPrescriptionsCount = prescriptions.filter((p) => Boolean(syncErrors[p.id]) && !p.satusehat_medication_request_id).length;
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
@@ -671,6 +703,45 @@ export default function PharmacyShow() {
                   <Badge variant="outline" className="rounded-none text-xs shadow-none hidden sm:inline-flex">
                     {prescriptions.length} non-racikan{compounds.length > 0 ? `, ${compounds.length} racikan` : ''}
                   </Badge>
+
+                  {/* SATUSEHAT Sync Summary Badge */}
+                  {prescriptions.length > 0 && (
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        'rounded-none px-2 py-0.5 text-[10px] uppercase tracking-wider font-semibold shadow-none flex items-center gap-1',
+                        syncedPrescriptionsCount === prescriptions.length
+                          ? 'border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800'
+                          : failedPrescriptionsCount > 0
+                          ? 'border-red-400 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400 dark:border-red-800'
+                          : syncedPrescriptionsCount > 0
+                          ? 'border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800'
+                          : 'border-border bg-muted/40 text-muted-foreground'
+                      )}
+                    >
+                      {syncedPrescriptionsCount === prescriptions.length ? (
+                        <>
+                          <CheckCircle2 className="h-3 w-3 text-emerald-600 shrink-0" />
+                          SATUSEHAT: SEMUA TERSINKRON ({syncedPrescriptionsCount}/{prescriptions.length})
+                        </>
+                      ) : failedPrescriptionsCount > 0 ? (
+                        <>
+                          <AlertCircle className="h-3 w-3 text-red-600 shrink-0" />
+                          SATUSEHAT: {failedPrescriptionsCount} GAGAL ({syncedPrescriptionsCount}/{prescriptions.length} SUKSES)
+                        </>
+                      ) : syncedPrescriptionsCount > 0 ? (
+                        <>
+                          <Clock className="h-3 w-3 text-amber-600 shrink-0" />
+                          SATUSEHAT: {syncedPrescriptionsCount}/{prescriptions.length} TERSINKRON
+                        </>
+                      ) : (
+                        <>
+                          <Clock className="h-3 w-3 text-muted-foreground shrink-0" />
+                          SATUSEHAT: BELUM SYNC (0/{prescriptions.length})
+                        </>
+                      )}
+                    </Badge>
+                  )}
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                   <span className="font-medium text-foreground">{order.polyclinic?.name || '-'}</span>
@@ -779,6 +850,7 @@ export default function PharmacyShow() {
                     <th className="py-2.5 px-3 font-semibold">Aturan Pakai</th>
                     <th className="py-2.5 px-3 font-semibold text-center">Jumlah</th>
                     <th className="py-2.5 px-3 font-semibold">Status Stok</th>
+                    <th className="py-2.5 px-3 font-semibold">Status SATUSEHAT</th>
                     <th className="py-2.5 px-3 font-semibold text-right">Harga</th>
                     <th className="py-2.5 px-3 font-semibold text-right">Subtotal</th>
                     <th className="py-2.5 px-4 font-semibold text-center">Aksi</th>
@@ -787,7 +859,7 @@ export default function PharmacyShow() {
                 <tbody className="divide-y divide-border">
                   {prescriptions.length === 0 && compounds.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-8 text-center text-muted-foreground">
+                      <td colSpan={8} className="py-8 text-center text-muted-foreground">
                         Belum ada item obat dalam resep ini.
                       </td>
                     </tr>
@@ -800,6 +872,9 @@ export default function PharmacyShow() {
                         const isDeleting = deletingPrescriptionId === item.id;
                         const isSyncing = syncingPrescriptionId === item.id;
                         const isPreviewing = previewingPrescriptionId === item.id;
+                        const isSynced = Boolean(item.satusehat_medication_request_id);
+                        const syncError = syncErrors[item.id];
+                        const isFailed = !isSynced && Boolean(syncError);
 
                         return (
                           <tr key={`prescription-${item.id}`} className="hover:bg-muted/20 transition-colors">
@@ -840,6 +915,67 @@ export default function PharmacyShow() {
                               </Badge>
                               <p className="mt-0.5 text-[10px] text-muted-foreground">{stockStatus.helper}</p>
                             </td>
+                            <td className="py-3 px-3">
+                              {isSynced ? (
+                                <div className="space-y-0.5">
+                                  <Badge
+                                    variant="outline"
+                                    className="rounded-none px-1.5 py-0.5 text-[10px] tracking-wider uppercase font-semibold bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800"
+                                  >
+                                    <CheckCircle2 className="mr-1 h-3 w-3 text-emerald-600 inline" />
+                                    Tersinkron
+                                  </Badge>
+                                  <div className="flex flex-col text-[10px] text-muted-foreground font-mono leading-tight">
+                                    <span className="truncate max-w-[150px]" title={item.satusehat_medication_request_id}>
+                                      ID: {item.satusehat_medication_request_id}
+                                    </span>
+                                    {item.satusehat_synced_at && (
+                                      <span className="text-[9px] text-muted-foreground/80 font-sans">
+                                        {formatDateTime(item.satusehat_synced_at)}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : isFailed ? (
+                                <div className="space-y-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSatusehatResult({
+                                        title: 'Gagal Sinkronisasi SATUSEHAT',
+                                        description: `Prescription #${item.id} (${item.medicine?.name || 'Obat'}) gagal dikirim ke SATUSEHAT. Klik untuk melihat detail error & rekomendasi perbaikan.`,
+                                        errorMessage: syncError?.message,
+                                        payload: syncError?.payload,
+                                      });
+                                    }}
+                                    className="text-left group block"
+                                    title="Klik untuk melihat rincian error & solusi"
+                                  >
+                                    <Badge
+                                      variant="outline"
+                                      className="rounded-none px-1.5 py-0.5 text-[10px] tracking-wider uppercase font-semibold bg-red-50 text-red-700 border-red-300 dark:bg-red-950/40 dark:text-red-400 dark:border-red-800 group-hover:bg-red-100 transition-colors cursor-pointer"
+                                    >
+                                      <AlertCircle className="mr-1 h-3 w-3 text-red-600 inline" />
+                                      Gagal Sync
+                                    </Badge>
+                                    <p className="mt-0.5 text-[10px] text-red-600 group-hover:underline line-clamp-1 max-w-[150px] decoration-dotted">
+                                      {syncError?.message}
+                                    </p>
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="space-y-0.5">
+                                  <Badge
+                                    variant="outline"
+                                    className="rounded-none px-1.5 py-0.5 text-[10px] tracking-wider uppercase bg-muted/40 text-muted-foreground border-border"
+                                  >
+                                    <Clock className="mr-1 h-3 w-3 text-muted-foreground inline" />
+                                    Belum Sync
+                                  </Badge>
+                                  <p className="mt-0.5 text-[10px] text-muted-foreground">Siap kirim</p>
+                                </div>
+                              )}
+                            </td>
                             <td className="py-3 px-3 text-right font-mono">
                               {formatCurrency(item.medicine?.selling_price || 0)}
                             </td>
@@ -864,12 +1000,31 @@ export default function PharmacyShow() {
                                   type="button"
                                   variant="ghost"
                                   size="sm"
-                                  className="h-7 w-7 p-0 rounded-none text-primary shadow-none"
+                                  className={cn(
+                                    "h-7 w-7 p-0 rounded-none shadow-none",
+                                    isSynced
+                                      ? "text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                                      : isFailed
+                                      ? "text-red-600 hover:text-red-700 hover:bg-red-50"
+                                      : "text-primary hover:text-primary/80"
+                                  )}
                                   onClick={() => void handleSyncPrescription(item.id)}
                                   disabled={isSyncing}
-                                  title="Sinkron ke SATUSEHAT"
+                                  title={
+                                    isSynced
+                                      ? "Sudah tersinkron ke SATUSEHAT (klik untuk kirim ulang)"
+                                      : isFailed
+                                      ? "Gagal sinkron SATUSEHAT (klik untuk coba lagi)"
+                                      : "Sinkron ke SATUSEHAT"
+                                  }
                                 >
-                                  {isSyncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CloudUpload className="h-3.5 w-3.5" />}
+                                  {isSyncing ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : isSynced ? (
+                                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                                  ) : (
+                                    <CloudUpload className={cn("h-3.5 w-3.5", isFailed ? "text-red-600" : "")} />
+                                  )}
                                 </Button>
 
                                 {status === 'preparing' && canManage && (
@@ -979,6 +1134,14 @@ export default function PharmacyShow() {
                                 </Badge>
                                 <p className="mt-0.5 text-[10px] text-muted-foreground">{compoundStock.helper}</p>
                               </td>
+                              <td className="py-3 px-3">
+                                <Badge
+                                  variant="outline"
+                                  className="rounded-none px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground bg-muted/20 border-dashed"
+                                >
+                                  Racikan Lokal
+                                </Badge>
+                              </td>
                               <td className="py-3 px-3 text-right font-mono text-muted-foreground">
                                 -
                               </td>
@@ -1049,6 +1212,9 @@ export default function PharmacyShow() {
                                         {ingStock.label}
                                       </Badge>
                                       <p className="mt-0.5 text-[10px] text-muted-foreground">{ingStock.helper}</p>
+                                    </td>
+                                    <td className="py-2.5 px-3 text-muted-foreground text-[10px]">
+                                      {ingredient.medicine?.kfa_code ? `KFA: ${ingredient.medicine.kfa_code}` : '-'}
                                     </td>
                                     <td className="py-2.5 px-3 text-right font-mono text-muted-foreground">
                                       {formatCurrency(ingredient.medicine?.selling_price || 0)}
@@ -1506,6 +1672,7 @@ export default function PharmacyShow() {
           open={Boolean(satusehatResult)}
           title={satusehatResult.title}
           description={satusehatResult.description}
+          errorMessage={satusehatResult.errorMessage}
           payload={satusehatResult.payload}
           onOpenChange={(open) => {
             if (!open) setSatusehatResult(null);

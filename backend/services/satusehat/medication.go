@@ -98,7 +98,7 @@ func BuildMedicationRequestPreview(prescription models.Prescription, detail *KFA
 		},
 		"authoredOn": formatFHIRDateTime(record.RecordDate),
 		"dispenseRequest": map[string]any{
-			"quantity": buildMedicationQuantity(prescription.Quantity, firstNonEmptyText(resolveMedicationFormDisplay(detail), prescription.Medicine.Unit.Name)),
+			"quantity": buildMedicationQuantity(prescription.Quantity, resolveMedicationUnitDisplay(detail, prescription.Medicine.Unit.Name)),
 		},
 	}
 	setMedicationReference(resource, strings.TrimSpace(prescription.Medicine.SatusehatMedicationID), medicineName)
@@ -203,7 +203,7 @@ func BuildMedicationDispensePreview(dispensing models.Dispensing, detail *KFAPro
 			"reference": fmt.Sprintf("Encounter/%s", encounterReference),
 			"display":   record.Visit.VisitNumber,
 		},
-		"quantity": buildMedicationQuantity(dispensing.Quantity, firstNonEmptyText(resolveMedicationFormDisplay(detail), medicine.Unit.Name)),
+		"quantity": buildMedicationQuantity(dispensing.Quantity, resolveMedicationUnitDisplay(detail, medicine.Unit.Name)),
 	}
 	setMedicationReference(resource, strings.TrimSpace(medicine.SatusehatMedicationID), medicineName)
 
@@ -417,7 +417,20 @@ func resolveMedicationFormDisplay(detail *KFAProductDetail) string {
 	if detail == nil {
 		return ""
 	}
-	return strings.TrimSpace(firstNonEmptyText(detail.DosageForm.Name, detail.UOM.Name))
+	return strings.TrimSpace(detail.DosageForm.Name)
+}
+
+func resolveMedicationUnitDisplay(detail *KFAProductDetail, localUnit string) string {
+	if detail != nil && strings.TrimSpace(detail.UOM.Name) != "" {
+		return strings.TrimSpace(detail.UOM.Name)
+	}
+	if strings.TrimSpace(localUnit) != "" {
+		return strings.TrimSpace(localUnit)
+	}
+	if detail != nil && strings.TrimSpace(detail.UOM.CSCode) != "" {
+		return strings.TrimSpace(detail.UOM.CSCode)
+	}
+	return "TAB"
 }
 
 func setMedicationReference(resource map[string]any, medicationID, display string) {
@@ -437,10 +450,101 @@ func mapMedicationMasterStatus(active bool) string {
 
 func buildMedicationQuantity(quantity int, unit string) map[string]any {
 	result := map[string]any{"value": quantity}
-	if trimmedUnit := strings.TrimSpace(unit); trimmedUnit != "" {
-		result["unit"] = trimmedUnit
+	trimmedUnit := strings.TrimSpace(unit)
+	if trimmedUnit == "" {
+		trimmedUnit = "TAB"
+	}
+
+	u := strings.ToLower(trimmedUnit)
+	switch {
+	case strings.Contains(u, "botol") || strings.Contains(u, "bottle") || strings.Contains(u, "btl"):
+		result["system"] = "http://snomed.info/sct"
+		result["code"] = "419672006"
+		result["unit"] = "Bottle - unit of product usage"
+	case strings.Contains(u, "vial"):
+		result["system"] = "http://snomed.info/sct"
+		result["code"] = "732990004"
+		result["unit"] = "Vial - unit of product usage"
+	case strings.Contains(u, "ampul") || strings.Contains(u, "amp"):
+		result["system"] = "http://snomed.info/sct"
+		result["code"] = "732986001"
+		result["unit"] = "Ampoule - unit of product usage"
+	case strings.Contains(u, "tube") || strings.Contains(u, "tub"):
+		result["system"] = "http://snomed.info/sct"
+		result["code"] = "732987005"
+		result["unit"] = "Tube - unit of product usage"
+	case strings.Contains(u, "sachet") || strings.Contains(u, "sach") || strings.Contains(u, "bungkus") || strings.Contains(u, "bks"):
+		result["system"] = "http://snomed.info/sct"
+		result["code"] = "732984003"
+		result["unit"] = "Sachet - unit of product usage"
+	case strings.Contains(u, "strip"):
+		result["system"] = "http://snomed.info/sct"
+		result["code"] = "732982004"
+		result["unit"] = "Strip - unit of product usage"
+	case strings.Contains(u, "box") || strings.Contains(u, "dus") || strings.Contains(u, "kotak"):
+		result["system"] = "http://snomed.info/sct"
+		result["code"] = "732981006"
+		result["unit"] = "Box - unit of product usage"
+	case strings.Contains(u, "spuit") || strings.Contains(u, "syringe"):
+		result["system"] = "http://snomed.info/sct"
+		result["code"] = "732991000"
+		result["unit"] = "Syringe - unit of product usage"
+	case strings.Contains(u, "tablet") || strings.Contains(u, "tab") || strings.Contains(u, "kaplet") || strings.Contains(u, "pil"):
+		result["system"] = "http://terminology.hl7.org/CodeSystem/v3-orderableDrugForm"
+		result["code"] = "TAB"
+		result["unit"] = "TAB"
+	case strings.Contains(u, "kapsul") || strings.Contains(u, "caps") || strings.Contains(u, "cap"):
+		result["system"] = "http://terminology.hl7.org/CodeSystem/v3-orderableDrugForm"
+		result["code"] = "CAP"
+		result["unit"] = "CAP"
+	case strings.Contains(u, "drop") || strings.Contains(u, "tetes"):
+		result["system"] = "http://terminology.hl7.org/CodeSystem/v3-orderableDrugForm"
+		result["code"] = "DROP"
+		result["unit"] = "DROP"
+	case strings.Contains(u, "supp") || strings.Contains(u, "sup"):
+		result["system"] = "http://terminology.hl7.org/CodeSystem/v3-orderableDrugForm"
+		result["code"] = "SUPP"
+		result["unit"] = "SUPP"
+	case strings.Contains(u, "salep") || strings.Contains(u, "ointment"):
+		result["system"] = "http://terminology.hl7.org/CodeSystem/v3-orderableDrugForm"
+		result["code"] = "OINT"
+		result["unit"] = "OINT"
+	case strings.Contains(u, "krim") || strings.Contains(u, "cream"):
+		result["system"] = "http://terminology.hl7.org/CodeSystem/v3-orderableDrugForm"
+		result["code"] = "CRM"
+		result["unit"] = "CRM"
+	case strings.Contains(u, "sirup") || strings.Contains(u, "syrup") || strings.Contains(u, "syr"):
+		result["system"] = "http://terminology.hl7.org/CodeSystem/v3-orderableDrugForm"
+		result["code"] = "SYRP"
+		result["unit"] = "SYRP"
+	case strings.Contains(u, "suspensi") || strings.Contains(u, "susp"):
+		result["system"] = "http://terminology.hl7.org/CodeSystem/v3-orderableDrugForm"
+		result["code"] = "SUSP"
+		result["unit"] = "SUSP"
+	case strings.Contains(u, "pcs") || strings.Contains(u, "piece") || strings.Contains(u, "buah") || strings.Contains(u, "biji") || strings.Contains(u, "butir"):
 		result["system"] = "http://unitsofmeasure.org"
-		result["code"] = trimmedUnit
+		result["code"] = "{piece}"
+		result["unit"] = "piece"
+	case u == "ml" || strings.Contains(u, "mililiter"):
+		result["system"] = "http://unitsofmeasure.org"
+		result["code"] = "mL"
+		result["unit"] = "mL"
+	case u == "mg" || strings.Contains(u, "miligram"):
+		result["system"] = "http://unitsofmeasure.org"
+		result["code"] = "mg"
+		result["unit"] = "mg"
+	case u == "g" || strings.Contains(u, "gram"):
+		result["system"] = "http://unitsofmeasure.org"
+		result["code"] = "g"
+		result["unit"] = "g"
+	case u == "l" || strings.Contains(u, "liter"):
+		result["system"] = "http://unitsofmeasure.org"
+		result["code"] = "L"
+		result["unit"] = "L"
+	default:
+		result["system"] = "http://terminology.hl7.org/CodeSystem/v3-orderableDrugForm"
+		result["code"] = "TAB"
+		result["unit"] = "TAB"
 	}
 	return result
 }

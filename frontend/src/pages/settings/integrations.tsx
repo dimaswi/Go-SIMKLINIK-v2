@@ -1,19 +1,26 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AxiosError } from "axios";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
+  ArrowLeft,
   BadgeCheck,
+  Building2,
   CheckCircle2,
+  Clock,
   Database,
   Eye,
   EyeOff,
   FlaskConical,
+  Globe,
+  Key,
   Loader2,
   LockKeyhole,
+  Play,
   PlugZap,
+  RefreshCw,
   Save,
+  Send,
   ShieldCheck,
-  Stethoscope,
   TerminalSquare,
   XCircle,
 } from "lucide-react";
@@ -22,29 +29,20 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import {
-  API_ORIGIN,
-  bpjsBridgeApi,
   polyclinicsApi,
   satusehatApi,
   settingsApi,
-  type BpjsDomainKey,
-  type BpjsLog,
-  type BpjsStatusResponse,
   type Polyclinic,
   type SatusehatLog,
   type SatusehatPrerequisite,
   type SatusehatResourceKey,
 } from "@/lib/api";
 import { setPageTitle } from "@/lib/page-title";
-import {
-  MasterDataAsideSection,
-  MasterDataAsideStack,
-  MasterDataLegacySections,
-  MasterDataPageShell,
-} from "@/pages/master-data/shared";
 
 const SATUSEHAT_ENABLED_STORAGE_KEY = "satusehat_enabled";
 const BPJS_ENABLED_STORAGE_KEY = "bpjs_enabled";
@@ -71,33 +69,9 @@ type IntegrationSettingsState = {
   bpjsPCareBaseUrl: string;
 };
 
-const DEFAULT_INTEGRATION_SETTINGS: IntegrationSettingsState = {
-  satusehatEnabled: true,
-  satusehatActiveMode: "sandbox",
-  satusehatSandboxAuthUrl: "https://api-satusehat-stg.dto.kemkes.go.id/oauth2/v1",
-  satusehatProductionAuthUrl: "https://api-satusehat.kemkes.go.id/oauth2/v1",
-  satusehatSandboxFhirUrl: "https://api-satusehat-stg.dto.kemkes.go.id/fhir-r4/v1",
-  satusehatProductionFhirUrl: "https://api-satusehat.kemkes.go.id/fhir-r4/v1",
-  satusehatOrganizationId: "",
-  satusehatClientId: "",
-  satusehatClientSecret: "",
-  bpjsAntreanEnabled: false,
-  bpjsAntreanConsId: "",
-  bpjsAntreanSecretKey: "",
-  bpjsAntreanUserKey: "",
-  bpjsAntreanBaseUrl: "https://apijkn-dev.bpjs-kesehatan.go.id/antreanrs_dev",
-  bpjsPCareEnabled: false,
-  bpjsPCareConsId: "",
-  bpjsPCareSecretKey: "",
-  bpjsPCareUserKey: "",
-  bpjsPCareBaseUrl: "https://apijkn-dev.bpjs-kesehatan.go.id/pcare-rest-dev",
-};
-
-type IntegrationKey = "satusehat" | "bpjs" | "bridging";
-
 type SatusehatStatusState = {
   enabled: boolean;
-  disabled_reason: string;
+  disabled_reason?: string;
   active_mode: string;
   auth_url: string;
   fhir_url: string;
@@ -115,18 +89,11 @@ type SatusehatWorkbenchResource = {
   helper: string;
 };
 
-type SatusehatPrerequisiteTemplate = {
-  key: string;
-  label: string;
-  required: boolean;
-  detail: string;
-  nextStep: string;
-};
+type IntegrationKey = "satusehat" | "bpjs";
 
 type SatusehatLogQuickFilter = string;
 type SatusehatLogOperationFilter = "all" | "sync" | "token" | "retry-sync";
 type SatusehatLogStatusFilter = "all" | "success" | "failed";
-type BpjsLogStatusFilter = "all" | "success" | "failed";
 
 const SATUSEHAT_LOG_RESOURCE_ORDER = [
   "OAuthToken",
@@ -204,32 +171,6 @@ const DEFAULT_SATUSEHAT_STATUS: SatusehatStatusState = {
   ready: false,
 };
 
-function buildDefaultBpjsDomainStatus(domain: BpjsDomainKey, label: string) {
-  return {
-    domain,
-    label,
-    enabled: false,
-    disabled_reason: "",
-    base_url: "",
-    cons_id_configured: false,
-    secret_key_configured: false,
-    user_key_configured: false,
-    missing_fields: [],
-    ready: false,
-  };
-}
-
-const DEFAULT_BPJS_STATUS: BpjsStatusResponse = {
-  provider: "bpjs",
-  enabled_domains: 0,
-  ready_domains: 0,
-  total_domains: 2,
-  domains: {
-    antrean: buildDefaultBpjsDomainStatus("antrean", "Antrean FKTP"),
-    pcare: buildDefaultBpjsDomainStatus("pcare", "P-Care"),
-  },
-};
-
 function parseSettingsFlag(value: unknown, defaultValue = true) {
   if (typeof value === "boolean") {
     return value;
@@ -248,144 +189,87 @@ function parseSettingsFlag(value: unknown, defaultValue = true) {
   return defaultValue;
 }
 
-const SATUSEHAT_PREREQUISITE_TEMPLATES: Partial<Record<SatusehatResourceKey, SatusehatPrerequisiteTemplate[]>> = {
-  procedure: [
-    { key: "patient", label: "Patient", required: true, detail: "Procedure membutuhkan Patient SATUSEHAT sebagai subject.", nextStep: "Sinkronkan Patient lebih dulu." },
-    { key: "encounter", label: "Encounter", required: true, detail: "Procedure membutuhkan Encounter sebagai konteks tindakan.", nextStep: "Sinkronkan Encounter lebih dulu." },
-    { key: "practitioner", label: "Practitioner", required: false, detail: "Practitioner digunakan sebagai performer tindakan.", nextStep: "Sinkronkan Practitioner bila performer perlu lengkap." },
-    { key: "procedure-master", label: "Master Tindakan", required: true, detail: "Nama atau kode tindakan perlu tersedia pada data medical action.", nextStep: "Pastikan snapshot nama/kode layanan tindakan terisi." },
-  ],
-  "care-plan": [
-    { key: "patient", label: "Patient", required: true, detail: "CarePlan membutuhkan Patient SATUSEHAT sebagai subject.", nextStep: "Sinkronkan Patient lebih dulu." },
-    { key: "encounter", label: "Encounter", required: true, detail: "CarePlan membutuhkan Encounter sebagai konteks kunjungan.", nextStep: "Sinkronkan Encounter lebih dulu." },
-    { key: "care-plan-content", label: "Konten Rencana", required: true, detail: "Plan atau follow-up instruction perlu terisi untuk membentuk CarePlan.", nextStep: "Isi plan/follow-up instruction pada rekam medis." },
-    { key: "diagnosis-reference", label: "Referensi Diagnosis", required: false, detail: "CarePlan dapat mereferensikan Condition diagnosis yang sudah tersinkron.", nextStep: "Sinkronkan diagnosis jika ingin reference Condition ikut terkirim." },
-  ],
-  goal: [
-    { key: "patient", label: "Patient", required: true, detail: "Goal membutuhkan Patient SATUSEHAT sebagai subject.", nextStep: "Sinkronkan Patient lebih dulu." },
-    { key: "goal-content", label: "Konten Goal", required: true, detail: "Goal dibentuk dari plan, follow-up instruction, atau assessment rekam medis.", nextStep: "Isi plan/follow-up instruction/assessment pada rekam medis." },
-    { key: "encounter", label: "Encounter", required: false, detail: "Encounter opsional untuk konteks kunjungan pada Goal.", nextStep: "Sinkronkan Encounter jika ingin konteks kunjungan ikut direferensikan." },
-    { key: "follow-up-date", label: "Tanggal Kontrol", required: false, detail: "Tanggal follow-up dapat dikirim sebagai target dueDate pada Goal.", nextStep: "Isi jadwal follow-up bila ingin menambahkan target tanggal kontrol." },
-  ],
-  "allergy-intolerance": [
-    { key: "patient", label: "Patient", required: true, detail: "AllergyIntolerance membutuhkan Patient SATUSEHAT sebagai subject.", nextStep: "Sinkronkan Patient lebih dulu." },
-    { key: "allergy-content", label: "Konten Alergi", required: true, detail: "Data alergi diambil dari patient allergies, allergy notes, atau clinical alert.", nextStep: "Lengkapi data alergi pasien atau catatan alergi rekam medis." },
-    { key: "encounter", label: "Encounter", required: false, detail: "Encounter opsional untuk konteks kapan alergi dicatat.", nextStep: "Sinkronkan Encounter jika ingin konteks kunjungan ikut terkirim." },
-  ],
-  "family-member-history": [
-    { key: "patient", label: "Patient", required: true, detail: "FamilyMemberHistory membutuhkan Patient SATUSEHAT sebagai subject.", nextStep: "Sinkronkan Patient lebih dulu." },
-    { key: "family-history-content", label: "Riwayat Keluarga", required: true, detail: "FamilyMemberHistory dibentuk dari kolom family_history pada rekam medis.", nextStep: "Isi riwayat keluarga pada rekam medis." },
-    { key: "organization", label: "Organization Faskes", required: false, detail: "Organization dipakai untuk namespace identifier lokal FamilyMemberHistory.", nextStep: "Isi Organization ID SATUSEHAT pada settings." },
-  ],
-  composition: [
-    { key: "patient", label: "Patient", required: true, detail: "Composition membutuhkan Patient SATUSEHAT sebagai subject dokumen.", nextStep: "Sinkronkan Patient lebih dulu." },
-    { key: "encounter", label: "Encounter", required: true, detail: "Composition membutuhkan Encounter SATUSEHAT untuk konteks episode kunjungan.", nextStep: "Sinkronkan Encounter lebih dulu." },
-    { key: "composition-content", label: "Konten Resume", required: true, detail: "Konten resume diambil dari anamnesis, pemeriksaan, assessment, diagnosis, tindakan, dan rencana.", nextStep: "Lengkapi minimal satu bagian konten rekam medis." },
-    { key: "practitioner", label: "Practitioner", required: false, detail: "Practitioner dipakai sebagai author dokumen Composition.", nextStep: "Sinkronkan Practitioner bila author ingin terkirim lengkap." },
-  ],
-  "laboratory-order-item": [
-    { key: "patient", label: "Patient", required: true, detail: "Patient SATUSEHAT menjadi subject untuk order dan hasil laboratorium.", nextStep: "Sinkronkan Patient lebih dulu." },
-    { key: "practitioner", label: "Practitioner", required: false, detail: "Practitioner dipakai sebagai requester order laboratorium.", nextStep: "Sinkronkan Practitioner jika requester perlu lengkap." },
-    { key: "encounter", label: "Encounter", required: true, detail: "Encounter aktif menjadi konteks ServiceRequest, Observation, dan DiagnosticReport.", nextStep: "Sinkronkan Encounter lebih dulu." },
-    { key: "specimen", label: "Specimen", required: false, detail: "Pada collection SATUSEHAT, hasil laboratorium biasanya merujuk ke resource Specimen yang terhubung ke ServiceRequest.", nextStep: "Siapkan mapping specimen lokal sebelum mengirim hasil lab final." },
-    { key: "lab-master", label: "Master Pemeriksaan Laboratorium", required: true, detail: "Nama dan kode layanan laboratorium harus tersedia di snapshot item.", nextStep: "Pastikan data layanan laboratorium lokal lengkap." },
-    { key: "lab-result", label: "Hasil Laboratorium", required: false, detail: "Observation dan DiagnosticReport baru lengkap jika hasil sudah tersedia.", nextStep: "Lengkapi hasil bila ingin mengirim result final." },
-  ],
-  "radiology-order-item": [
-    { key: "patient", label: "Patient", required: true, detail: "Patient SATUSEHAT menjadi subject untuk order dan hasil radiologi.", nextStep: "Sinkronkan Patient lebih dulu." },
-    { key: "practitioner", label: "Practitioner", required: false, detail: "Practitioner dipakai sebagai requester order radiologi.", nextStep: "Sinkronkan Practitioner jika requester perlu lengkap." },
-    { key: "encounter", label: "Encounter", required: true, detail: "Encounter aktif menjadi konteks radiologi.", nextStep: "Sinkronkan Encounter lebih dulu." },
-    { key: "radiology-master", label: "Master Pemeriksaan Radiologi", required: true, detail: "Nama dan kode layanan radiologi harus tersedia di snapshot item.", nextStep: "Pastikan data layanan radiologi lokal lengkap." },
-    { key: "radiology-result", label: "Hasil Radiologi", required: false, detail: "DiagnosticReport final menunggu hasil atau narasi temuan radiologi.", nextStep: "Lengkapi hasil radiologi bila ingin mengirim report final." },
-  ],
-  prescription: [
-    { key: "patient", label: "Patient", required: true, detail: "MedicationRequest membutuhkan Patient SATUSEHAT sebagai subject.", nextStep: "Sinkronkan Patient lebih dulu." },
-    { key: "practitioner", label: "Practitioner", required: false, detail: "Practitioner dipakai sebagai requester resep.", nextStep: "Sinkronkan Practitioner jika requester perlu lengkap." },
-    { key: "encounter", label: "Encounter", required: true, detail: "Encounter aktif menjadi konteks resep.", nextStep: "Sinkronkan Encounter lebih dulu." },
-    { key: "medication-master", label: "Medication Master", required: true, detail: "MedicationRequest SATUSEHAT umumnya merujuk ke resource Medication sebagai master obat.", nextStep: "Siapkan mapping resource Medication dari master obat lokal." },
-    { key: "kfa-code", label: "Kode KFA Obat", required: true, detail: "Collection SATUSEHAT farmasi biasanya memakai kode KFA pada resource Medication.", nextStep: "Isi kode KFA pada master obat, bukan hanya kode internal." },
-    { key: "medicine-form", label: "Bentuk Sediaan", required: false, detail: "Bentuk sediaan dipakai saat membentuk resource Medication master.", nextStep: "Lengkapi bentuk sediaan obat." },
-    { key: "manufacturer", label: "Manufacturer", required: false, detail: "Collection contoh Medication juga menyertakan manufacturer pada master obat.", nextStep: "Lengkapi pabrikan obat atau siapkan mapping Organization manufacturer." },
-    { key: "organization", label: "Organization Faskes", required: false, detail: "Organization dipakai pada identifier medication dan performer di alur farmasi SATUSEHAT.", nextStep: "Isi Organization ID SATUSEHAT pada settings." },
-    { key: "medicine-quantity", label: "Jumlah Resep", required: true, detail: "Quantity resep tetap diperlukan saat membentuk MedicationRequest.", nextStep: "Pastikan quantity resep terisi." },
-  ],
-  dispensing: [
-    { key: "patient", label: "Patient", required: true, detail: "MedicationDispense membutuhkan Patient SATUSEHAT sebagai subject.", nextStep: "Sinkronkan Patient lebih dulu." },
-    { key: "encounter", label: "Encounter", required: true, detail: "Encounter aktif menjadi konteks dispensing.", nextStep: "Sinkronkan Encounter lebih dulu." },
-    { key: "medication-request", label: "MedicationRequest", required: true, detail: "MedicationDispense membutuhkan authorizingPrescription yang sudah tersinkron.", nextStep: "Sinkronkan MedicationRequest resep lebih dulu." },
-    { key: "medication-master", label: "Medication Master", required: true, detail: "MedicationDispense idealnya memakai master Medication yang sama dengan MedicationRequest.", nextStep: "Siapkan mapping resource Medication dari master obat lokal." },
-    { key: "kfa-code", label: "Kode KFA Obat", required: true, detail: "Master farmasi SATUSEHAT biasanya memakai kode KFA pada resource Medication.", nextStep: "Isi kode KFA pada master obat sebelum sync farmasi." },
-    { key: "medicine-form", label: "Bentuk Sediaan", required: false, detail: "Bentuk sediaan membantu membentuk resource Medication yang konsisten.", nextStep: "Lengkapi bentuk sediaan obat." },
-    { key: "manufacturer", label: "Manufacturer", required: false, detail: "Collection contoh Medication juga menyertakan manufacturer.", nextStep: "Lengkapi pabrikan obat atau siapkan mapping Organization manufacturer." },
-    { key: "organization", label: "Organization Faskes", required: false, detail: "Organization dipakai sebagai performer pada alur farmasi SATUSEHAT.", nextStep: "Isi Organization ID SATUSEHAT pada settings." },
-    { key: "medicine-quantity", label: "Jumlah Dispensing", required: true, detail: "Quantity dispensing tetap diperlukan saat membentuk MedicationDispense.", nextStep: "Pastikan quantity dispensing terisi." },
-  ],
+const DEFAULT_INTEGRATION_SETTINGS: IntegrationSettingsState = {
+  satusehatEnabled: true,
+  satusehatActiveMode: "sandbox",
+  satusehatSandboxAuthUrl: "https://api-satusehat-stg.dto.kemkes.go.id/oauth2/v1",
+  satusehatProductionAuthUrl: "https://api-satusehat.kemkes.go.id/oauth2/v1",
+  satusehatSandboxFhirUrl: "https://api-satusehat-stg.dto.kemkes.go.id/fhir-r4/v1",
+  satusehatProductionFhirUrl: "https://api-satusehat.kemkes.go.id/fhir-r4/v1",
+  satusehatOrganizationId: "",
+  satusehatClientId: "",
+  satusehatClientSecret: "",
+  bpjsAntreanEnabled: false,
+  bpjsAntreanConsId: "",
+  bpjsAntreanSecretKey: "",
+  bpjsAntreanUserKey: "",
+  bpjsAntreanBaseUrl: "https://apijkn-dev.bpjs-kesehatan.go.id/antreanrs_dev",
+  bpjsPCareEnabled: false,
+  bpjsPCareConsId: "",
+  bpjsPCareSecretKey: "",
+  bpjsPCareUserKey: "",
+  bpjsPCareBaseUrl: "https://apijkn-dev.bpjs-kesehatan.go.id/pcare-rest-dev",
 };
 
 function buildFallbackPrerequisites(resourceKey: SatusehatResourceKey): SatusehatPrerequisite[] {
-  const templates = SATUSEHAT_PREREQUISITE_TEMPLATES[resourceKey] || [];
-  return templates.map((item) => ({
-    key: item.key,
-    label: item.label,
-    required: item.required,
-    ready: false,
-    current_value: "",
-    detail: item.detail,
-    next_step: item.nextStep,
-  }));
+  switch (resourceKey) {
+    case "location":
+      return [{ key: "organization", label: "Organization Poli", required: true, ready: false, next_step: "Sinkronkan poli terlebih dahulu untuk Organization SATUSEHAT." }];
+    case "encounter":
+      return [
+        { key: "patient", label: "Patient (IHS Number)", required: true, ready: false, next_step: "Pastikan pasien pada visit ini sudah memiliki IHS number." },
+        { key: "practitioner", label: "Practitioner (IHS Number)", required: true, ready: false, next_step: "Pastikan dokter pada visit ini sudah memiliki IHS number." },
+        { key: "location", label: "Location Poli", required: true, ready: false, next_step: "Pastikan poli pada visit ini sudah memiliki ID Location SATUSEHAT." },
+      ];
+    case "vital-signs":
+    case "clinical-impression":
+    case "procedure":
+    case "care-plan":
+    case "goal":
+    case "allergy-intolerance":
+    case "family-member-history":
+    case "composition":
+    case "diagnosis":
+    case "laboratory-order-item":
+    case "radiology-order-item":
+    case "prescription":
+      return [
+        { key: "encounter", label: "Encounter Visit", required: true, ready: false, next_step: "Encounter visit harus sudah berstatus synced sebelum resource turunan dikirim." },
+        { key: "patient", label: "Patient (IHS Number)", required: true, ready: false, next_step: "Pasien harus memiliki IHS number yang valid." },
+      ];
+    case "dispensing":
+      return [
+        { key: "prescription", label: "MedicationRequest", required: true, ready: false, next_step: "Resep obat harus sudah disinkronkan ke SATUSEHAT terlebih dahulu." },
+        { key: "encounter", label: "Encounter Visit", required: true, ready: false, next_step: "Encounter visit harus sudah berstatus synced." },
+      ];
+    default:
+      return [];
+  }
 }
-
-const INTEGRATION_CARDS: Array<{
-  key: IntegrationKey;
-  title: string;
-  description: string;
-  status: ReactNode;
-  enabled: boolean;
-}> = [
-  {
-    key: "satusehat",
-    title: "SATUSEHAT",
-    description: "Integrasi FHIR R4 Kemenkes untuk data klinis, encounter, observasi, dan resource turunan.",
-    status: <CheckCircle2 className="text-green-500" size={16} />,
-    enabled: true,
-  },
-  {
-    key: "bpjs",
-    title: "BPJS FKTP + P-Care",
-    description: "Panel operasional Antrean FKTP dan fondasi konfigurasi P-Care tanpa memecah flow lokal yang sudah ada.",
-    status: <CheckCircle2 className="text-green-500" size={16} />,
-    enabled: true,
-  },
-  {
-    key: "bridging",
-    title: "Integrasi Lainnya",
-    description: "Tempat untuk WhatsApp gateway, LIS, RIS, payment gateway, atau partner API berikutnya.",
-    status: <XCircle className="text-red-500" size={16} />,
-    enabled: false,
-  },
-];
 
 export default function IntegrationSettingsPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [fetching, setFetching] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [showClientSecret, setShowClientSecret] = useState(false);
-  const [selectedIntegration, setSelectedIntegration] = useState<IntegrationKey>("satusehat");
+
   const [settings, setSettings] = useState<IntegrationSettingsState>(DEFAULT_INTEGRATION_SETTINGS);
-  const [polyclinics, setPolyclinics] = useState<Polyclinic[]>([]);
+  const [selectedIntegration, setSelectedIntegration] = useState<IntegrationKey>("satusehat");
+  const [satusehatSideTab, setSatusehatSideTab] = useState<"settings" | "endpoints" | "polyclinics" | "test-connection" | "workbench" | "logs">("settings");
+
+  const [saving, setSaving] = useState(false);
+  const [fetching, setFetching] = useState(true);
+  const [showSecret, setShowSecret] = useState(false);
   const [satusehatStatus, setSatusehatStatus] = useState<SatusehatStatusState>(DEFAULT_SATUSEHAT_STATUS);
-  const [statusLoading, setStatusLoading] = useState(true);
-  const [testingConnection, setTestingConnection] = useState(false);
-  const [resourceKey, setResourceKey] = useState<SatusehatResourceKey>("patient");
-  const [resourceId, setResourceId] = useState("");
-  const [previewingResource, setPreviewingResource] = useState(false);
-  const [syncingResource, setSyncingResource] = useState(false);
+  const [polyclinics, setPolyclinics] = useState<Polyclinic[]>([]);
+  const [syncingPoliId, setSyncingPoliId] = useState<number | null>(null);
+  const [resourceKey, setResourceKey] = useState<SatusehatResourceKey>("encounter");
+  const [resourceLocalId, setResourceLocalId] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [autoSyncLoading, setAutoSyncLoading] = useState(false);
   const [previewResult, setPreviewResult] = useState<string>("");
   const [syncResult, setSyncResult] = useState<string>("");
-  const [autoSyncVisitId, setAutoSyncVisitId] = useState("");
-  const [autoSyncingVisit, setAutoSyncingVisit] = useState(false);
-  const [autoSyncVisitResult, setAutoSyncVisitResult] = useState<string>("");
+  const [autoSyncResult, setAutoSyncResult] = useState<string>("");
+  const [testingConnection, setTestingConnection] = useState(false);
   const [connectionResult, setConnectionResult] = useState<string>("");
   const [satusehatLogs, setSatusehatLogs] = useState<SatusehatLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(true);
@@ -395,14 +279,6 @@ export default function IntegrationSettingsPage() {
   const [logStatusFilter, setLogStatusFilter] = useState<SatusehatLogStatusFilter>("all");
   const [retryingLogId, setRetryingLogId] = useState<number | null>(null);
   const [retryResult, setRetryResult] = useState<string>("");
-  const [bpjsStatus, setBpjsStatus] = useState<BpjsStatusResponse>(DEFAULT_BPJS_STATUS);
-  const [bpjsStatusLoading, setBpjsStatusLoading] = useState(true);
-  const [testingBpjsDomain, setTestingBpjsDomain] = useState<BpjsDomainKey | null>(null);
-  const [bpjsConnectionResults, setBpjsConnectionResults] = useState<Record<BpjsDomainKey, string>>({ antrean: "", pcare: "" });
-  const [bpjsLogs, setBpjsLogs] = useState<BpjsLog[]>([]);
-  const [bpjsLogsLoading, setBpjsLogsLoading] = useState(true);
-  const [bpjsLogDomainFilter, setBpjsLogDomainFilter] = useState<BpjsDomainKey | "all">("all");
-  const [bpjsLogStatusFilter, setBpjsLogStatusFilter] = useState<BpjsLogStatusFilter>("all");
 
   const filteredSatusehatLogs = useMemo(() => {
     if (logQuickFilter === "all") {
@@ -438,18 +314,13 @@ export default function IntegrationSettingsPage() {
 
     return [
       { key: "all", label: "Semua Resource", count: satusehatLogs.length },
-      ...resourceTypes.map((resourceType) => ({
-        key: resourceType,
-        label: getSatusehatLogResourceLabel(resourceType),
-        count: counts.get(resourceType) || 0,
+      ...resourceTypes.map((resType) => ({
+        key: resType,
+        label: getSatusehatLogResourceLabel(resType),
+        count: counts.get(resType) || 0,
       })),
     ];
   }, [satusehatLogs]);
-
-  const selectedCard = useMemo(
-    () => INTEGRATION_CARDS.find((item) => item.key === selectedIntegration) ?? INTEGRATION_CARDS[0],
-    [selectedIntegration],
-  );
 
   const selectedResource = useMemo(
     () => SATUSEHAT_RESOURCE_OPTIONS.find((item) => item.key === resourceKey) ?? SATUSEHAT_RESOURCE_OPTIONS[0],
@@ -486,33 +357,13 @@ export default function IntegrationSettingsPage() {
     [polyclinics],
   );
 
-  const filteredBpjsLogs = useMemo(() => {
-    return bpjsLogs.filter((entry) => {
-      if (bpjsLogDomainFilter !== "all" && entry.domain !== bpjsLogDomainFilter) {
-        return false;
-      }
-      if (bpjsLogStatusFilter === "success" && !entry.success) {
-        return false;
-      }
-      if (bpjsLogStatusFilter === "failed" && entry.success) {
-        return false;
-      }
-      return true;
-    });
-  }, [bpjsLogDomainFilter, bpjsLogStatusFilter, bpjsLogs]);
-
-  const bpjsAntreanStatus = bpjsStatus.domains.antrean ?? DEFAULT_BPJS_STATUS.domains.antrean;
-  const bpjsPCareStatus = bpjsStatus.domains.pcare ?? DEFAULT_BPJS_STATUS.domains.pcare;
   const satusehatSyncEnabled = satusehatStatus.enabled;
   const showSatusehatFields = settings.satusehatEnabled;
-  const showBpjsFields = settings.bpjsAntreanEnabled || settings.bpjsPCareEnabled;
 
   useEffect(() => {
-    setPageTitle("Integrations");
+    setPageTitle("Pengaturan Integrasi");
     void loadSettings();
     void loadSatusehatStatus();
-    void loadBPJSStatus();
-    void loadBPJSLogs();
     void loadPolyclinics();
   }, []);
 
@@ -524,31 +375,9 @@ export default function IntegrationSettingsPage() {
     void loadSatusehatLogs(logOperationFilter, successFilter);
   }, [logOperationFilter, logStatusFilter]);
 
-  useEffect(() => {
-    const successFilter =
-      bpjsLogStatusFilter === "all"
-        ? undefined
-        : bpjsLogStatusFilter === "success";
-    void loadBPJSLogs(bpjsLogDomainFilter, successFilter);
-  }, [bpjsLogDomainFilter, bpjsLogStatusFilter]);
-
-  useEffect(() => {
-    if (filteredSatusehatLogs.length === 0) {
-      if (selectedLogId !== null) {
-        setSelectedLogId(null);
-      }
-      return;
-    }
-
-    const hasSelectedLog = filteredSatusehatLogs.some((item) => item.id === selectedLogId);
-    if (!hasSelectedLog) {
-      setSelectedLogId(filteredSatusehatLogs[0].id);
-    }
-  }, [filteredSatusehatLogs, selectedLogId]);
-
   const loadPolyclinics = async () => {
     try {
-      const response = await polyclinicsApi.getAll("per_page=200");
+      const response = await polyclinicsApi.getAll();
       setPolyclinics(response.data.data || []);
     } catch {
       setPolyclinics([]);
@@ -556,26 +385,11 @@ export default function IntegrationSettingsPage() {
   };
 
   const loadSatusehatStatus = async () => {
-    setStatusLoading(true);
     try {
       const response = await satusehatApi.getStatus();
       setSatusehatStatus(response.data.data || DEFAULT_SATUSEHAT_STATUS);
     } catch {
       setSatusehatStatus(DEFAULT_SATUSEHAT_STATUS);
-    } finally {
-      setStatusLoading(false);
-    }
-  };
-
-  const loadBPJSStatus = async () => {
-    setBpjsStatusLoading(true);
-    try {
-      const response = await bpjsBridgeApi.getStatus();
-      setBpjsStatus(response.data.data || DEFAULT_BPJS_STATUS);
-    } catch {
-      setBpjsStatus(DEFAULT_BPJS_STATUS);
-    } finally {
-      setBpjsStatusLoading(false);
     }
   };
 
@@ -595,21 +409,6 @@ export default function IntegrationSettingsPage() {
       setSelectedLogId(null);
     } finally {
       setLogsLoading(false);
-    }
-  };
-
-  const loadBPJSLogs = async (
-    domain: BpjsDomainKey | "all" = bpjsLogDomainFilter,
-    success?: boolean,
-  ) => {
-    setBpjsLogsLoading(true);
-    try {
-      const response = await bpjsBridgeApi.getLogs(100, domain, success);
-      setBpjsLogs(response.data.data || []);
-    } catch {
-      setBpjsLogs([]);
-    } finally {
-      setBpjsLogsLoading(false);
     }
   };
 
@@ -683,12 +482,10 @@ export default function IntegrationSettingsPage() {
 
       toast({ variant: "success", title: "Integrasi tersimpan", description: "Konfigurasi Integrasi berhasil diperbarui." });
       localStorage.setItem(SATUSEHAT_ENABLED_STORAGE_KEY, settings.satusehatEnabled ? "1" : "0");
-      localStorage.setItem(BPJS_ENABLED_STORAGE_KEY, showBpjsFields ? "1" : "0");
+      localStorage.setItem(BPJS_ENABLED_STORAGE_KEY, (settings.bpjsAntreanEnabled || settings.bpjsPCareEnabled) ? "1" : "0");
       window.dispatchEvent(new CustomEvent("satusehat-status-changed", { detail: { enabled: settings.satusehatEnabled } }));
-      window.dispatchEvent(new CustomEvent("bpjs-status-changed", { detail: { enabled: showBpjsFields } }));
+      window.dispatchEvent(new CustomEvent("bpjs-status-changed", { detail: { enabled: (settings.bpjsAntreanEnabled || settings.bpjsPCareEnabled) } }));
       void loadSatusehatStatus();
-      void loadBPJSStatus();
-      void loadBPJSLogs();
     } catch {
       toast({ variant: "destructive", title: "Gagal menyimpan integrasi", description: "Perubahan konfigurasi integrasi belum berhasil disimpan." });
     } finally {
@@ -740,1222 +537,941 @@ export default function IntegrationSettingsPage() {
     }
   };
 
-  const handleTestBPJSConnection = async (domain: BpjsDomainKey) => {
-    setTestingBpjsDomain(domain);
-    setBpjsConnectionResults((current) => ({ ...current, [domain]: "" }));
-    try {
-      const response = await bpjsBridgeApi.testConnection(domain);
-      setBpjsConnectionResults((current) => ({ ...current, [domain]: JSON.stringify(response.data, null, 2) }));
-      toast({
-        variant: "success",
-        title: `Preflight ${domain === "antrean" ? "Antrean FKTP" : "P-Care"} berhasil`,
-        description: response.data?.data?.message || "Endpoint dasar BPJS berhasil dijangkau.",
-      });
-      void loadBPJSStatus();
-      void loadBPJSLogs(bpjsLogDomainFilter, bpjsLogStatusFilter === "all" ? undefined : bpjsLogStatusFilter === "success");
-    } catch (error) {
-      const requestError = error as AxiosError<{ error?: string; data?: unknown }>;
-      const message = extractApiErrorMessage(error, "Preflight BPJS gagal dijalankan.");
-      const payload = requestError.response?.data || { error: message };
-      setBpjsConnectionResults((current) => ({ ...current, [domain]: JSON.stringify(payload, null, 2) }));
-      toast({
-        variant: "destructive",
-        title: `Preflight ${domain === "antrean" ? "Antrean FKTP" : "P-Care"} gagal`,
-        description: message,
-      });
-      void loadBPJSLogs(bpjsLogDomainFilter, bpjsLogStatusFilter === "all" ? undefined : bpjsLogStatusFilter === "success");
-    } finally {
-      setTestingBpjsDomain(null);
-    }
-  };
-
-  const parseResourceId = () => {
-    const trimmed = resourceId.trim();
-    const parsed = Number(trimmed);
-    if (!trimmed || !Number.isInteger(parsed) || parsed <= 0) {
-      toast({ variant: "destructive", title: "ID tidak valid", description: `Masukkan ${selectedResource.idLabel.toLowerCase()} berupa angka positif.` });
-      return null;
-    }
-    return parsed;
-  };
-
   const handlePreviewResource = async () => {
-    const parsedId = parseResourceId();
-    if (!parsedId) {
+    const targetId = Number(resourceLocalId);
+    if (!targetId || targetId <= 0) {
+      toast({ variant: "destructive", title: "Target ID belum valid", description: "Masukkan ID lokal bertipe angka untuk resource yang dipilih." });
       return;
     }
 
-    setPreviewingResource(true);
+    setPreviewLoading(true);
     setPreviewResult("");
     try {
-      const response = await satusehatApi.previewResource(resourceKey, parsedId);
+      const response = await satusehatApi.previewResource(resourceKey, targetId);
       setPreviewResult(JSON.stringify(response.data, null, 2));
-      toast({ variant: "success", title: "Preview berhasil", description: `Payload ${selectedResource.label} berhasil dimuat.` });
+      toast({ variant: "success", title: "Preview siap", description: `Payload ${selectedResource.label} berhasil disusun.` });
     } catch (error) {
-      const message = extractApiErrorMessage(error, `Preview ${selectedResource.label} gagal dimuat.`);
+      const message = extractApiErrorMessage(error, `Gagal menyusun preview ${selectedResource.label}.`);
       setPreviewResult(JSON.stringify({ error: message }, null, 2));
       toast({ variant: "destructive", title: "Preview gagal", description: message });
     } finally {
-      setPreviewingResource(false);
+      setPreviewLoading(false);
     }
   };
 
   const handleSyncResource = async () => {
-    const parsedId = parseResourceId();
-    if (!parsedId) {
+    const targetId = Number(resourceLocalId);
+    if (!targetId || targetId <= 0) {
+      toast({ variant: "destructive", title: "Target ID belum valid", description: "Masukkan ID lokal bertipe angka untuk resource yang dipilih." });
       return;
     }
 
-    setSyncingResource(true);
+    setSyncLoading(true);
     setSyncResult("");
     try {
-      const response = await satusehatApi.syncResource(resourceKey, parsedId);
+      const response = await satusehatApi.syncResource(resourceKey, targetId);
       setSyncResult(JSON.stringify(response.data, null, 2));
-      toast({ variant: "success", title: "Sinkron berhasil", description: `${selectedResource.label} berhasil dikirim ke SATUSEHAT.` });
+      toast({ variant: "success", title: "Sinkronisasi berhasil", description: `Resource ${selectedResource.label} berhasil dikirim ke SATUSEHAT.` });
       void loadSatusehatLogs(logOperationFilter, logStatusFilter === "all" ? undefined : logStatusFilter === "success");
     } catch (error) {
-      const message = extractApiErrorMessage(error, `Sinkron ${selectedResource.label} gagal dijalankan.`);
+      const message = extractApiErrorMessage(error, `Sinkronisasi ${selectedResource.label} gagal dijalankan.`);
       setSyncResult(JSON.stringify({ error: message }, null, 2));
-      toast({ variant: "destructive", title: "Sinkron gagal", description: message });
+      toast({ variant: "destructive", title: "Sinkronisasi gagal", description: message });
       void loadSatusehatLogs(logOperationFilter, logStatusFilter === "all" ? undefined : logStatusFilter === "success");
     } finally {
-      setSyncingResource(false);
+      setSyncLoading(false);
     }
   };
 
-  const handleAutoSyncVisit = async () => {
-    const trimmed = autoSyncVisitId.trim();
-    const parsed = Number(trimmed);
-    if (!trimmed || !Number.isInteger(parsed) || parsed <= 0) {
-      toast({ variant: "destructive", title: "Visit ID tidak valid", description: "Masukkan visit ID berupa angka positif untuk menjalankan auto sync manual." });
-      return;
-    }
-
-    setAutoSyncingVisit(true);
-    setAutoSyncVisitResult("");
+  const handleSyncPolyclinic = async (poli: Polyclinic) => {
+    setSyncingPoliId(poli.id);
     try {
-      const response = await satusehatApi.autoSyncVisit(parsed, true);
-      setAutoSyncVisitResult(JSON.stringify(response.data, null, 2));
-      const isBackground = response.status === 202 || response.data?.data?.job_status === "queued" || response.data?.data?.job_status === "running";
+      const response = await satusehatApi.syncResource("organization", poli.id);
+      await satusehatApi.syncResource("location", poli.id);
       toast({
         variant: "success",
-        title: isBackground ? "Auto sync berjalan di background" : "Auto sync selesai",
-        description: isBackground
-          ? `Auto sync SATUSEHAT untuk visit ${parsed} berjalan di background. Anda dapat lanjut pekerjaan lain.`
-          : `Auto sync SATUSEHAT untuk visit ${parsed} selesai diproses.`,
+        title: "Poli berhasil disinkronkan",
+        description: `${poli.name} telah diproses untuk Organization dan Location SATUSEHAT.`,
       });
+      setSyncResult(JSON.stringify(response.data, null, 2));
+      void loadPolyclinics();
       void loadSatusehatLogs(logOperationFilter, logStatusFilter === "all" ? undefined : logStatusFilter === "success");
     } catch (error) {
-      const message = extractApiErrorMessage(error, "Auto sync SATUSEHAT gagal dijalankan.");
-      setAutoSyncVisitResult(JSON.stringify({ error: message }, null, 2));
-      toast({ variant: "destructive", title: "Auto sync gagal", description: message });
+      const message = extractApiErrorMessage(error, `Sinkronisasi poli ${poli.name} gagal dijalankan.`);
+      toast({ variant: "destructive", title: "Sinkronisasi poli gagal", description: message });
       void loadSatusehatLogs(logOperationFilter, logStatusFilter === "all" ? undefined : logStatusFilter === "success");
     } finally {
-      setAutoSyncingVisit(false);
+      setSyncingPoliId(null);
     }
   };
 
-  const handleRetryLog = async (entry: SatusehatLog) => {
-    if (entry.success || entry.operation.toLowerCase() !== "sync") {
-      toast({ variant: "destructive", title: "Retry tidak tersedia", description: "Hanya log sync yang gagal yang bisa di-retry." });
+  const handleTriggerAutoSyncVisit = async () => {
+    const targetVisitId = Number(resourceLocalId);
+    if (!targetVisitId || targetVisitId <= 0) {
+      toast({ variant: "destructive", title: "Target Visit ID belum valid", description: "Masukkan ID kunjungan lokal pada kolom input target." });
       return;
     }
 
-    setRetryingLogId(entry.id);
-    setRetryResult("");
+    setAutoSyncLoading(true);
+    setAutoSyncResult("");
     try {
-      const response = await satusehatApi.retryLog(entry.id);
-      setRetryResult(JSON.stringify(response.data, null, 2));
-      toast({ variant: "success", title: "Retry berhasil dijalankan", description: `Log #${entry.id} berhasil diproses ulang.` });
+      const response = await satusehatApi.autoSyncVisit(targetVisitId);
+      setAutoSyncResult(JSON.stringify(response.data, null, 2));
+      toast({ variant: "success", title: "Auto sync kunjungan dijalankan", description: `Rangkaian sync visit #${targetVisitId} berhasil diproses backend.` });
       void loadSatusehatLogs(logOperationFilter, logStatusFilter === "all" ? undefined : logStatusFilter === "success");
     } catch (error) {
-      const message = extractApiErrorMessage(error, "Retry log SATUSEHAT gagal dijalankan.");
-      setRetryResult(JSON.stringify({ error: message }, null, 2));
-      toast({ variant: "destructive", title: "Retry gagal", description: message });
+      const message = extractApiErrorMessage(error, `Auto sync kunjungan #${targetVisitId} gagal dijalankan.`);
+      setAutoSyncResult(JSON.stringify({ error: message }, null, 2));
+      toast({ variant: "destructive", title: "Auto sync visit gagal", description: message });
       void loadSatusehatLogs(logOperationFilter, logStatusFilter === "all" ? undefined : logStatusFilter === "success");
+    } finally {
+      setAutoSyncLoading(false);
+    }
+  };
+
+  const handleRetryLog = async (logId: number) => {
+    setRetryingLogId(logId);
+    setRetryResult("");
+    try {
+      const response = await satusehatApi.retryLog(logId);
+      setRetryResult(JSON.stringify(response.data, null, 2));
+      toast({ variant: "success", title: "Retry log berhasil", description: `Log #${logId} berhasil diproses ulang.` });
+      void loadSatusehatLogs(logOperationFilter, logStatusFilter === "all" ? undefined : logStatusFilter === "success");
+    } catch (error) {
+      const message = extractApiErrorMessage(error, `Retry log #${logId} gagal dijalankan.`);
+      setRetryResult(JSON.stringify({ error: message }, null, 2));
+      toast({ variant: "destructive", title: "Retry log gagal", description: message });
     } finally {
       setRetryingLogId(null);
     }
   };
 
-  const buildRetryCurlCommand = (entry: SatusehatLog) => {
-    const token = localStorage.getItem("token") || "<TOKEN>";
-    const endpoint = `${API_ORIGIN}/api/satusehat/logs/${entry.id}/retry`;
-    return `curl -X POST "${endpoint}" -H "Authorization: Bearer ${token}" -H "Content-Type: application/json"`;
+  const renderSectionHeader = (icon: ReactNode, title: string) => (
+    <div className="flex items-center gap-2 text-xs font-bold text-foreground uppercase tracking-wider border-b border-border/60 pb-2 mb-4">
+      {icon}
+      <span>{title}</span>
+    </div>
+  );
+
+  const renderSatusehatSettings = () => (
+    <div className="space-y-6">
+      {/* 1. STATUS INTEGRASI */}
+      <div>
+        {renderSectionHeader(<ShieldCheck className="size-4 text-muted-foreground" />, "Status Integrasi SATUSEHAT")}
+        <div className="grid gap-3 md:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setSettings((current) => ({ ...current, satusehatEnabled: true }))}
+            className={cn(
+              "p-3 text-left border transition-all rounded-none",
+              settings.satusehatEnabled
+                ? "border-emerald-600 bg-emerald-500/5 ring-1 ring-emerald-600"
+                : "border-border/70 bg-card hover:bg-muted/40"
+            )}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-foreground uppercase">Aktif</span>
+              {settings.satusehatEnabled && <BadgeCheck className="size-4 text-emerald-600" />}
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Mengizinkan test koneksi, retry log, sync manual, dan auto sync SATUSEHAT.
+            </p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSettings((current) => ({ ...current, satusehatEnabled: false }))}
+            className={cn(
+              "p-3 text-left border transition-all rounded-none",
+              !settings.satusehatEnabled
+                ? "border-rose-600 bg-rose-500/5 ring-1 ring-rose-600"
+                : "border-border/70 bg-card hover:bg-muted/40"
+            )}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-foreground uppercase">Nonaktif</span>
+              {!settings.satusehatEnabled && <XCircle className="size-4 text-rose-600" />}
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Memblokir semua operasi keluar ke SATUSEHAT, sambil tetap menyimpan konfigurasi.
+            </p>
+          </button>
+        </div>
+      </div>
+
+      {showSatusehatFields ? (
+        <>
+          {/* 2. MODE AKTIF */}
+          <div>
+            {renderSectionHeader(<Database className="size-4 text-muted-foreground" />, "Mode Aktif SATUSEHAT")}
+            <div className="grid gap-3 md:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setSettings((current) => ({ ...current, satusehatActiveMode: "sandbox" }))}
+                className={cn(
+                  "p-3 text-left border transition-all rounded-none",
+                  settings.satusehatActiveMode === "sandbox"
+                    ? "border-primary bg-primary/5 ring-1 ring-primary"
+                    : "border-border/70 bg-card hover:bg-muted/40"
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-foreground uppercase">Sandbox (Staging)</span>
+                  {settings.satusehatActiveMode === "sandbox" && <CheckCircle2 className="size-4 text-primary" />}
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Direkomendasikan untuk pengujian alur fhir-r4 sebelum cutover ke production.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSettings((current) => ({ ...current, satusehatActiveMode: "production" }))}
+                className={cn(
+                  "p-3 text-left border transition-all rounded-none",
+                  settings.satusehatActiveMode === "production"
+                    ? "border-primary bg-primary/5 ring-1 ring-primary"
+                    : "border-border/70 bg-card hover:bg-muted/40"
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-foreground uppercase">Production</span>
+                  {settings.satusehatActiveMode === "production" && <CheckCircle2 className="size-4 text-primary" />}
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Gunakan saat organisasi faskes dan client credential production resmi sudah aktif.
+                </p>
+              </button>
+            </div>
+          </div>
+
+          {/* 3. KREDENSIAL OAUTH2 */}
+          <div>
+            {renderSectionHeader(<Key className="size-4 text-muted-foreground" />, "Kredensial OAuth2 & Organisasi")}
+            <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-foreground uppercase">Organization ID Induk</Label>
+                  <Input
+                    value={settings.satusehatOrganizationId}
+                    onChange={(e) => handleFieldChange("satusehatOrganizationId", e.target.value)}
+                    placeholder="Contoh: 1000001"
+                    className="h-9 rounded-none font-mono text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-foreground uppercase">Client ID</Label>
+                  <Input
+                    value={settings.satusehatClientId}
+                    onChange={(e) => handleFieldChange("satusehatClientId", e.target.value)}
+                    placeholder="Client ID dari portal pengembang DTO Kemkes"
+                    className="h-9 rounded-none font-mono text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-foreground uppercase">Client Secret</Label>
+                  <button
+                    type="button"
+                    onClick={() => setShowSecret((prev) => !prev)}
+                    className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+                  >
+                    {showSecret ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                    {showSecret ? "Sembunyikan" : "Tampilkan"}
+                  </button>
+                </div>
+                <div className="relative">
+                  <Input
+                    type={showSecret ? "text" : "password"}
+                    value={settings.satusehatClientSecret}
+                    onChange={(e) => handleFieldChange("satusehatClientSecret", e.target.value)}
+                    placeholder="Client Secret OAuth2 SATUSEHAT"
+                    className="h-9 rounded-none font-mono text-xs pr-9"
+                  />
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-muted-foreground">
+                    <LockKeyhole className="size-3.5" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+
+
+        </>
+      ) : (
+        <div className="p-6 border border-dashed border-border/80 text-center space-y-1">
+          <p className="text-xs font-semibold text-foreground">Field SATUSEHAT Disembunyikan</p>
+          <p className="text-xs text-muted-foreground">Aktifkan kembali SATUSEHAT jika Anda ingin melihat atau mengubah konfigurasi.</p>
+        </div>
+      )}
+    </div>
+  );
+
+
+  const renderSatusehatEndpoints = () => (
+    <div className="space-y-6">
+      {renderSectionHeader(<Globe className="size-4 text-muted-foreground" />, "Endpoint Base URL SATUSEHAT")}
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-3 border border-border/70 p-4 bg-card">
+          <p className="text-xs font-bold text-foreground uppercase">Sandbox Endpoint</p>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] font-medium text-muted-foreground uppercase">OAuth2 URL</Label>
+            <Input
+              value={settings.satusehatSandboxAuthUrl}
+              onChange={(e) => handleFieldChange("satusehatSandboxAuthUrl", e.target.value)}
+              className="h-8 rounded-none font-mono text-xs"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] font-medium text-muted-foreground uppercase">FHIR R4 URL</Label>
+            <Input
+              value={settings.satusehatSandboxFhirUrl}
+              onChange={(e) => handleFieldChange("satusehatSandboxFhirUrl", e.target.value)}
+              className="h-8 rounded-none font-mono text-xs"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-3 border border-border/70 p-4 bg-card">
+          <p className="text-xs font-bold text-foreground uppercase">Production Endpoint</p>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] font-medium text-muted-foreground uppercase">OAuth2 URL</Label>
+            <Input
+              value={settings.satusehatProductionAuthUrl}
+              onChange={(e) => handleFieldChange("satusehatProductionAuthUrl", e.target.value)}
+              className="h-8 rounded-none font-mono text-xs"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] font-medium text-muted-foreground uppercase">FHIR R4 URL</Label>
+            <Input
+              value={settings.satusehatProductionFhirUrl}
+              onChange={(e) => handleFieldChange("satusehatProductionFhirUrl", e.target.value)}
+              className="h-8 rounded-none font-mono text-xs"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderSatusehatPolyclinics = () => (
+    <div className="space-y-4">
+      {renderSectionHeader(<Building2 className="size-4 text-muted-foreground" />, "Resource Awal Master Poli")}
+      <div className="overflow-x-auto border border-border/70 bg-card">
+        <table className="w-full text-xs">
+          <thead className="bg-muted/40 border-b border-border/70">
+            <tr>
+              <th className="py-2.5 px-3 text-left font-semibold text-muted-foreground uppercase">Poli Lokal</th>
+              <th className="py-2.5 px-3 text-left font-semibold text-muted-foreground uppercase">Organization ID</th>
+              <th className="py-2.5 px-3 text-left font-semibold text-muted-foreground uppercase">Location ID</th>
+              <th className="py-2.5 px-3 text-right font-semibold text-muted-foreground uppercase">Aksi</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/60">
+            {activePolyclinics.map((poli) => (
+              <tr key={poli.id} className="hover:bg-muted/20">
+                <td className="py-2.5 px-3 font-medium text-foreground">{poli.name}</td>
+                <td className="py-2.5 px-3 font-mono text-muted-foreground">{poli.satusehat_organization_id || "-"}</td>
+                <td className="py-2.5 px-3 font-mono text-muted-foreground">{poli.satusehat_location_id || "-"}</td>
+                <td className="py-2.5 px-3 text-right">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={syncingPoliId === poli.id}
+                    onClick={() => handleSyncPolyclinic(poli)}
+                    className="h-7 text-xs rounded-none shadow-none"
+                  >
+                    {syncingPoliId === poli.id ? <Loader2 className="size-3 animate-spin mr-1" /> : <RefreshCw className="size-3 mr-1" />}
+                    Sync
+                  </Button>
+                </td>
+              </tr>
+            ))}
+            {activePolyclinics.length === 0 && (
+              <tr>
+                <td colSpan={4} className="py-4 text-center text-muted-foreground">Tidak ada master poli aktif.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  const renderSatusehatTestConnection = () => (
+    <div className="space-y-4">
+      {renderSectionHeader(<ShieldCheck className="size-4 text-muted-foreground" />, "Status Operasional & Test Koneksi OAuth")}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 border border-border/70 p-3 bg-card">
+        <div>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase">READINESS</p>
+          <div className="mt-1">
+            <Badge variant={satusehatStatus.ready ? "default" : "secondary"} className="rounded-none text-[10px] px-1.5 py-0">
+              {satusehatStatus.ready ? "READY" : "BELUM SIAP"}
+            </Badge>
+          </div>
+        </div>
+        <div>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase">MODE AKTIF</p>
+          <p className="font-medium text-foreground mt-1 text-xs uppercase">{satusehatStatus.active_mode}</p>
+        </div>
+        <div>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase">CLIENT ID</p>
+          <p className="font-medium text-foreground mt-1 text-xs">{satusehatStatus.client_id_configured ? "TERISI" : "KOSONG"}</p>
+        </div>
+        <div>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase">CLIENT SECRET</p>
+          <p className="font-medium text-foreground mt-1 text-xs">{satusehatStatus.client_secret_configured ? "TERISI" : "KOSONG"}</p>
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={loadSatusehatStatus}
+          className="h-8 text-xs rounded-none shadow-none"
+        >
+          <RefreshCw className="size-3.5 mr-1.5" />
+          Refresh Status
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          disabled={testingConnection}
+          onClick={handleTestConnection}
+          className="h-8 text-xs rounded-none shadow-none"
+        >
+          {testingConnection ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : <FlaskConical className="size-3.5 mr-1.5" />}
+          Test Koneksi OAuth
+        </Button>
+      </div>
+
+      <div className="space-y-1">
+        <Label className="text-xs font-semibold text-foreground uppercase">Hasil Respon Test Koneksi</Label>
+        <Textarea
+          value={connectionResult || "Klik 'Test Koneksi OAuth' untuk memverifikasi handshake token dengan SATUSEHAT."}
+          readOnly
+          className="min-h-[160px] max-h-[220px] rounded-none font-mono text-xs bg-muted/10"
+        />
+      </div>
+    </div>
+  );
+
+  const renderSatusehatWorkbench = () => {
+    const activeResult = syncResult || previewResult || autoSyncResult || "";
+    const activeResultLabel = syncResult ? "Hasil Sinkronisasi" : previewResult ? "Payload Preview" : autoSyncResult ? "Hasil Auto-Sync Visit" : "Hasil Operasi Workbench";
+
+    return (
+      <div className="space-y-4">
+        {renderSectionHeader(<Send className="size-4 text-muted-foreground" />, "Workbench Preview & Sinkronisasi Resource")}
+        <div className="space-y-3 border border-border/70 p-4 bg-card">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-foreground uppercase">Pilih Resource</Label>
+              <select
+                value={resourceKey}
+                onChange={(e) => {
+                  setResourceKey(e.target.value as SatusehatResourceKey);
+                  setPreviewResult("");
+                  setSyncResult("");
+                }}
+                className="w-full h-8 rounded-none border border-input bg-background px-3 text-xs"
+              >
+                {SATUSEHAT_RESOURCE_OPTIONS.map((item) => (
+                  <option key={item.key} value={item.key}>{item.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-foreground uppercase">{selectedResource.idLabel}</Label>
+              <Input
+                type="number"
+                value={resourceLocalId}
+                onChange={(e) => setResourceLocalId(e.target.value)}
+                placeholder="Masukkan ID angka data lokal"
+                className="h-8 rounded-none font-mono text-xs"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-0.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={previewLoading}
+              onClick={handlePreviewResource}
+              className="h-8 text-xs rounded-none shadow-none"
+            >
+              {previewLoading ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : <Eye className="size-3.5 mr-1.5" />}
+              Preview Payload
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={syncLoading || !satusehatSyncEnabled}
+              onClick={handleSyncResource}
+              className="h-8 text-xs rounded-none shadow-none"
+            >
+              {syncLoading ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : <Send className="size-3.5 mr-1.5" />}
+              Kirim ke SATUSEHAT
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={autoSyncLoading || !satusehatSyncEnabled}
+              onClick={handleTriggerAutoSyncVisit}
+              className="h-8 text-xs rounded-none shadow-none"
+            >
+              {autoSyncLoading ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : <Play className="size-3.5 mr-1.5" />}
+              Auto-Sync Visit
+            </Button>
+          </div>
+
+          {selectedResourcePrerequisites.length > 0 && (
+            <div className="space-y-1 pt-1">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Prasyarat Resource</p>
+              <div className="grid gap-1.5 sm:grid-cols-2">
+                {selectedResourcePrerequisites.map((req, idx) => (
+                  <div key={req.key || idx} className="border border-border/70 px-2 py-1 text-xs flex items-center gap-2 bg-background">
+                    <span className={cn("size-2 rounded-full shrink-0", req.ready ? "bg-emerald-600" : "bg-amber-500")} />
+                    <span className="font-semibold text-foreground text-[11px] truncate">{req.label}</span>
+                    <span className="text-[10px] text-muted-foreground truncate">{req.next_step || req.detail || ""}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-1 pt-1">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-semibold text-foreground uppercase">{activeResultLabel}</Label>
+              {(previewResult || syncResult || autoSyncResult) && (
+                <button
+                  type="button"
+                  onClick={() => { setPreviewResult(""); setSyncResult(""); setAutoSyncResult(""); }}
+                  className="text-[11px] text-muted-foreground hover:text-foreground"
+                >
+                  Bersihkan
+                </button>
+              )}
+            </div>
+            <Textarea
+              value={activeResult || "Hasil payload preview atau respons kirim SATUSEHAT akan tampil di sini."}
+              readOnly
+              className="min-h-[150px] max-h-[220px] rounded-none font-mono text-xs bg-muted/10"
+            />
+          </div>
+        </div>
+      </div>
+    );
   };
 
-  const handleCopyRetryCurl = async (entry: SatusehatLog) => {
-    if (entry.success || entry.operation.toLowerCase() !== "sync") {
-      toast({ variant: "destructive", title: "cURL tidak tersedia", description: "Hanya log sync yang gagal yang bisa di-copy cURL retry." });
-      return;
-    }
+  const renderSatusehatLogs = () => (
+    <div className="space-y-4">
+      {renderSectionHeader(<TerminalSquare className="size-4 text-muted-foreground" />, "Log Aktivitas SATUSEHAT")}
 
-    const command = buildRetryCurlCommand(entry);
+      <div className="flex flex-wrap items-center justify-between gap-3 border border-border/70 p-3 bg-card">
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={logOperationFilter}
+            onChange={(e) => setLogOperationFilter(e.target.value as SatusehatLogOperationFilter)}
+            className="h-8 rounded-none border border-input bg-background px-2 text-xs"
+          >
+            <option value="all">Semua Operasi</option>
+            <option value="sync">sync</option>
+            <option value="token">token</option>
+            <option value="retry-sync">retry-sync</option>
+          </select>
+          <select
+            value={logStatusFilter}
+            onChange={(e) => setLogStatusFilter(e.target.value as SatusehatLogStatusFilter)}
+            className="h-8 rounded-none border border-input bg-background px-2 text-xs"
+          >
+            <option value="all">Semua Status</option>
+            <option value="success">Sukses</option>
+            <option value="failed">Gagal</option>
+          </select>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={logsLoading}
+          onClick={() => void loadSatusehatLogs()}
+          className="h-8 text-xs rounded-none shadow-none"
+        >
+          {logsLoading ? <Loader2 className="size-3.5 animate-spin mr-1" /> : <RefreshCw className="size-3.5 mr-1" />}
+          Refresh Log
+        </Button>
+      </div>
 
-    try {
-      await navigator.clipboard.writeText(command);
-      toast({ variant: "success", title: "cURL retry disalin", description: `Perintah retry untuk log #${entry.id} sudah ada di clipboard.` });
-    } catch {
-      setRetryResult(command);
-      toast({
-        variant: "destructive",
-        title: "Gagal mengakses clipboard",
-        description: "Perintah cURL ditampilkan di panel Hasil Retry. Silakan salin manual dari sana.",
-      });
-    }
-  };
+      <div className="flex flex-wrap gap-1.5">
+        {satusehatLogFilters.map((flt) => (
+          <button
+            key={flt.key}
+            type="button"
+            onClick={() => setLogQuickFilter(flt.key)}
+            className={cn(
+              "px-2.5 py-1 text-xs border rounded-none transition-colors",
+              logQuickFilter === flt.key
+                ? "border-primary bg-primary text-primary-foreground font-semibold"
+                : "border-border/70 bg-card text-muted-foreground hover:bg-muted/40"
+            )}
+          >
+            {flt.label} ({flt.count})
+          </button>
+        ))}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)] items-start">
+        <div className="border border-border/70 overflow-hidden bg-card">
+          <div className="max-h-[480px] overflow-y-auto divide-y divide-border/60">
+            {filteredSatusehatLogs.map((entry) => {
+              const active = selectedLog?.id === entry.id;
+              return (
+                <button
+                  key={entry.id}
+                  type="button"
+                  onClick={() => setSelectedLogId(entry.id)}
+                  className={cn(
+                    "flex w-full flex-col gap-1 p-2.5 text-left transition-colors",
+                    active ? "bg-primary/10 border-l-2 border-l-primary" : "hover:bg-muted/30"
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      {entry.operation} · {getSatusehatLogResourceLabel(entry.resource_type || "")}
+                    </span>
+                    <Badge variant={entry.success ? "default" : "destructive"} className="rounded-none text-[9px] px-1 py-0">
+                      {entry.success ? "Sukses" : "Gagal"}
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-foreground font-medium">{new Date(entry.created_at).toLocaleString("id-ID")}</p>
+                  <p className="truncate text-[10px] font-mono text-muted-foreground">{entry.error_message || `${entry.method} ${entry.endpoint}`}</p>
+                </button>
+              );
+            })}
+            {filteredSatusehatLogs.length === 0 && (
+              <div className="p-4 text-center text-xs text-muted-foreground">
+                {satusehatLogs.length === 0 ? "Belum ada log aktivitas tersimpan." : "Tidak ada log pada filter ini."}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-4 border border-border/70 p-4 bg-card min-w-0">
+          {selectedLog ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b border-border/60 pb-2">
+                <div>
+                  <p className="text-xs font-bold text-foreground uppercase">
+                    Log #{selectedLog.id} · {selectedLog.operation}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">{new Date(selectedLog.created_at).toLocaleString("id-ID")}</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={retryingLogId === selectedLog.id}
+                  onClick={() => handleRetryLog(selectedLog.id)}
+                  className="h-7 text-xs rounded-none shadow-none"
+                >
+                  {retryingLogId === selectedLog.id ? <Loader2 className="size-3 animate-spin mr-1" /> : <RefreshCw className="size-3 mr-1" />}
+                  Retry Log
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase">METHOD & STATUS</p>
+                  <p className="font-mono mt-0.5">{selectedLog.method} · {selectedLog.status_code || "-"}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase">ENDPOINT</p>
+                  <p className="font-mono mt-0.5 truncate" title={selectedLog.endpoint}>{selectedLog.endpoint}</p>
+                </div>
+              </div>
+
+              {selectedLog.error_message && (
+                <div>
+                  <p className="text-[10px] font-semibold text-rose-600 uppercase">PESAN ERROR</p>
+                  <p className="text-xs text-rose-600 font-mono mt-0.5">{selectedLog.error_message}</p>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <div>
+                  <Label className="text-[10px] font-semibold text-muted-foreground uppercase">Request Body</Label>
+                  <Textarea value={selectedLog.request_payload || ""} readOnly className="min-h-[140px] rounded-none font-mono text-xs mt-1" />
+                </div>
+                <div>
+                  <Label className="text-[10px] font-semibold text-muted-foreground uppercase">Response Body</Label>
+                  <Textarea value={selectedLog.response_body || ""} readOnly className="min-h-[180px] rounded-none font-mono text-xs mt-1" />
+                </div>
+              </div>
+
+              {retryResult && (
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold text-foreground uppercase">Hasil Retry</Label>
+                  <Textarea value={retryResult} readOnly className="min-h-[120px] rounded-none font-mono text-xs" />
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="p-8 text-center text-xs text-muted-foreground">Pilih log di sebelah kiri untuk melihat detail.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 
   if (fetching) {
-    return <div className="flex h-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+    return (
+      <div className="flex min-h-[400px] items-center justify-center bg-muted/20">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <MasterDataPageShell
-        title="Integrasi"
-        subtitle="Kelola provider integrasi dengan pola katalog di aside dan detail konfigurasi di area konten utama."
-        meta={<><span>{selectedCard.title}</span><span>{selectedCard.status}</span></>}
-        onBack={() => navigate(-1)}
-        actions={selectedIntegration === "satusehat" || selectedIntegration === "bpjs" ? (
-          <Button onClick={handleSave} disabled={saving} className="rounded-none shadow-none">
-            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            Simpan Konfigurasi
-          </Button>
-        ) : undefined}
-        aside={
-          <MasterDataAsideStack>
-            <div>
-              <MasterDataAsideSection title="Daftar Integrasi" >
-                <div className="space-y-3">
-                  {INTEGRATION_CARDS.map((integration) => {
-                    const isActive = integration.key === selectedIntegration;
-                    return (
-                      <button
-                        key={integration.key}
-                        type="button"
-                        onClick={() => setSelectedIntegration(integration.key)}
-                        className={`w-full rounded-none border px-3 py-3 text-left transition-colors ${isActive ? "border-primary bg-primary/5" : "border-border/70 bg-background hover:bg-muted/40"}`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2 text-sm font-semibold">
-                              <PlugZap className="h-4 w-4 text-muted-foreground" />
-                              {integration.title}
-                            </div>
-                            <p className="text-xs leading-5 text-muted-foreground">{integration.description}</p>
-                          </div>
-                          <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${integration.enabled ? "" : ""}`}>
-                            {integration.status}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </MasterDataAsideSection>
+    <div className="p-4 lg:p-6 bg-muted/20 min-h-full">
+      {/* Satu Card Utuh Menggabungkan Header dan Body Sesuai Halaman Detail Pasien SIMKLINIK */}
+      <div className="border border-border/80 bg-card shadow-none">
+        {/* Card Header (Baris Atas di dalam Satu Card) */}
+        <div className="flex flex-col gap-3 p-4 border-b border-border xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-3 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 w-8 p-0 rounded-none shadow-none shrink-0"
+              onClick={() => navigate(-1)}
+              aria-label="Kembali"
+              title="Kembali"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center border border-border/70 bg-muted/20">
+              <PlugZap className="h-4 w-4 text-primary" />
             </div>
-            <div>
-              <MasterDataAsideSection title="Akses Cepat" helper="Kembali ke settings umum atau lanjutkan menambah provider lain dengan pola layout yang sama.">
-                <Button asChild variant="outline" className="w-full rounded-none shadow-none">
-                  <Link to="/settings">Kembali ke Settings</Link>
-                </Button>
-              </MasterDataAsideSection>
-            </div>
-          </MasterDataAsideStack>
-        }
-      >
-        <MasterDataLegacySections>
-          {selectedIntegration === "satusehat" ? (
-            <>
-              <section className="space-y-3 rounded-lg border border-border/80 p-5">
-                <div className="space-y-1">
-                  <h2 className="text-sm font-semibold tracking-tight">Ringkasan Provider</h2>
-                  <p className="text-[11px] leading-5 text-muted-foreground">SATUSEHAT memakai kombinasi identitas organisasi, kredensial OAuth2, dan base URL FHIR untuk proses sinkronisasi resource.</p>
-                </div>
-
-                <div className="rounded-lg border border-dashed p-3">
-                  <div className="flex items-center gap-2 text-sm font-semibold">
-                    <BadgeCheck className="h-4 w-4 text-emerald-600" />
-                    {selectedCard.title}
-                  </div>
-                  <p className="mt-2 text-sm text-muted-foreground">{selectedCard.description}</p>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Badge variant={satusehatSyncEnabled ? "default" : "secondary"} className="rounded-none">
-                      {satusehatSyncEnabled ? "Integrasi Aktif" : "Integrasi Nonaktif"}
-                    </Badge>
-                    <Badge variant={satusehatStatus.ready ? "default" : "secondary"} className="rounded-none">
-                      {!satusehatSyncEnabled ? "Dinonaktifkan" : satusehatStatus.ready ? "Konfigurasi Siap" : "Konfigurasi Belum Lengkap"}
-                    </Badge>
-                    <Badge variant="outline" className="rounded-none uppercase">
-                      {satusehatStatus.active_mode || settings.satusehatActiveMode}
-                    </Badge>
-                    <Badge variant={satusehatStatus.client_id_configured ? "default" : "secondary"} className="rounded-none">
-                      Client ID {satusehatStatus.client_id_configured ? "Terisi" : "Kosong"}
-                    </Badge>
-                    <Badge variant={satusehatStatus.client_secret_configured ? "default" : "secondary"} className="rounded-none">
-                      Secret {satusehatStatus.client_secret_configured ? "Terisi" : "Kosong"}
-                    </Badge>
-                    <Badge variant="outline" className="rounded-none">
-                      Poli Aktif {activePolyclinics.length}
-                    </Badge>
-                  </div>
-                </div>
-              </section>
-
-              <section className="space-y-3 rounded-lg border border-border/80 p-5">
-                <div className="space-y-1">
-                  <h2 className="text-sm font-semibold tracking-tight">Operasional SATUSEHAT</h2>
-                  <p className="text-[11px] leading-5 text-muted-foreground">Panel ini dipakai untuk verifikasi readiness konfigurasi, test koneksi OAuth, dan mengeksekusi preview atau sync resource tanpa harus keluar ke Postman.</p>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  <div className="rounded-none border border-border/70 p-3">
-                    <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                      <ShieldCheck className="h-3.5 w-3.5" /> Readiness
-                    </div>
-                    <div className="mt-2 flex items-center gap-2 text-sm font-semibold">
-                      {!satusehatSyncEnabled ? <XCircle className="h-4 w-4 text-amber-600" /> : satusehatStatus.ready ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <XCircle className="h-4 w-4 text-rose-600" />}
-                      {statusLoading ? "Memuat..." : !satusehatSyncEnabled ? "Dinonaktifkan" : satusehatStatus.ready ? "Siap digunakan" : "Perlu dilengkapi"}
-                    </div>
-                  </div>
-                  <div className="rounded-none border border-border/70 p-3">
-                    <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                      <PlugZap className="h-3.5 w-3.5" /> Mode Aktif
-                    </div>
-                    <p className="mt-2 text-sm font-semibold uppercase">{statusLoading ? "Memuat..." : satusehatStatus.active_mode || "-"}</p>
-                  </div>
-                  <div className="rounded-none border border-border/70 p-3">
-                    <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                      <LockKeyhole className="h-3.5 w-3.5" /> Auth URL
-                    </div>
-                    <p className="mt-2 break-all text-xs leading-5 text-muted-foreground">{statusLoading ? "Memuat..." : satusehatStatus.auth_url || "-"}</p>
-                  </div>
-                  <div className="rounded-none border border-border/70 p-3">
-                    <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                      <Database className="h-3.5 w-3.5" /> FHIR URL
-                    </div>
-                    <p className="mt-2 break-all text-xs leading-5 text-muted-foreground">{statusLoading ? "Memuat..." : satusehatStatus.fhir_url || "-"}</p>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" variant="outline" className="rounded-none shadow-none" onClick={() => void loadSatusehatStatus()} disabled={statusLoading}>
-                    {statusLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
-                    Refresh Status
-                  </Button>
-                  <Button type="button" variant="outline" className="rounded-none shadow-none" onClick={() => void handleTestConnection()} disabled={testingConnection || !satusehatSyncEnabled}>
-                    {testingConnection ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlugZap className="mr-2 h-4 w-4" />}
-                    Test Koneksi
-                  </Button>
-                </div>
-
-                {!satusehatSyncEnabled && satusehatStatus.disabled_reason ? (
-                  <div className="rounded-none border border-slate-300 bg-slate-50 p-3 text-sm text-slate-800">
-                    <p className="font-medium">Integrasi sedang dinonaktifkan</p>
-                    <p className="mt-1 text-xs leading-5">{satusehatStatus.disabled_reason}. Preview payload lokal tetap tersedia, tetapi test koneksi, retry, sync, dan auto sync diblokir.</p>
-                  </div>
-                ) : null}
-
-                {satusehatStatus.missing_fields.length > 0 ? (
-                  <div className="rounded-none border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                    <p className="font-medium">Field konfigurasi yang masih kosong</p>
-                    <p className="mt-1 text-xs leading-5">{satusehatStatus.missing_fields.join(", ")}</p>
-                  </div>
-                ) : null}
-
-                {connectionResult ? (
-                  <div className="space-y-2">
-                    <Label className="text-xs font-medium">Hasil Test Koneksi</Label>
-                    <Textarea value={connectionResult} readOnly className="min-h-[180px] rounded-none font-mono text-xs" />
-                  </div>
-                ) : null}
-              </section>
-
-              <section className="space-y-3 rounded-lg border border-border/80 p-5">
-                <div className="space-y-1">
-                  <h2 className="text-sm font-semibold tracking-tight">Status Integrasi</h2>
-                  <p className="text-[11px] leading-5 text-muted-foreground">Gunakan toggle ini jika bridging SATUSEHAT perlu dihentikan sementara tanpa menghapus mode, endpoint, atau kredensial yang sudah tersimpan.</p>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => setSettings((current) => ({ ...current, satusehatEnabled: true }))}
-                    className={`rounded-none border px-4 py-3 text-left transition-colors ${settings.satusehatEnabled ? "border-primary bg-primary/5" : "border-border/70 bg-background hover:bg-muted/40"}`}
-                  >
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold">Aktif</p>
-                      <p className="text-xs leading-5 text-muted-foreground">Mengizinkan test koneksi, retry log, sync manual, dan auto sync SATUSEHAT.</p>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSettings((current) => ({ ...current, satusehatEnabled: false }))}
-                    className={`rounded-none border px-4 py-3 text-left transition-colors ${!settings.satusehatEnabled ? "border-primary bg-primary/5" : "border-border/70 bg-background hover:bg-muted/40"}`}
-                  >
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold">Nonaktif</p>
-                      <p className="text-xs leading-5 text-muted-foreground">Memblokir semua operasi yang menghubungi SATUSEHAT, sambil tetap menyimpan konfigurasi untuk diaktifkan lagi nanti.</p>
-                    </div>
-                  </button>
-                </div>
-
-                <div className="rounded-none border border-dashed p-3 text-xs leading-5 text-muted-foreground">
-                  {settings.satusehatEnabled
-                    ? "Saat aktif, SATUSEHAT dapat dipakai normal sesuai mode yang dipilih."
-                    : "Saat nonaktif, preview payload lokal masih bisa dipakai untuk pengecekan data, tetapi koneksi dan sinkronisasi ke SATUSEHAT akan ditolak oleh backend."}
-                </div>
-              </section>
-
-              {showSatusehatFields ? (
-                <>
-              <section className="space-y-3 rounded-lg border border-border/80 p-5">
-                <div className="space-y-1">
-                  <h2 className="text-sm font-semibold tracking-tight">Mode Aktif</h2>
-                  <p className="text-[11px] leading-5 text-muted-foreground">Pilih environment yang akan dipakai aplikasi saat integrasi SATUSEHAT dijalankan. Pengaturan endpoint sandbox dan production tetap disimpan bersamaan.</p>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => handleFieldChange("satusehatActiveMode", "sandbox")}
-                    className={`rounded-none border px-4 py-3 text-left transition-colors ${settings.satusehatActiveMode === "sandbox" ? "border-primary bg-primary/5" : "border-border/70 bg-background hover:bg-muted/40"}`}
-                  >
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold">Sandbox</p>
-                      <p className="text-xs leading-5 text-muted-foreground">Dipakai untuk pengujian dan validasi integrasi tanpa menyentuh environment live.</p>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleFieldChange("satusehatActiveMode", "production")}
-                    className={`rounded-none border px-4 py-3 text-left transition-colors ${settings.satusehatActiveMode === "production" ? "border-primary bg-primary/5" : "border-border/70 bg-background hover:bg-muted/40"}`}
-                  >
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold">Production</p>
-                      <p className="text-xs leading-5 text-muted-foreground">Dipakai saat integrasi sudah siap berjalan dengan data live di SATUSEHAT.</p>
-                    </div>
-                  </button>
-                </div>
-              </section>
-
-              <section className="space-y-3 rounded-lg border border-border/80 p-5">
-                <div className="space-y-1">
-                  <h2 className="text-sm font-semibold tracking-tight">Resource Awal dari Master Poli</h2>
-                  <p className="text-[11px] leading-5 text-muted-foreground">Organization dan Location turunan tidak perlu diisi manual di settings. Resource awal ini diturunkan dari data master poli yang sudah ada di aplikasi.</p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="satusehatOrganizationId" className="flex items-center gap-2 text-xs font-medium"><ShieldCheck className="h-3.5 w-3.5 text-muted-foreground" />Organization Induk (Org_id)</Label>
-                  <Input id="satusehatOrganizationId" value={settings.satusehatOrganizationId} onChange={(event) => handleFieldChange("satusehatOrganizationId", event.target.value)} placeholder="10000005" className="h-10 text-sm" />
-                  <p className="text-[11px] leading-5 text-muted-foreground">Field ini tetap dibutuhkan sebagai fasilitas induk SATUSEHAT. Organization dan Location turunannya akan dibentuk dari master poli.</p>
-                </div>
-
-                {activePolyclinics.length > 0 ? (
-                  <div className="overflow-x-auto rounded-none border border-border/70 bg-background">
-                    <table className="w-full min-w-[920px] border-collapse text-sm">
-                      <thead className="bg-muted/20">
-                        <tr className="border-b border-border/70 text-left">
-                          <th className="px-3 py-2 font-semibold text-foreground/90">Poli Lokal</th>
-                          <th className="px-3 py-2 font-semibold text-foreground/90">Sumber Data</th>
-                          <th className="px-3 py-2 font-semibold text-foreground/90">Turunan Organization</th>
-                          <th className="px-3 py-2 font-semibold text-foreground/90">Turunan Location</th>
-                          <th className="px-3 py-2 font-semibold text-foreground/90">Status SATUSEHAT</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {activePolyclinics.map((polyclinic) => (
-                          <tr key={polyclinic.id} className="border-b border-border/60 align-top last:border-b-0">
-                            <td className="px-3 py-2">
-                              <div className="space-y-0.5">
-                                <p className="font-medium text-foreground/95">{polyclinic.name}</p>
-                                <p className="text-xs text-muted-foreground">ID {polyclinic.id} · Kode {polyclinic.code || "-"}</p>
-                              </div>
-                            </td>
-                            <td className="px-3 py-2 text-xs leading-5 text-muted-foreground">
-                              <p>Name poli menjadi nama resource.</p>
-                              <p>Code poli menjadi identifier lokal.</p>
-                              <p>Description poli menjadi deskripsi resource.</p>
-                            </td>
-                            <td className="px-3 py-2 text-xs leading-5 text-foreground/90">
-                              <p className="font-medium text-foreground/95">{polyclinic.name}</p>
-                              <p className="text-muted-foreground">Identifier kandidat: {polyclinic.code || `POLI-${polyclinic.id}`}</p>
-                            </td>
-                            <td className="px-3 py-2 text-xs leading-5 text-foreground/90">
-                              <p className="font-medium text-foreground/95">Ruang {polyclinic.name}</p>
-                              <p className="text-muted-foreground">Identifier kandidat: {(polyclinic.code || `POLI-${polyclinic.id}`).concat("-ROOM")}</p>
-                            </td>
-                            <td className="px-3 py-2 text-xs leading-5 text-foreground/90">
-                              <div className="space-y-2">
-                                <div>
-                                  <p className="font-medium text-foreground/95">Organization</p>
-                                  <p className="text-muted-foreground break-all">{polyclinic.satusehat_organization_id || "Belum tersinkron"}</p>
-                                </div>
-                                <div>
-                                  <p className="font-medium text-foreground/95">Location</p>
-                                  <p className="text-muted-foreground break-all">{polyclinic.satusehat_location_id || "Belum tersinkron"}</p>
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="rounded-none border border-dashed p-3 text-xs leading-5 text-muted-foreground">
-                    Belum ada master poli aktif yang bisa dipakai sebagai sumber Organization dan Location turunan.
-                  </div>
-                )}
-
-                <div className="rounded-none border border-dashed p-3 text-xs leading-5 text-muted-foreground">
-                  Frontend sekarang memakai master poli sebagai sumber resource awal. Organization dan Location poli sudah bisa dipreview maupun disinkronkan, lalu Encounter akan memakai `Location` hasil turunan itu.
-                </div>
-              </section>
-
-              <section className="space-y-3 rounded-lg border border-border/80 p-5">
-                <div className="space-y-1">
-                  <h2 className="text-sm font-semibold tracking-tight">Kredensial OAuth2</h2>
-                  <p className="text-[11px] leading-5 text-muted-foreground">Kredensial ini khusus untuk generate token. Nilainya berbeda dari Organization dan Location resource di atas.</p>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="satusehatClientId" className="flex items-center gap-2 text-xs font-medium"><ShieldCheck className="h-3.5 w-3.5 text-muted-foreground" />Client ID</Label>
-                    <Input id="satusehatClientId" value={settings.satusehatClientId} onChange={(event) => handleFieldChange("satusehatClientId", event.target.value)} placeholder="client-id-satusehat" className="h-10 text-sm" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="satusehatClientSecret" className="flex items-center gap-2 text-xs font-medium"><ShieldCheck className="h-3.5 w-3.5 text-muted-foreground" />Client Secret</Label>
-                    <div className="relative">
-                      <Input id="satusehatClientSecret" type={showClientSecret ? "text" : "password"} value={settings.satusehatClientSecret} onChange={(event) => handleFieldChange("satusehatClientSecret", event.target.value)} placeholder="Masukkan client secret SATUSEHAT" className="h-10 pr-12 text-sm" />
-                      <button type="button" onClick={() => setShowClientSecret((current) => !current)} className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground" aria-label={showClientSecret ? "Sembunyikan client secret" : "Tampilkan client secret"}>
-                        {showClientSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section className="space-y-3 rounded-lg border border-border/80 p-5">
-                <div className="space-y-1">
-                  <h2 className="text-sm font-semibold tracking-tight">Autentikasi</h2>
-                  <p className="text-[11px] leading-5 text-muted-foreground">Pisahkan endpoint sandbox dan production agar proses uji tidak pernah menyentuh environment live secara tidak sengaja.</p>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="satusehatSandboxAuthUrl" className="flex items-center gap-2 text-xs font-medium"><LockKeyhole className="h-3.5 w-3.5 text-muted-foreground" />Sandbox OAuth URL</Label>
-                    <Input id="satusehatSandboxAuthUrl" value={settings.satusehatSandboxAuthUrl} onChange={(event) => handleFieldChange("satusehatSandboxAuthUrl", event.target.value)} placeholder="https://api-satusehat-stg.dto.kemkes.go.id/oauth2/v1" className="h-10 text-sm" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="satusehatProductionAuthUrl" className="flex items-center gap-2 text-xs font-medium"><LockKeyhole className="h-3.5 w-3.5 text-muted-foreground" />Production OAuth URL</Label>
-                    <Input id="satusehatProductionAuthUrl" value={settings.satusehatProductionAuthUrl} onChange={(event) => handleFieldChange("satusehatProductionAuthUrl", event.target.value)} placeholder="https://api-satusehat.kemkes.go.id/oauth2/v1" className="h-10 text-sm" />
-                  </div>
-                </div>
-              </section>
-
-              <section className="space-y-3 rounded-lg border border-border/80 p-5">
-                <div className="space-y-1">
-                  <h2 className="text-sm font-semibold tracking-tight">API Resources</h2>
-                  <p className="text-[11px] leading-5 text-muted-foreground">Base URL FHIR menjadi pintu utama untuk mengirim Patient, Encounter, Observation, Procedure, dan resource lain dari SIMKLINIK.</p>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="satusehatSandboxFhirUrl" className="flex items-center gap-2 text-xs font-medium"><Database className="h-3.5 w-3.5 text-muted-foreground" />Sandbox FHIR Base URL</Label>
-                    <Input id="satusehatSandboxFhirUrl" value={settings.satusehatSandboxFhirUrl} onChange={(event) => handleFieldChange("satusehatSandboxFhirUrl", event.target.value)} placeholder="https://api-satusehat-stg.dto.kemkes.go.id/fhir-r4/v1" className="h-10 text-sm" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="satusehatProductionFhirUrl" className="flex items-center gap-2 text-xs font-medium"><Database className="h-3.5 w-3.5 text-muted-foreground" />Production FHIR Base URL</Label>
-                    <Input id="satusehatProductionFhirUrl" value={settings.satusehatProductionFhirUrl} onChange={(event) => handleFieldChange("satusehatProductionFhirUrl", event.target.value)} placeholder="https://api-satusehat.kemkes.go.id/fhir-r4/v1" className="h-10 text-sm" />
-                  </div>
-                </div>
-              </section>
-
-              <section className="space-y-3 rounded-lg border border-border/80 p-5">
-                <div className="space-y-1">
-                  <h2 className="text-sm font-semibold tracking-tight">Workbench Preview dan Sync</h2>
-                  <p className="text-[11px] leading-5 text-muted-foreground">Pilih resource, isi ID lokalnya, lalu jalankan preview atau sync. Panel ini cocok untuk validasi bertahap selama rollout integrasi SATUSEHAT.</p>
-                </div>
-
-                {selectedResourcePrerequisites.length > 0 ? (
-                  <div className="space-y-3 rounded-none border border-dashed border-border/80 p-3">
-                    <div className="space-y-1">
-                      <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Pra-syarat Resource</h3>
-                      <p className="text-xs leading-5 text-muted-foreground">Untuk lab, radiologi, dan farmasi, urutan master resource perlu dicek dulu sebelum data transaksi dikirim.</p>
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                      {selectedResourcePrerequisites.map((item) => (
-                        <div key={item.key} className="rounded-none border border-border/70 bg-background p-3 text-xs leading-5">
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <p className="font-medium text-foreground">{item.label}</p>
-                              <p className="text-muted-foreground">{item.required ? "Wajib" : "Opsional"}</p>
-                            </div>
-                            <Badge variant={item.ready ? "default" : item.required ? "destructive" : "secondary"} className="rounded-none">
-                              {item.ready ? "Siap" : item.required ? "Belum siap" : "Opsional"}
-                            </Badge>
-                          </div>
-                          <p className="mt-2 text-muted-foreground">{item.detail || "Pra-syarat resource ini belum dicek."}</p>
-                          {item.current_value ? <p className="mt-2 break-all text-foreground">Nilai sekarang: {item.current_value}</p> : null}
-                          {item.next_step ? <p className="mt-2 text-amber-700">Langkah: {item.next_step}</p> : null}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
-                  <div className="space-y-3 rounded-none border border-border/70 p-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="satusehat-resource-type" className="text-xs font-medium">Tipe Resource</Label>
-                      <select
-                        id="satusehat-resource-type"
-                        value={resourceKey}
-                        onChange={(event) => setResourceKey(event.target.value as SatusehatResourceKey)}
-                        className="flex h-10 w-full rounded-none border border-input bg-background px-3 py-2 text-sm"
-                      >
-                        {SATUSEHAT_RESOURCE_OPTIONS.map((option) => (
-                          <option key={option.key} value={option.key}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="satusehat-resource-id" className="text-xs font-medium">{selectedResource.idLabel}</Label>
-                      <Input
-                        id="satusehat-resource-id"
-                        value={resourceId}
-                        onChange={(event) => setResourceId(event.target.value)}
-                        placeholder={`Masukkan ${selectedResource.idLabel.toLowerCase()}`}
-                        className="h-10 text-sm"
-                      />
-                    </div>
-
-                    <div className="rounded-none border border-dashed p-3 text-xs leading-5 text-muted-foreground">
-                      <div className="flex items-center gap-2 text-foreground">
-                        <Stethoscope className="h-3.5 w-3.5" />
-                        {selectedResource.label}
-                      </div>
-                      <p className="mt-2">{selectedResource.helper}</p>
-                    </div>
-
-                    <div className="flex flex-col gap-2">
-                      <Button type="button" variant="outline" className="rounded-none shadow-none" onClick={() => void handlePreviewResource()} disabled={previewingResource || syncingResource}>
-                        {previewingResource ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FlaskConical className="mr-2 h-4 w-4" />}
-                        Preview Payload
-                      </Button>
-                      <Button type="button" className="rounded-none shadow-none" onClick={() => void handleSyncResource()} disabled={syncingResource || previewingResource || !satusehatSyncEnabled}>
-                        {syncingResource ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BadgeCheck className="mr-2 h-4 w-4" />}
-                        Sync ke SATUSEHAT
-                      </Button>
-                    </div>
-
-                    <div className="space-y-2 rounded-none border border-dashed p-3">
-                      <Label htmlFor="satusehat-auto-sync-visit-id" className="text-xs font-medium">Manual Trigger Auto Sync Visit</Label>
-                      <Input
-                        id="satusehat-auto-sync-visit-id"
-                        value={autoSyncVisitId}
-                        onChange={(event) => setAutoSyncVisitId(event.target.value)}
-                        placeholder="Masukkan Visit ID"
-                        className="h-10 text-sm"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="w-full rounded-none shadow-none"
-                        onClick={() => void handleAutoSyncVisit()}
-                        disabled={autoSyncingVisit || previewingResource || syncingResource || !satusehatSyncEnabled}
-                      >
-                        {autoSyncingVisit ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BadgeCheck className="mr-2 h-4 w-4" />}
-                        Jalankan Auto Sync
-                      </Button>
-                      <p className="text-[11px] leading-5 text-muted-foreground">Event otomatis backend berjalan saat kunjungan difinalisasi. Tombol ini dipakai untuk trigger manual jika perlu re-run.</p>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 xl:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label className="text-xs font-medium">Hasil Preview</Label>
-                      <Textarea value={previewResult} readOnly placeholder="Hasil preview payload akan muncul di sini." className="min-h-[320px] rounded-none font-mono text-xs" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs font-medium">Hasil Sync</Label>
-                      <Textarea value={syncResult} readOnly placeholder="Hasil sync SATUSEHAT akan muncul di sini." className="min-h-[320px] rounded-none font-mono text-xs" />
-                    </div>
-                    <div className="space-y-2 xl:col-span-2">
-                      <Label className="text-xs font-medium">Hasil Auto Sync Visit (Manual Trigger)</Label>
-                      <Textarea value={autoSyncVisitResult} readOnly placeholder="Hasil auto sync visit akan muncul di sini." className="min-h-[220px] rounded-none font-mono text-xs" />
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section className="space-y-3 rounded-lg border border-border/80 p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="space-y-1">
-                    <h2 className="text-sm font-semibold tracking-tight">Log Aktivitas SATUSEHAT</h2>
-                    <p className="text-[11px] leading-5 text-muted-foreground">Log ini menyimpan percobaan token dan sinkronisasi resource, termasuk payload request, response, dan pesan error backend.</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <select
-                      value={logOperationFilter}
-                      onChange={(event) => setLogOperationFilter(event.target.value as SatusehatLogOperationFilter)}
-                      className="h-9 rounded-none border border-input bg-background px-2 text-xs"
-                    >
-                      <option value="all">Semua Operasi</option>
-                      <option value="sync">sync</option>
-                      <option value="token">token</option>
-                      <option value="retry-sync">retry-sync</option>
-                    </select>
-                    <select
-                      value={logStatusFilter}
-                      onChange={(event) => setLogStatusFilter(event.target.value as SatusehatLogStatusFilter)}
-                      className="h-9 rounded-none border border-input bg-background px-2 text-xs"
-                    >
-                      <option value="all">Semua Status</option>
-                      <option value="success">Sukses</option>
-                      <option value="failed">Gagal</option>
-                    </select>
-                  <Button type="button" variant="outline" className="rounded-none shadow-none" onClick={() => void loadSatusehatLogs(logOperationFilter, logStatusFilter === "all" ? undefined : logStatusFilter === "success")} disabled={logsLoading}>
-                    {logsLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TerminalSquare className="mr-2 h-4 w-4" />}
-                    Refresh Log
-                  </Button>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,360px)_minmax(0,1fr)]">
-                  <div className="overflow-hidden rounded-none border border-border/70">
-                    <div className="max-h-[420px] overflow-y-auto">
-                      {satusehatLogFilters.map((filter) => {
-                        const active = logQuickFilter === filter.key;
-                        return (
-                          <button
-                            key={filter.key}
-                            type="button"
-                            onClick={() => setLogQuickFilter(filter.key)}
-                            className={`flex w-full items-center justify-between gap-3 border-b border-border/70 px-3 py-3 text-left last:border-b-0 ${active ? "bg-primary/5" : "bg-background hover:bg-muted/40"}`}
-                          >
-                            <div>
-                              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Kategori Log</p>
-                              <p className="mt-1 text-sm text-foreground">{filter.label}</p>
-                            </div>
-                            <Badge variant={active ? "default" : "outline"} className="rounded-none">{filter.count}</Badge>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="overflow-hidden rounded-none border border-border/70">
-                    <div className="max-h-[420px] overflow-y-auto">
-                      {filteredSatusehatLogs.length > 0 ? filteredSatusehatLogs.map((entry) => {
-                        const active = selectedLog?.id === entry.id;
-                        return (
-                          <button
-                            key={entry.id}
-                            type="button"
-                            onClick={() => setSelectedLogId(entry.id)}
-                            className={`flex w-full flex-col gap-1 border-b border-border/70 px-3 py-3 text-left last:border-b-0 ${active ? "bg-primary/5" : "bg-background hover:bg-muted/40"}`}
-                          >
-                            <div className="flex items-center justify-between gap-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{entry.operation} · {getSatusehatLogResourceLabel(entry.resource_type || "")}</p>
-                              <Badge variant={entry.success ? "default" : "destructive"} className="rounded-none">{entry.success ? "Sukses" : "Gagal"}</Badge>
-                            </div>
-                            <p className="text-xs text-foreground/90">{new Date(entry.created_at).toLocaleString("id-ID")}</p>
-                            <p className="truncate text-xs text-muted-foreground">{entry.error_message || `${entry.method} ${entry.endpoint}`}</p>
-                          </button>
-                        );
-                      }) : (
-                        <div className="px-3 py-4 text-xs leading-5 text-muted-foreground">
-                          {satusehatLogs.length === 0 ? "Belum ada log SATUSEHAT yang tersimpan." : `Tidak ada log untuk kategori ${getSatusehatLogResourceLabel(logQuickFilter)}.`}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-                      {selectedLog && !selectedLog.success && selectedLog.operation.toLowerCase() === "sync" ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="rounded-none shadow-none"
-                          onClick={() => void handleCopyRetryCurl(selectedLog)}
-                          disabled={retryingLogId === selectedLog.id}
-                        >
-                          Copy cURL Retry
-                        </Button>
-                      ) : null}
-                      {selectedLog && !selectedLog.success && selectedLog.operation.toLowerCase() === "sync" ? (
-                        <Button
-                          type="button"
-                          className="rounded-none shadow-none"
-                          onClick={() => void handleRetryLog(selectedLog)}
-                          disabled={retryingLogId === selectedLog.id || !satusehatSyncEnabled}
-                        >
-                          {retryingLogId === selectedLog.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TerminalSquare className="mr-2 h-4 w-4" />}
-                          Retry Log Gagal
-                        </Button>
-                      ) : null}
-                    </div>
-
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                      <div className="rounded-none border border-border/70 p-3 text-xs leading-5">
-                        <p className="font-medium text-muted-foreground">Operasi</p>
-                        <p className="mt-1 text-foreground">{selectedLog?.operation || "-"}</p>
-                      </div>
-                      <div className="rounded-none border border-border/70 p-3 text-xs leading-5">
-                        <p className="font-medium text-muted-foreground">Resource</p>
-                        <p className="mt-1 text-foreground">{selectedLog?.resource_type ? getSatusehatLogResourceLabel(selectedLog.resource_type) : "-"}</p>
-                      </div>
-                      <div className="rounded-none border border-border/70 p-3 text-xs leading-5">
-                        <p className="font-medium text-muted-foreground">HTTP</p>
-                        <p className="mt-1 text-foreground">{selectedLog ? `${selectedLog.method || "-"} / ${selectedLog.status_code || 0}` : "-"}</p>
-                      </div>
-                      <div className="rounded-none border border-border/70 p-3 text-xs leading-5">
-                        <p className="font-medium text-muted-foreground">Mode</p>
-                        <p className="mt-1 text-foreground uppercase">{selectedLog?.mode || "-"}</p>
-                      </div>
-                    </div>
-
-                    <div className="rounded-none border border-border/70 p-3 text-xs leading-5">
-                      <p className="font-medium text-muted-foreground">Endpoint</p>
-                      <p className="mt-1 break-all text-foreground">{selectedLog?.endpoint || "-"}</p>
-                      {selectedLog?.error_message ? <p className="mt-2 break-words text-rose-700">{selectedLog.error_message}</p> : null}
-                    </div>
-
-                    <div className="grid gap-4 xl:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label className="text-xs font-medium">Request Payload</Label>
-                        <Textarea value={selectedLog?.request_payload || ""} readOnly placeholder="Payload request akan tampil di sini." className="min-h-[240px] rounded-none font-mono text-xs" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-xs font-medium">Response Body</Label>
-                        <Textarea value={selectedLog?.response_body || ""} readOnly placeholder="Body response akan tampil di sini." className="min-h-[240px] rounded-none font-mono text-xs" />
-                      </div>
-                    </div>
-
-                    {retryResult ? (
-                      <div className="space-y-2">
-                        <Label className="text-xs font-medium">Hasil Retry</Label>
-                        <Textarea value={retryResult} readOnly placeholder="Hasil retry log SATUSEHAT akan muncul di sini." className="min-h-[180px] rounded-none font-mono text-xs" />
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              </section>
-                </>
-              ) : (
-                <section className="space-y-3 rounded-lg border border-dashed border-border/80 p-5">
-                  <div className="space-y-1">
-                    <h2 className="text-sm font-semibold tracking-tight">Field SATUSEHAT Disembunyikan</h2>
-                    <p className="text-[11px] leading-5 text-muted-foreground">Mode, endpoint, kredensial, workbench, dan log SATUSEHAT disembunyikan selama integrasi dalam status nonaktif agar halaman tetap fokus pada kontrol on/off.</p>
-                  </div>
-                  <p className="text-sm text-muted-foreground">Aktifkan kembali SATUSEHAT jika Anda ingin melihat atau mengubah seluruh field konfigurasi dan operasionalnya.</p>
-                </section>
-              )}
-            </>
-          ) : selectedIntegration === "bpjs" ? (
-            <>
-              <section className="space-y-3 rounded-lg border border-border/80 p-5">
-                <div className="space-y-1">
-                  <h2 className="text-sm font-semibold tracking-tight">Ringkasan Provider BPJS</h2>
-                  <p className="text-[11px] leading-5 text-muted-foreground">BPJS dipecah menjadi dua domain kerja: Antrean FKTP untuk alur antrean operasional dan P-Care untuk fondasi sinkronisasi pelayanan tahap berikutnya.</p>
-                </div>
-
-                <div className="rounded-lg border border-dashed p-3">
-                  <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <Badge variant={bpjsStatus.enabled_domains > 0 ? "default" : "secondary"} className="rounded-none">
-                      Domain Aktif {bpjsStatus.enabled_domains}/{bpjsStatus.total_domains}
-                    </Badge>
-                    <Badge variant={bpjsStatus.ready_domains > 0 ? "default" : "secondary"} className="rounded-none">
-                      Domain Siap {bpjsStatus.ready_domains}/{bpjsStatus.total_domains}
-                    </Badge>
-                    <Badge variant={bpjsAntreanStatus.ready ? "default" : "secondary"} className="rounded-none">
-                      Antrean {bpjsAntreanStatus.ready ? "Siap" : "Belum Siap"}
-                    </Badge>
-                    <Badge variant={bpjsPCareStatus.ready ? "default" : "secondary"} className="rounded-none">
-                      P-Care {bpjsPCareStatus.ready ? "Siap" : "Belum Siap"}
-                    </Badge>
-                  </div>
-                  <p className="mt-2 text-xs leading-5 text-muted-foreground">Preflight connection di bawah hanya memverifikasi endpoint dasar dan kelengkapan kredensial. Ia tidak mengeksekusi endpoint bisnis BPJS yang dapat memicu perubahan data nyata.</p>
-                </div>
-              </section>
-
-              <section className="space-y-3 rounded-lg border border-border/80 p-5">
-                <div className="space-y-1">
-                  <h2 className="text-sm font-semibold tracking-tight">Status Integrasi BPJS</h2>
-                  <p className="text-[11px] leading-5 text-muted-foreground">Kontrol ini tetap tampil saat BPJS nonaktif agar admin bisa menghidupkan kembali domain Antrean FKTP atau P-Care tanpa membuka field teknis lain.</p>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => setSettings((current) => ({ ...current, bpjsAntreanEnabled: true }))}
-                    className={`rounded-none border px-4 py-3 text-left transition-colors ${settings.bpjsAntreanEnabled ? "border-primary bg-primary/5" : "border-border/70 bg-background hover:bg-muted/40"}`}
-                  >
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold">Antrean FKTP {settings.bpjsAntreanEnabled ? "Aktif" : "Nonaktif"}</p>
-                      <p className="text-xs leading-5 text-muted-foreground">Mengatur webhook dan outbound antrean BPJS dari flow klinik.</p>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSettings((current) => ({ ...current, bpjsPCareEnabled: true }))}
-                    className={`rounded-none border px-4 py-3 text-left transition-colors ${settings.bpjsPCareEnabled ? "border-primary bg-primary/5" : "border-border/70 bg-background hover:bg-muted/40"}`}
-                  >
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold">P-Care {settings.bpjsPCareEnabled ? "Aktif" : "Nonaktif"}</p>
-                      <p className="text-xs leading-5 text-muted-foreground">Mengatur readiness domain P-Care secara terpisah dari antrean.</p>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSettings((current) => ({ ...current, bpjsAntreanEnabled: false }))}
-                    className={`rounded-none border px-4 py-3 text-left transition-colors ${!settings.bpjsAntreanEnabled ? "border-primary bg-primary/5" : "border-border/70 bg-background hover:bg-muted/40"}`}
-                  >
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold">Matikan Antrean FKTP</p>
-                      <p className="text-xs leading-5 text-muted-foreground">Dipakai bila integrasi antrean perlu dihentikan sementara.</p>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSettings((current) => ({ ...current, bpjsPCareEnabled: false }))}
-                    className={`rounded-none border px-4 py-3 text-left transition-colors ${!settings.bpjsPCareEnabled ? "border-primary bg-primary/5" : "border-border/70 bg-background hover:bg-muted/40"}`}
-                  >
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold">Matikan P-Care</p>
-                      <p className="text-xs leading-5 text-muted-foreground">Dipakai bila modul P-Care belum siap atau perlu ditutup sementara.</p>
-                    </div>
-                  </button>
-                </div>
-
-                <div className="rounded-none border border-dashed p-3 text-xs leading-5 text-muted-foreground">
-                  {showBpjsFields
-                    ? "Minimal satu domain BPJS aktif, sehingga field konfigurasi dan panel operasional tetap ditampilkan."
-                    : "Semua domain BPJS nonaktif. Field konfigurasi BPJS disembunyikan agar halaman tetap fokus pada kontrol on/off."}
-                </div>
-              </section>
-
-              {showBpjsFields ? (
-                <>
-
-              <section className="space-y-4 rounded-lg border border-border/80 p-5">
-                <div className="space-y-1">
-                  <h2 className="text-sm font-semibold tracking-tight">Domain Antrean FKTP</h2>
-                  <p className="text-[11px] leading-5 text-muted-foreground">Dipakai untuk outbound panggil, batal, tambah antrean, serta inbound webhook Antrean FKTP yang sudah ada di backend.</p>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  <div className="rounded-none border border-border/70 p-3">
-                    <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                      <ShieldCheck className="h-3.5 w-3.5" /> Readiness
-                    </div>
-                    <div className="mt-2 flex items-center gap-2 text-sm font-semibold">
-                      {!bpjsAntreanStatus.enabled ? <XCircle className="h-4 w-4 text-amber-600" /> : bpjsAntreanStatus.ready ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <XCircle className="h-4 w-4 text-rose-600" />}
-                      {bpjsStatusLoading ? "Memuat..." : !bpjsAntreanStatus.enabled ? "Dinonaktifkan" : bpjsAntreanStatus.ready ? "Siap dipakai" : "Perlu dilengkapi"}
-                    </div>
-                  </div>
-                  <div className="rounded-none border border-border/70 p-3 text-xs leading-5">
-                    <p className="font-medium text-muted-foreground">Base URL</p>
-                    <p className="mt-2 break-all text-foreground">{bpjsStatusLoading ? "Memuat..." : bpjsAntreanStatus.base_url || "-"}</p>
-                  </div>
-                  <div className="rounded-none border border-border/70 p-3 text-xs leading-5">
-                    <p className="font-medium text-muted-foreground">Cons ID</p>
-                    <p className="mt-2 text-foreground">{bpjsAntreanStatus.cons_id_configured ? "Terisi" : "Kosong"}</p>
-                  </div>
-                  <div className="rounded-none border border-border/70 p-3 text-xs leading-5">
-                    <p className="font-medium text-muted-foreground">Secret + User Key</p>
-                    <p className="mt-2 text-foreground">{bpjsAntreanStatus.secret_key_configured && bpjsAntreanStatus.user_key_configured ? "Terisi" : "Belum lengkap"}</p>
-                  </div>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => setSettings((current) => ({ ...current, bpjsAntreanEnabled: true }))}
-                    className={`rounded-none border px-4 py-3 text-left transition-colors ${settings.bpjsAntreanEnabled ? "border-primary bg-primary/5" : "border-border/70 bg-background hover:bg-muted/40"}`}
-                  >
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold">Aktif</p>
-                      <p className="text-xs leading-5 text-muted-foreground">Mengizinkan webhook FKTP dan outbound antrean BPJS dari visit atau workspace dokter.</p>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSettings((current) => ({ ...current, bpjsAntreanEnabled: false }))}
-                    className={`rounded-none border px-4 py-3 text-left transition-colors ${!settings.bpjsAntreanEnabled ? "border-primary bg-primary/5" : "border-border/70 bg-background hover:bg-muted/40"}`}
-                  >
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold">Nonaktif</p>
-                      <p className="text-xs leading-5 text-muted-foreground">Menolak webhook dan menahan outbound tanpa menghapus kredensial yang sudah tersimpan.</p>
-                    </div>
-                  </button>
-                </div>
-
-                {bpjsAntreanStatus.missing_fields.length > 0 ? (
-                  <div className="rounded-none border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                    <p className="font-medium">Field Antrean FKTP yang masih kosong</p>
-                    <p className="mt-1 text-xs leading-5">{bpjsAntreanStatus.missing_fields.join(", ")}</p>
-                  </div>
-                ) : null}
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="bpjsAntreanConsId" className="flex items-center gap-2 text-xs font-medium"><LockKeyhole className="h-3.5 w-3.5 text-muted-foreground" />Cons ID</Label>
-                    <Input id="bpjsAntreanConsId" value={settings.bpjsAntreanConsId} onChange={(event) => handleFieldChange("bpjsAntreanConsId", event.target.value)} placeholder="Masukkan Cons ID antrean" className="h-10 text-sm" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="bpjsAntreanSecretKey" className="flex items-center gap-2 text-xs font-medium"><ShieldCheck className="h-3.5 w-3.5 text-muted-foreground" />Secret Key</Label>
-                    <div className="relative">
-                      <Input
-                        id="bpjsAntreanSecretKey"
-                        type={showClientSecret ? "text" : "password"}
-                        value={settings.bpjsAntreanSecretKey}
-                        onChange={(event) => handleFieldChange("bpjsAntreanSecretKey", event.target.value)}
-                        placeholder="Masukkan Secret Key antrean"
-                        className="h-10 pr-10 text-sm"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowClientSecret(!showClientSecret)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                        tabIndex={-1}
-                      >
-                        {showClientSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="bpjsAntreanUserKey" className="flex items-center gap-2 text-xs font-medium"><LockKeyhole className="h-3.5 w-3.5 text-muted-foreground" />User Key</Label>
-                    <Input id="bpjsAntreanUserKey" value={settings.bpjsAntreanUserKey} onChange={(event) => handleFieldChange("bpjsAntreanUserKey", event.target.value)} placeholder="Masukkan User Key antrean" className="h-10 text-sm" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="bpjsAntreanBaseUrl" className="flex items-center gap-2 text-xs font-medium"><Database className="h-3.5 w-3.5 text-muted-foreground" />Base URL</Label>
-                    <Input id="bpjsAntreanBaseUrl" value={settings.bpjsAntreanBaseUrl} onChange={(event) => handleFieldChange("bpjsAntreanBaseUrl", event.target.value)} placeholder="https://apijkn-dev.bpjs-kesehatan.go.id/antreanrs_dev" className="h-10 text-sm" />
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" className="rounded-none shadow-none" onClick={() => void loadBPJSStatus()} disabled={bpjsStatusLoading}>
-                    {bpjsStatusLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
-                    Refresh Status
-                  </Button>
-                  <Button type="button" variant="outline" className="rounded-none shadow-none" onClick={() => void handleTestBPJSConnection("antrean")} disabled={testingBpjsDomain === "antrean"}>
-                    {testingBpjsDomain === "antrean" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlugZap className="mr-2 h-4 w-4" />}
-                    Preflight Antrean FKTP
-                  </Button>
-                </div>
-
-                {bpjsConnectionResults.antrean ? (
-                  <div className="space-y-2">
-                    <Label className="text-xs font-medium">Hasil Preflight Antrean FKTP</Label>
-                    <Textarea value={bpjsConnectionResults.antrean} readOnly className="min-h-[180px] rounded-none font-mono text-xs" />
-                  </div>
-                ) : null}
-              </section>
-
-              <section className="space-y-4 rounded-lg border border-border/80 p-5">
-                <div className="space-y-1">
-                  <h2 className="text-sm font-semibold tracking-tight">Domain P-Care</h2>
-                  <p className="text-[11px] leading-5 text-muted-foreground">Domain ini disiapkan terpisah sejak awal agar readiness, toggle, dan endpoint P-Care tidak bercampur dengan Antrean FKTP.</p>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  <div className="rounded-none border border-border/70 p-3">
-                    <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                      <ShieldCheck className="h-3.5 w-3.5" /> Readiness
-                    </div>
-                    <div className="mt-2 flex items-center gap-2 text-sm font-semibold">
-                      {!bpjsPCareStatus.enabled ? <XCircle className="h-4 w-4 text-amber-600" /> : bpjsPCareStatus.ready ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <XCircle className="h-4 w-4 text-rose-600" />}
-                      {bpjsStatusLoading ? "Memuat..." : !bpjsPCareStatus.enabled ? "Dinonaktifkan" : bpjsPCareStatus.ready ? "Siap dipakai" : "Perlu dilengkapi"}
-                    </div>
-                  </div>
-                  <div className="rounded-none border border-border/70 p-3 text-xs leading-5">
-                    <p className="font-medium text-muted-foreground">Base URL</p>
-                    <p className="mt-2 break-all text-foreground">{bpjsStatusLoading ? "Memuat..." : bpjsPCareStatus.base_url || "-"}</p>
-                  </div>
-                  <div className="rounded-none border border-border/70 p-3 text-xs leading-5">
-                    <p className="font-medium text-muted-foreground">Cons ID</p>
-                    <p className="mt-2 text-foreground">{bpjsPCareStatus.cons_id_configured ? "Terisi" : "Kosong"}</p>
-                  </div>
-                  <div className="rounded-none border border-border/70 p-3 text-xs leading-5">
-                    <p className="font-medium text-muted-foreground">Secret + User Key</p>
-                    <p className="mt-2 text-foreground">{bpjsPCareStatus.secret_key_configured && bpjsPCareStatus.user_key_configured ? "Terisi" : "Belum lengkap"}</p>
-                  </div>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => setSettings((current) => ({ ...current, bpjsPCareEnabled: true }))}
-                    className={`rounded-none border px-4 py-3 text-left transition-colors ${settings.bpjsPCareEnabled ? "border-primary bg-primary/5" : "border-border/70 bg-background hover:bg-muted/40"}`}
-                  >
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold">Aktif</p>
-                      <p className="text-xs leading-5 text-muted-foreground">Menandai domain P-Care siap dipakai saat package client dan submit pelayanan mulai diaktifkan.</p>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSettings((current) => ({ ...current, bpjsPCareEnabled: false }))}
-                    className={`rounded-none border px-4 py-3 text-left transition-colors ${!settings.bpjsPCareEnabled ? "border-primary bg-primary/5" : "border-border/70 bg-background hover:bg-muted/40"}`}
-                  >
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold">Nonaktif</p>
-                      <p className="text-xs leading-5 text-muted-foreground">Menyimpan kredensial P-Care tanpa membuka flow submit pelayanan sebelum modulnya siap.</p>
-                    </div>
-                  </button>
-                </div>
-
-                {bpjsPCareStatus.missing_fields.length > 0 ? (
-                  <div className="rounded-none border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                    <p className="font-medium">Field P-Care yang masih kosong</p>
-                    <p className="mt-1 text-xs leading-5">{bpjsPCareStatus.missing_fields.join(", ")}</p>
-                  </div>
-                ) : null}
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="bpjsPCareConsId" className="flex items-center gap-2 text-xs font-medium"><LockKeyhole className="h-3.5 w-3.5 text-muted-foreground" />Cons ID</Label>
-                    <Input id="bpjsPCareConsId" value={settings.bpjsPCareConsId} onChange={(event) => handleFieldChange("bpjsPCareConsId", event.target.value)} placeholder="Masukkan Cons ID P-Care" className="h-10 text-sm" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="bpjsPCareSecretKey" className="flex items-center gap-2 text-xs font-medium"><ShieldCheck className="h-3.5 w-3.5 text-muted-foreground" />Secret Key</Label>
-                    <div className="relative">
-                      <Input
-                        id="bpjsPCareSecretKey"
-                        type={showClientSecret ? "text" : "password"}
-                        value={settings.bpjsPCareSecretKey}
-                        onChange={(event) => handleFieldChange("bpjsPCareSecretKey", event.target.value)}
-                        placeholder="Masukkan Secret Key P-Care"
-                        className="h-10 pr-10 text-sm"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowClientSecret(!showClientSecret)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                        tabIndex={-1}
-                      >
-                        {showClientSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="bpjsPCareUserKey" className="flex items-center gap-2 text-xs font-medium"><LockKeyhole className="h-3.5 w-3.5 text-muted-foreground" />User Key</Label>
-                    <Input id="bpjsPCareUserKey" value={settings.bpjsPCareUserKey} onChange={(event) => handleFieldChange("bpjsPCareUserKey", event.target.value)} placeholder="Masukkan User Key P-Care" className="h-10 text-sm" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="bpjsPCareBaseUrl" className="flex items-center gap-2 text-xs font-medium"><Database className="h-3.5 w-3.5 text-muted-foreground" />Base URL</Label>
-                    <Input id="bpjsPCareBaseUrl" value={settings.bpjsPCareBaseUrl} onChange={(event) => handleFieldChange("bpjsPCareBaseUrl", event.target.value)} placeholder="https://apijkn-dev.bpjs-kesehatan.go.id/pcare-rest-dev" className="h-10 text-sm" />
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" className="rounded-none shadow-none" onClick={() => void handleTestBPJSConnection("pcare")} disabled={testingBpjsDomain === "pcare"}>
-                    {testingBpjsDomain === "pcare" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlugZap className="mr-2 h-4 w-4" />}
-                    Preflight P-Care
-                  </Button>
-                </div>
-
-                {bpjsConnectionResults.pcare ? (
-                  <div className="space-y-2">
-                    <Label className="text-xs font-medium">Hasil Preflight P-Care</Label>
-                    <Textarea value={bpjsConnectionResults.pcare} readOnly className="min-h-[180px] rounded-none font-mono text-xs" />
-                  </div>
-                ) : null}
-              </section>
-
-              <section className="space-y-3 rounded-lg border border-border/80 p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="space-y-1">
-                    <h2 className="text-sm font-semibold tracking-tight">Log Aktivitas BPJS</h2>
-                    <p className="text-[11px] leading-5 text-muted-foreground">Mencatat inbound webhook, outbound antrean, hasil preflight, dan kegagalan inisialisasi client agar error tidak lagi silent.</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <select
-                      value={bpjsLogDomainFilter}
-                      onChange={(event) => setBpjsLogDomainFilter(event.target.value as BpjsDomainKey | "all")}
-                      className="h-9 rounded-none border border-input bg-background px-2 text-xs"
-                    >
-                      <option value="all">Semua Domain</option>
-                      <option value="antrean">Antrean FKTP</option>
-                      <option value="pcare">P-Care</option>
-                    </select>
-                    <select
-                      value={bpjsLogStatusFilter}
-                      onChange={(event) => setBpjsLogStatusFilter(event.target.value as BpjsLogStatusFilter)}
-                      className="h-9 rounded-none border border-input bg-background px-2 text-xs"
-                    >
-                      <option value="all">Semua Status</option>
-                      <option value="success">Sukses</option>
-                      <option value="failed">Gagal</option>
-                    </select>
-                    <Button type="button" variant="outline" className="rounded-none shadow-none" onClick={() => void loadBPJSLogs(bpjsLogDomainFilter, bpjsLogStatusFilter === "all" ? undefined : bpjsLogStatusFilter === "success")} disabled={bpjsLogsLoading}>
-                      {bpjsLogsLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TerminalSquare className="mr-2 h-4 w-4" />}
-                      Refresh Log
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  {filteredBpjsLogs.length > 0 ? filteredBpjsLogs.map((entry) => (
-                    <div key={entry.id} className="rounded-none border border-border/70 p-3 text-xs leading-5">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant={entry.success ? "default" : "destructive"} className="rounded-none">{entry.success ? "Sukses" : "Gagal"}</Badge>
-                          <Badge variant="outline" className="rounded-none uppercase">{entry.domain}</Badge>
-                          <Badge variant="outline" className="rounded-none uppercase">{entry.direction}</Badge>
-                          <Badge variant="outline" className="rounded-none">{entry.operation}</Badge>
-                        </div>
-                        <p className="text-muted-foreground">{new Date(entry.created_at).toLocaleString("id-ID")}</p>
-                      </div>
-                      <p className="mt-2 text-foreground">{entry.method || "-"} {entry.endpoint || "-"}</p>
-                      {entry.error_message ? <p className="mt-1 text-rose-700">{entry.error_message}</p> : null}
-                      <div className="mt-3 grid gap-3 xl:grid-cols-2">
-                        <div className="space-y-1">
-                          <Label className="text-[11px] font-medium">Request</Label>
-                          <Textarea value={entry.request_payload || ""} readOnly placeholder="Payload request BPJS akan muncul di sini." className="min-h-[140px] rounded-none font-mono text-[11px]" />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-[11px] font-medium">Response</Label>
-                          <Textarea value={entry.response_body || ""} readOnly placeholder="Payload response BPJS akan muncul di sini." className="min-h-[140px] rounded-none font-mono text-[11px]" />
-                        </div>
-                      </div>
-                    </div>
-                  )) : (
-                    <div className="rounded-none border border-dashed p-3 text-xs leading-5 text-muted-foreground">
-                      {bpjsLogsLoading ? "Memuat log BPJS..." : "Belum ada log BPJS untuk filter yang dipilih."}
-                    </div>
-                  )}
-                </div>
-              </section>
-                </>
-              ) : (
-                <section className="space-y-3 rounded-lg border border-dashed border-border/80 p-5">
-                  <div className="space-y-1">
-                    <h2 className="text-sm font-semibold tracking-tight">Field BPJS Disembunyikan</h2>
-                    <p className="text-[11px] leading-5 text-muted-foreground">Kredensial, endpoint, preflight, dan log BPJS disembunyikan selama seluruh domain BPJS berada pada status nonaktif agar halaman tetap fokus pada kontrol on/off.</p>
-                  </div>
-                  <p className="text-sm text-muted-foreground">Aktifkan kembali Antrean FKTP atau P-Care jika Anda ingin melihat atau mengubah seluruh field konfigurasi BPJS.</p>
-                </section>
-              )}
-            </>
-          ) : (
-            <section className="space-y-3 rounded-lg border border-dashed border-border/80 p-5">
-              <div className="space-y-1">
-                <h2 className="text-sm font-semibold tracking-tight">Template Integrasi</h2>
-                <p className="text-[11px] leading-5 text-muted-foreground">Provider ini belum aktif. Struktur aside dan kontennya sudah disiapkan agar ekspansi integrasi berikutnya tetap seragam dengan SATUSEHAT.</p>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-base font-bold tracking-tight text-foreground truncate">
+                  Pengaturan Integrasi
+                </h1>
+                <Badge className={settings.satusehatEnabled ? "h-5 rounded-none border-0 bg-emerald-600 px-2 text-[10px] uppercase tracking-wide text-white shadow-none" : "h-5 rounded-none border-0 bg-zinc-600 px-2 text-[10px] uppercase tracking-wide text-white shadow-none"}>
+                  {settings.satusehatEnabled ? "SATUSEHAT AKTIF" : "SATUSEHAT NONAKTIF"}
+                </Badge>
+                <Badge variant="outline" className="h-5 rounded-none px-2 text-[10px] uppercase tracking-wide text-muted-foreground shadow-none">
+                  BPJS SEGERA HADIR
+                </Badge>
               </div>
-              <p className="text-sm text-muted-foreground">Saat siap, saya bisa menambahkan field kredensial, test koneksi, status sinkronisasi, dan endpoint khusus untuk provider ini tanpa mengubah layout dasarnya.</p>
-            </section>
-          )}
-        </MasterDataLegacySections>
-      </MasterDataPageShell>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {selectedIntegration === "satusehat" && (satusehatSideTab === "settings" || satusehatSideTab === "endpoints") && (
+              <Button
+                onClick={handleSave}
+                disabled={saving}
+                size="sm"
+                className="gap-1.5 h-8 text-xs rounded-none shadow-none"
+              >
+                {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+                Simpan Konfigurasi
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Card Body Langsung di Dalam Card yang Sama Tanpa Pemisah */}
+        <div className="p-4 sm:p-5">
+          <Tabs value={selectedIntegration} onValueChange={(val) => setSelectedIntegration(val as IntegrationKey)} className="w-full">
+            {/* Main Tabs (Horizontal Style Detail Pasien) */}
+            <TabsList className="w-full justify-start rounded-none border-b border-border bg-transparent p-0 gap-6">
+              <TabsTrigger
+                value="satusehat"
+                className="rounded-none border-0 border-b-2 border-transparent bg-transparent pb-3 pt-1 px-1 text-sm font-semibold text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:text-foreground flex items-center gap-2"
+              >
+                <PlugZap className="size-4" />
+                Satu Sehat
+              </TabsTrigger>
+              <TabsTrigger
+                value="bpjs"
+                className="rounded-none border-0 border-b-2 border-transparent bg-transparent pb-3 pt-1 px-1 text-sm font-semibold text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:text-foreground flex items-center gap-2"
+              >
+                <Clock className="size-4" />
+                BPJS Kesehatan
+              </TabsTrigger>
+            </TabsList>
+
+            {/* TAB CONTENT: SATU SEHAT */}
+            <TabsContent value="satusehat" className="mt-5 space-y-6 pt-2">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                {/* KOLOM KIRI (Gaya Profil Kiri Detail Pasien): Card Ringkasan Status & Side Tabs Navigasi */}
+                <div className="lg:col-span-4 xl:col-span-3 space-y-4">
+                  {/* Kartu Profil Provider */}
+                  <div className="border border-border/70 bg-muted/[0.03] p-4 relative shadow-none">
+                    <Badge className={cn("absolute top-3.5 right-3.5 text-[10px] font-bold tracking-wider rounded-md px-2 py-0.5 shadow-none border-0 text-white", settings.satusehatEnabled ? "bg-emerald-600 hover:bg-emerald-600" : "bg-zinc-600 hover:bg-zinc-600")}>
+                      {settings.satusehatEnabled ? "ACTIVE" : "INACTIVE"}
+                    </Badge>
+
+                    <div className="flex flex-col items-center pt-2">
+                      <div className="size-20 rounded-lg border border-border bg-zinc-950 dark:bg-zinc-900 text-white flex items-center justify-center font-bold shadow-sm">
+                        <PlugZap className="size-10 text-primary" />
+                      </div>
+                      <h2 className="text-base font-bold text-center mt-3 text-foreground tracking-tight uppercase leading-snug">
+                        SATUSEHAT
+                      </h2>
+                      <p className="text-xs text-muted-foreground text-center mt-0.5 font-mono">
+                        KEMENKES RI · FHIR R4
+                      </p>
+                      <div className="mt-2.5">
+                        <span className="text-[11px] font-semibold px-2.5 py-0.5 border border-border rounded-md text-foreground bg-muted/30 uppercase tracking-wider">
+                          {settings.satusehatActiveMode}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-border/60 my-4" />
+
+                    <div className="space-y-3 text-xs">
+                      <div>
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">ORGANIZATION ID</p>
+                        <p className="font-mono text-foreground mt-0.5 truncate">{settings.satusehatOrganizationId || "-"}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">CLIENT ID</p>
+                        <p className="font-mono text-foreground mt-0.5 truncate">{settings.satusehatClientId ? "TERSIMPAN" : "BELUM DIISI"}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">API READINESS</p>
+                        <p className="font-medium text-foreground mt-0.5">{satusehatStatus.ready ? "Siap Digunakan" : "Konfigurasi Belum Lengkap"}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Sidetabs Navigasi */}
+                  <div className="border border-border/70 bg-card p-1.5 space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => setSatusehatSideTab("settings")}
+                      className={cn(
+                        "flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors rounded-none",
+                        satusehatSideTab === "settings"
+                          ? "bg-primary text-primary-foreground font-semibold"
+                          : "text-muted-foreground hover:bg-muted/40 hover:text-foreground font-medium"
+                      )}
+                    >
+                      <Key className="size-4 shrink-0" />
+                      <span>Pengaturan & Kunci API</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSatusehatSideTab("endpoints")}
+                      className={cn(
+                        "flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors rounded-none",
+                        satusehatSideTab === "endpoints"
+                          ? "bg-primary text-primary-foreground font-semibold"
+                          : "text-muted-foreground hover:bg-muted/40 hover:text-foreground font-medium"
+                      )}
+                    >
+                      <Globe className="size-4 shrink-0" />
+                      <span>Endpoint API</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSatusehatSideTab("polyclinics")}
+                      className={cn(
+                        "flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors rounded-none",
+                        satusehatSideTab === "polyclinics"
+                          ? "bg-primary text-primary-foreground font-semibold"
+                          : "text-muted-foreground hover:bg-muted/40 hover:text-foreground font-medium"
+                      )}
+                    >
+                      <Building2 className="size-4 shrink-0" />
+                      <span>Pemetaan Poli</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSatusehatSideTab("test-connection")}
+                      className={cn(
+                        "flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors rounded-none",
+                        satusehatSideTab === "test-connection"
+                          ? "bg-primary text-primary-foreground font-semibold"
+                          : "text-muted-foreground hover:bg-muted/40 hover:text-foreground font-medium"
+                      )}
+                    >
+                      <FlaskConical className="size-4 shrink-0" />
+                      <span>Test Koneksi</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSatusehatSideTab("workbench")}
+                      className={cn(
+                        "flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors rounded-none",
+                        satusehatSideTab === "workbench"
+                          ? "bg-primary text-primary-foreground font-semibold"
+                          : "text-muted-foreground hover:bg-muted/40 hover:text-foreground font-medium"
+                      )}
+                    >
+                      <Send className="size-4 shrink-0" />
+                      <span>Workbench Resource</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSatusehatSideTab("logs")}
+                      className={cn(
+                        "flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors rounded-none",
+                        satusehatSideTab === "logs"
+                          ? "bg-primary text-primary-foreground font-semibold"
+                          : "text-muted-foreground hover:bg-muted/40 hover:text-foreground font-medium"
+                      )}
+                    >
+                      <TerminalSquare className="size-4 shrink-0" />
+                      <span>Log Aktivitas</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* KOLOM KANAN: Isi Sidetab Aktif */}
+                <div className="lg:col-span-8 xl:col-span-9 min-w-0">
+                  {satusehatSideTab === "settings" && renderSatusehatSettings()}
+                  {satusehatSideTab === "endpoints" && renderSatusehatEndpoints()}
+                  {satusehatSideTab === "polyclinics" && renderSatusehatPolyclinics()}
+                  {satusehatSideTab === "test-connection" && renderSatusehatTestConnection()}
+                  {satusehatSideTab === "workbench" && renderSatusehatWorkbench()}
+                  {satusehatSideTab === "logs" && renderSatusehatLogs()}
+                </div>
+              </div>
+            </TabsContent>
+
+            {/* TAB CONTENT: BPJS */}
+            <TabsContent value="bpjs" className="mt-5 space-y-6 pt-2">
+              <div className="flex flex-col items-center justify-center p-16 text-center border border-dashed border-border/80 bg-background/50 my-6">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted/40 text-muted-foreground mb-4">
+                  <Clock className="size-7 text-primary" />
+                </div>
+                <h3 className="text-base font-bold text-foreground">Integrasi BPJS Kesehatan</h3>
+                <p className="mt-2 text-sm text-muted-foreground max-w-md">
+                  konten akan segera datang pada versi selanjutnya stay tune
+                </p>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </div>
+      </div>
     </div>
   );
 }

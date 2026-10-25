@@ -75,16 +75,26 @@ func hasOtherActiveRegistrationQueue(date time.Time, excludeID uint) (bool, erro
 }
 
 func GetRegistrationQueues(c *gin.Context) {
-	_, dateStr, err := parseRegistrationQueueDate(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Format tanggal tidak valid (YYYY-MM-DD)"})
-		return
-	}
-
 	var queues []models.RegistrationQueue
-	query := registrationQueueQuery().
-		Where("DATE(queue_date) = ?", dateStr).
-		Order("ticket_number ASC")
+	query := registrationQueueQuery().Order("ticket_number ASC")
+
+	dateParam := c.Query("date")
+	hasDateParam := c.Request.URL.Query().Has("date")
+
+	if hasDateParam && (dateParam == "" || dateParam == "all") {
+		// Disable date filter when explicitly empty or 'all'
+	} else {
+		dateStr := dateParam
+		if !hasDateParam {
+			dateStr = time.Now().Format("2006-01-02")
+		}
+		parsed, err := time.ParseInLocation("2006-01-02", dateStr, time.Local)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Format tanggal tidak valid (YYYY-MM-DD)"})
+			return
+		}
+		query = query.Where("DATE(queue_date) = ?", parsed.Format("2006-01-02"))
+	}
 
 	if status := c.Query("status"); status != "" {
 		query = query.Where("status = ?", status)

@@ -143,20 +143,24 @@ var initialAssessmentSectionOrder = []string{"anamnesis", "physical_exam", "asse
 var suratSectionOrder = []string{"assessment", "outcome"}
 
 type suratPrintViewData struct {
-	GeneratedAt       time.Time
-	Visit             models.Visit
-	EntryGroupKey     string
-	EntryRecordDate   *time.Time
-	SuratType         string
-	SuratTypeLabel    string
-	PrintedByLabel    string
-	ValidationBaseURL string
-	DocumentFields    []initialAssessmentPrintField
-	PatientFields     []initialAssessmentPrintField
-	VisitFields       []initialAssessmentPrintField
-	AssessmentFields  []initialAssessmentPrintField
-	OutcomeFields     []initialAssessmentPrintField
-	StatementTemplate string
+	GeneratedAt        time.Time
+	Visit              models.Visit
+	EntryGroupKey      string
+	EntryRecordDate    *time.Time
+	SuratType          string
+	SuratTypeLabel     string
+	OfficialNumber     string
+	PrintedByLabel     string
+	ValidationBaseURL  string
+	AssessmentRecord   *models.MedicalRecord
+	OutcomeRecord      *models.MedicalRecord
+	PhysicalExamRecord *models.MedicalRecord
+	DocumentFields     []initialAssessmentPrintField
+	PatientFields      []initialAssessmentPrintField
+	VisitFields        []initialAssessmentPrintField
+	AssessmentFields   []initialAssessmentPrintField
+	OutcomeFields      []initialAssessmentPrintField
+	StatementTemplate  string
 }
 
 func PreviewPrintHeaderPDF(c *gin.Context) {
@@ -254,6 +258,7 @@ func PrintSuratEntry(c *gin.Context) {
 	var visit models.Visit
 	if err := database.DB.
 		Preload("Patient").
+		Preload("Doctor.Employee").
 		Preload("Doctor").
 		Preload("Polyclinic").
 		First(&visit, uint(visitID)).Error; err != nil {
@@ -281,8 +286,8 @@ func PrintSuratEntry(c *gin.Context) {
 		}
 	}
 
-	viewData := buildSuratPrintViewData(c, visit, resolvedEntryGroupKey, records)
 	hospitalInfo := getInitialAssessmentHospitalInfo()
+	viewData := buildSuratPrintViewData(c, visit, resolvedEntryGroupKey, records, hospitalInfo)
 	pdfBytes, fileName, err := renderSuratEntryPDF(hospitalInfo, viewData)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat PDF surat"})
@@ -398,7 +403,7 @@ func buildInitialAssessmentPrintViewData(c *gin.Context, visit models.Visit, she
 	}
 }
 
-func buildSuratPrintViewData(c *gin.Context, visit models.Visit, entryGroupKey string, records []models.MedicalRecord) suratPrintViewData {
+func buildSuratPrintViewData(c *gin.Context, visit models.Visit, entryGroupKey string, records []models.MedicalRecord, hospitalInfo initialAssessmentHospitalInfo) suratPrintViewData {
 	bySection := make(map[string]*models.MedicalRecord, len(suratSectionOrder))
 	for index := range records {
 		record := &records[index]
@@ -420,24 +425,37 @@ func buildSuratPrintViewData(c *gin.Context, visit models.Visit, entryGroupKey s
 		}
 	}
 
+	// Ambil pemeriksaan fisik / tanda vital terbaru pada kunjungan ini
+	var physicalExamRecord *models.MedicalRecord
+	var exam models.MedicalRecord
+	if err := database.DB.Where("visit_id = ? AND (bp_systolic > 0 OR weight > 0 OR section_type = 'physical_exam')", visit.ID).
+		Order("updated_at DESC").Order("created_at DESC").First(&exam).Error; err == nil {
+		physicalExamRecord = &exam
+	}
+
+	officialNumber := generateOfficialSuratNumber(hospitalInfo, suratType, visit, visit.ID)
 	generatedAt := time.Now()
 	printedBy := resolvePrintedByLabel(c)
 
 	return suratPrintViewData{
-		GeneratedAt:       generatedAt,
-		Visit:             visit,
-		EntryGroupKey:     entryGroupKey,
-		EntryRecordDate:   firstNonZeroRecordDate(assessmentRecord, outcomeRecord),
-		SuratType:         suratType,
-		SuratTypeLabel:    getSuratTypeLabel(suratType),
-		PrintedByLabel:    printedBy,
-		ValidationBaseURL: resolveTTEVerificationBaseURLForRequest(c),
-		DocumentFields:    buildSuratDocumentFields(generatedAt, printedBy, suratType, entryGroupKey),
-		PatientFields:     buildInitialAssessmentPatientFields(visit.Patient),
-		VisitFields:       buildSuratVisitFields(visit),
-		AssessmentFields:  buildSuratAssessmentFields(assessmentRecord, suratType),
-		OutcomeFields:     buildSuratOutcomeFields(outcomeRecord, suratType),
-		StatementTemplate: buildSuratStatementTemplate(visit, suratType),
+		GeneratedAt:        generatedAt,
+		Visit:              visit,
+		EntryGroupKey:      entryGroupKey,
+		EntryRecordDate:    firstNonZeroRecordDate(assessmentRecord, outcomeRecord),
+		SuratType:          suratType,
+		SuratTypeLabel:     getSuratTypeLabel(suratType),
+		OfficialNumber:     officialNumber,
+		PrintedByLabel:     printedBy,
+		ValidationBaseURL:  resolveTTEVerificationBaseURLForRequest(c),
+		AssessmentRecord:   assessmentRecord,
+		OutcomeRecord:      outcomeRecord,
+		PhysicalExamRecord: physicalExamRecord,
+		DocumentFields:     buildSuratDocumentFields(generatedAt, printedBy, suratType, entryGroupKey),
+		PatientFields:      buildInitialAssessmentPatientFields(visit.Patient),
+		VisitFields:        buildSuratVisitFields(visit),
+		AssessmentFields:   buildSuratAssessmentFields(assessmentRecord, suratType),
+		OutcomeFields:      buildSuratOutcomeFields(outcomeRecord, suratType),
+		StatementTemplate:  buildSuratStatementTemplate(visit, suratType),
 	}
 }
 
@@ -661,45 +679,686 @@ func buildSuratPDFSectionMeta(suratType string) suratPDFSectionMeta {
 	}
 }
 
+func getSuratClassificationCode(suratType string) string {
+	switch normalizeSuratTypeValue(suratType) {
+	case medicalRecordEntryGroupPrefixSuratSakit:
+		return "SKS"
+	case medicalRecordEntryGroupPrefixSuratSehat:
+		return "SKD"
+	case medicalRecordEntryGroupPrefixSuratMCU:
+		return "MCU"
+	case medicalRecordEntryGroupPrefixSuratButaWarna:
+		return "SKBW"
+	case "kontrol", "surat-kontrol":
+		return "SKK"
+	default:
+		return "SKD"
+	}
+}
+
+func getRomanMonthNumber(month time.Month) string {
+	romans := []string{"", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"}
+	if month >= 1 && int(month) < len(romans) {
+		return romans[month]
+	}
+	return "I"
+}
+
+func generateOfficialSuratNumber(hospitalInfo initialAssessmentHospitalInfo, suratType string, visit models.Visit, sequence uint) string {
+	year := visit.VisitDate.Year()
+	if year == 0 {
+		year = time.Now().Year()
+	}
+	month := visit.VisitDate.Month()
+	if month == 0 {
+		month = time.Now().Month()
+	}
+	seq := sequence
+	if seq == 0 {
+		seq = visit.ID
+	}
+
+	suratCode := getSuratClassificationCode(suratType)
+	romanMonth := getRomanMonthNumber(month)
+
+	return fmt.Sprintf("%04d / %s / %s / %d", seq, suratCode, romanMonth, year)
+}
+
+func getOfficialSuratTitle(suratType string) string {
+	switch normalizeSuratTypeValue(suratType) {
+	case medicalRecordEntryGroupPrefixSuratSakit:
+		return "SURAT KETERANGAN SAKIT"
+	case medicalRecordEntryGroupPrefixSuratSehat:
+		return "SURAT SEHAT"
+	case medicalRecordEntryGroupPrefixSuratMCU:
+		return "SURAT KETERANGAN DOKTER (MCU)"
+	case medicalRecordEntryGroupPrefixSuratButaWarna:
+		return "SURAT KETERANGAN BUTA WARNA"
+	default:
+		return "SURAT KETERANGAN DOKTER"
+	}
+}
+
+func formatGenderIndonesian(gender string) string {
+	normalized := strings.TrimSpace(strings.ToUpper(gender))
+	switch normalized {
+	case "L", "M", "LAKI-LAKI", "MALE":
+		return "Laki-laki"
+	case "P", "F", "PEREMPUAN", "FEMALE":
+		return "Perempuan"
+	default:
+		if normalized != "" {
+			return normalized
+		}
+		return "-"
+	}
+}
+
+func formatTitleCase(s string) string {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return ""
+	}
+	words := strings.Fields(trimmed)
+	for i, w := range words {
+		lower := strings.ToLower(w)
+		if lower == "kab." || lower == "kab" {
+			words[i] = "Kab."
+		} else if lower == "kec." || lower == "kec" {
+			words[i] = "Kec."
+		} else if lower == "kel." || lower == "kel" {
+			words[i] = "Kel."
+		} else if lower == "rt" || lower == "rt." {
+			words[i] = "RT"
+		} else if lower == "rw" || lower == "rw." {
+			words[i] = "RW"
+		} else if lower == "dki" || lower == "di" {
+			words[i] = strings.ToUpper(lower)
+		} else if len(w) > 0 {
+			r := []rune(lower)
+			r[0] = unicode.ToUpper(r[0])
+			words[i] = string(r)
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+func formatReligionIndonesian(religion string) string {
+	normalized := strings.TrimSpace(strings.ToLower(religion))
+	switch normalized {
+	case "islam":
+		return "Islam"
+	case "kristen", "protestan", "kristen protestan":
+		return "Kristen"
+	case "katolik", "kristen katolik":
+		return "Katolik"
+	case "hindu":
+		return "Hindu"
+	case "buddha", "budha":
+		return "Buddha"
+	case "konghucu", "khonghucu":
+		return "Konghucu"
+	default:
+		if normalized == "" {
+			return "-"
+		}
+		return formatTitleCase(normalized)
+	}
+}
+
+func formatOccupationIndonesian(occupation string) string {
+	trimmed := strings.TrimSpace(occupation)
+	if trimmed == "" {
+		return "-"
+	}
+	normalized := strings.ToLower(trimmed)
+	normalized = strings.ReplaceAll(normalized, "_", " ")
+	switch normalized {
+	case "pns", "asn":
+		return "PNS / ASN"
+	case "tni":
+		return "TNI"
+	case "polri":
+		return "POLRI"
+	case "wiraswasta":
+		return "Wiraswasta"
+	case "belum bekerja", "belum/tidak bekerja":
+		return "Belum / Tidak Bekerja"
+	case "pelajar", "mahasiswa", "pelajar/mahasiswa":
+		return "Pelajar / Mahasiswa"
+	case "ibu rumah tangga", "irt":
+		return "Ibu Rumah Tangga"
+	default:
+		return formatTitleCase(normalized)
+	}
+}
+
+func cleanSakitDuration(instruction string) string {
+	trimmed := strings.TrimSpace(instruction)
+	if trimmed == "" {
+		return "beberapa hari"
+	}
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "istirahat ") {
+		trimmed = strings.TrimSpace(trimmed[10:])
+	}
+	if idx := strings.Index(trimmed, "("); idx > 0 {
+		trimmed = strings.TrimSpace(trimmed[:idx])
+	}
+	if trimmed == "" {
+		return "beberapa hari"
+	}
+	return trimmed
+}
+
+func formatPatientOfficialAddress(patient models.Patient) string {
+	parts := make([]string, 0, 5)
+	if trimmed := strings.TrimSpace(patient.Address); trimmed != "" {
+		parts = append(parts, formatTitleCase(trimmed))
+	}
+	rtrw := ""
+	if trimmed := strings.TrimSpace(patient.RT); trimmed != "" {
+		rtrw += "RT " + trimmed
+	}
+	if trimmed := strings.TrimSpace(patient.RW); trimmed != "" {
+		if rtrw != "" {
+			rtrw += " / "
+		}
+		rtrw += "RW " + trimmed
+	}
+	if rtrw != "" {
+		parts = append(parts, rtrw)
+	}
+	if trimmed := strings.TrimSpace(patient.Kelurahan); trimmed != "" {
+		parts = append(parts, "Desa/Kel. "+formatTitleCase(trimmed))
+	}
+	if trimmed := strings.TrimSpace(patient.Kecamatan); trimmed != "" {
+		parts = append(parts, "Kec. "+formatTitleCase(trimmed))
+	}
+	if trimmed := strings.TrimSpace(patient.City); trimmed != "" {
+		parts = append(parts, formatTitleCase(trimmed))
+	}
+	if len(parts) == 0 {
+		return "-"
+	}
+	return strings.Join(parts, ", ")
+}
+
+func formatDoctorOfficialName(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return "Dokter Pemeriksa"
+	}
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "dr.") || strings.HasPrefix(lower, "dr ") || strings.HasPrefix(lower, "drg.") || strings.HasPrefix(lower, "drg ") {
+		return trimmed
+	}
+	return "dr. " + trimmed
+}
+
+func drawOfficialSuratKop(pdf *gofpdf.Fpdf, info initialAssessmentHospitalInfo) float64 {
+	left, top, right, _ := pdf.GetMargins()
+	pageWidth, _ := pdf.GetPageSize()
+	contentWidth := pageWidth - left - right
+	currentY := top + 1.5
+	hasLogo := info.LogoPath != "" && info.LogoType != ""
+	logoSlotWidth := 0.0
+	logoGap := 0.0
+	logoMaxHeight := 22.0
+	logoMaxWidth := 24.0
+	if hasLogo {
+		logoSlotWidth = 28.0
+		logoGap = 4.0
+	}
+
+	textStartX := left
+	textWidth := contentWidth
+	if hasLogo {
+		symmetricReserve := logoSlotWidth + logoGap
+		textStartX = left + symmetricReserve
+		textWidth = contentWidth - (2 * symmetricReserve)
+		if textWidth < 110 {
+			textStartX = left + logoSlotWidth + logoGap
+			textWidth = contentWidth - logoSlotWidth - logoGap
+		}
+	}
+
+	type headerLine struct {
+		text       string
+		fontStyle  string
+		fontSize   float64
+		lineHeight float64
+	}
+
+	lines := []headerLine{{
+		text:       strings.ToUpper(fallbackText(info.Name)),
+		fontStyle:  "B",
+		fontSize:   15,
+		lineHeight: 5.5,
+	}}
+
+	addressParts := make([]string, 0, 2)
+	if trimmed := strings.TrimSpace(sanitizePDFText(info.Address)); trimmed != "" {
+		addressParts = append(addressParts, trimmed)
+	}
+	if trimmed := strings.TrimSpace(sanitizePDFText(info.City)); trimmed != "" {
+		addressParts = append(addressParts, trimmed)
+	}
+	if len(addressParts) > 0 {
+		lines = append(lines, headerLine{
+			text:       strings.Join(addressParts, ", "),
+			fontStyle:  "",
+			fontSize:   8.5,
+			lineHeight: 4.0,
+		})
+	}
+
+	contactParts := make([]string, 0, 4)
+	if trimmed := strings.TrimSpace(sanitizePDFText(info.Phone)); trimmed != "" {
+		contactParts = append(contactParts, "Telp: "+trimmed)
+	}
+	if trimmed := strings.TrimSpace(sanitizePDFText(info.Fax)); trimmed != "" {
+		contactParts = append(contactParts, "Fax: "+trimmed)
+	}
+	if trimmed := strings.TrimSpace(sanitizePDFText(info.Email)); trimmed != "" {
+		contactParts = append(contactParts, trimmed)
+	}
+	if len(contactParts) > 0 {
+		lines = append(lines, headerLine{
+			text:       strings.Join(contactParts, " | "),
+			fontStyle:  "",
+			fontSize:   8.5,
+			lineHeight: 4.0,
+		})
+	}
+
+	if trimmed := strings.TrimSpace(sanitizePDFText(info.Website)); trimmed != "" {
+		lines = append(lines, headerLine{
+			text:       trimmed,
+			fontStyle:  "",
+			fontSize:   8.5,
+			lineHeight: 4.0,
+		})
+	}
+
+	textBlockHeight := 0.0
+	for _, line := range lines {
+		trimmedText := strings.TrimSpace(sanitizePDFText(line.text))
+		if trimmedText == "" {
+			continue
+		}
+		pdf.SetFont("Arial", line.fontStyle, line.fontSize)
+		lineParts := pdf.SplitLines([]byte(trimmedText), textWidth)
+		lineCount := len(lineParts)
+		if lineCount < 1 {
+			lineCount = 1
+		}
+		textBlockHeight += float64(lineCount) * line.lineHeight
+	}
+
+	logoWidth := 0.0
+	logoHeight := 0.0
+	if hasLogo {
+		logoWidth, logoHeight = measureInitialAssessmentHeaderLogo(info.LogoPath, logoMaxHeight, logoMaxWidth)
+	}
+
+	headerBlockHeight := maxFloat64(textBlockHeight, logoHeight)
+	if !hasLogo {
+		headerBlockHeight = textBlockHeight
+	}
+
+	if hasLogo {
+		logoX := left + ((logoSlotWidth - logoWidth) / 2)
+		logoY := currentY + ((textBlockHeight - logoHeight) / 2) - 0.8
+		if logoY < top {
+			logoY = top
+		}
+		drawInitialAssessmentHeaderLogo(pdf, info.LogoPath, info.LogoType, logoX, logoY, logoMaxHeight, logoMaxWidth)
+	}
+
+	pdf.SetXY(textStartX, currentY)
+	for _, line := range lines {
+		trimmedText := strings.TrimSpace(sanitizePDFText(line.text))
+		if trimmedText == "" {
+			continue
+		}
+		pdf.SetX(textStartX)
+		pdf.SetFont("Arial", line.fontStyle, line.fontSize)
+		pdf.MultiCell(textWidth, line.lineHeight, trimmedText, "", "C", false)
+	}
+
+	lineY := currentY + headerBlockHeight + 1.5
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.7)
+	pdf.Line(left, lineY, pageWidth-right, lineY)
+	pdf.SetLineWidth(0.2)
+	pdf.Line(left, lineY+0.8, pageWidth-right, lineY+0.8)
+
+	return lineY + 3.0
+}
+
+func drawOfficialDoctorSignature(pdf *gofpdf.Fpdf, x float64, y float64, width float64, city string, date time.Time, doctor models.Doctor, tteSignature *ttePrintSignatureInfo) {
+	datePrefix := strings.TrimSpace(city)
+	dateLabel := formatDateIndonesian(date)
+	if datePrefix != "" {
+		dateLabel = datePrefix + ", " + dateLabel
+	}
+
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetFont("Arial", "", 9.5)
+	pdf.SetXY(x, y)
+	pdf.CellFormat(width, 4.5, dateLabel, "", 1, "C", false, 0, "")
+
+	pdf.SetXY(x, pdf.GetY())
+	pdf.CellFormat(width, 4.5, "Dokter Pemeriksa,", "", 1, "C", false, 0, "")
+
+	hasTTE := tteSignature != nil && hasTTEQRCode(tteSignature)
+	if hasTTE {
+		qrY := pdf.GetY() + 1.5
+		drawTTESignatureAnnotation(pdf, x, qrY, width, tteSignature)
+		qrSize := resolveTTESignatureQRCodeSize(width)
+		captionY := qrY + qrSize + 1.0
+		pdf.SetFont("Arial", "", 7)
+		pdf.SetTextColor(90, 90, 90)
+		pdf.SetXY(x, captionY)
+		pdf.CellFormat(width, 3.2, "Pindai untuk verifikasi surat", "", 1, "C", false, 0, "")
+		pdf.SetTextColor(0, 0, 0)
+		pdf.SetY(captionY + 3.0)
+	} else {
+		pdf.SetY(pdf.GetY() + 15.0)
+	}
+
+	pdf.SetTextColor(0, 0, 0)
+	rawDoctorName := strings.TrimSpace(doctor.FullName)
+	docName := "( .................................................. )"
+	if rawDoctorName != "" && rawDoctorName != "-" {
+		docName = formatDoctorOfficialName(rawDoctorName)
+		pdf.SetFont("Arial", "BU", 9.5)
+	} else {
+		pdf.SetFont("Arial", "", 9.5)
+	}
+
+	pdf.SetXY(x, pdf.GetY())
+	pdf.CellFormat(width, 4.5, docName, "", 1, "C", false, 0, "")
+
+	nipOrSip := ""
+	if nip := strings.TrimSpace(doctor.NIPNumber); nip != "" {
+		nipOrSip = "NIP. " + nip
+	} else if sip := strings.TrimSpace(doctor.SIPNumber); sip != "" {
+		nipOrSip = "SIP. " + sip
+	} else if nip := strings.TrimSpace(doctor.Employee.NIPNumber); nip != "" {
+		nipOrSip = "NIP. " + nip
+	} else if lic := strings.TrimSpace(doctor.Employee.LicenseNumber); lic != "" {
+		nipOrSip = "SIP. " + lic
+	}
+
+	if nipOrSip != "" {
+		pdf.SetFont("Arial", "", 9)
+		pdf.SetXY(x, pdf.GetY())
+		pdf.CellFormat(width, 4.0, nipOrSip, "", 1, "C", false, 0, "")
+	}
+}
+
 func renderSuratEntryPDF(hospitalInfo initialAssessmentHospitalInfo, data suratPrintViewData) ([]byte, string, error) {
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	defer clearInitialAssessmentPDFPageContentStartOverrides(pdf)
-	documentTitle := data.SuratTypeLabel
-	sectionMeta := buildSuratPDFSectionMeta(data.SuratType)
+
+	documentTitle := getOfficialSuratTitle(data.SuratType)
 	tteSignature := (*ttePrintSignatureInfo)(nil)
 	if strings.TrimSpace(data.EntryGroupKey) != "" {
 		tteSignature = loadTTESignedSignatureByDocumentKeyWithBaseURL(buildTTESuratDocumentKey(data.Visit.ID, data.EntryGroupKey), data.ValidationBaseURL)
 	}
-	pdf.SetMargins(initialAssessmentPDFMarginLeft, initialAssessmentPDFMarginTop, initialAssessmentPDFMarginRight)
-	pdf.SetAutoPageBreak(true, initialAssessmentPDFMarginBottom)
+
+	marginLeft := 20.0
+	marginRight := 20.0
+	marginTop := 12.0
+	marginBottom := 12.0
+	contentWidth := 210.0 - marginLeft - marginRight
+	startX := marginLeft
+	endX := 210.0 - marginRight
+
+	pdf.SetMargins(marginLeft, marginTop, marginRight)
+	pdf.SetAutoPageBreak(false, marginBottom)
 	pdf.AliasNbPages("")
 	pdf.SetTitle(documentTitle, false)
 	pdf.SetAuthor(data.PrintedByLabel, false)
 	pdf.SetCreator("SIMKLINIK", false)
-	pdf.SetHeaderFuncMode(func() {
-		if pdf.PageNo() != 1 {
-			return
-		}
-		addInitialAssessmentPDFHeader(pdf, hospitalInfo, strings.ToUpper(documentTitle), fallbackText(data.Visit.VisitNumber))
-	}, true)
-	pdf.SetFooterFunc(func() {
-		pdf.SetY(-8)
-		pdf.SetFont("Arial", "", 8)
-		pdf.SetTextColor(90, 90, 90)
-		pdf.CellFormat(90, 4, "Dicetak: "+formatDateTimeIndonesian(data.GeneratedAt), "", 0, "L", false, 0, "")
-		pdf.CellFormat(0, 4, fmt.Sprintf("Halaman %d/{nb}", pdf.PageNo()), "", 0, "R", false, 0, "")
-		pdf.SetTextColor(0, 0, 0)
-	})
 	pdf.AddPage()
-	pdf.SetY(initialAssessmentPDFPageContentStartForPDF(pdf, pdf.PageNo()))
 
-	addInitialAssessmentCompactFieldSection(pdf, "INFORMASI SURAT", data.DocumentFields, "")
-	addInitialAssessmentCompactFieldSection(pdf, "DATA PASIEN", data.PatientFields, "Data pasien tidak tersedia.")
-	addInitialAssessmentCompactFieldSection(pdf, "DATA KUNJUNGAN", data.VisitFields, "Data kunjungan tidak tersedia.")
-	addInitialAssessmentFieldSection(pdf, "PERNYATAAN", []initialAssessmentPrintField{{Label: "Ringkasan", Value: data.StatementTemplate}}, "-")
-	addInitialAssessmentFieldSection(pdf, sectionMeta.assessmentTitle, data.AssessmentFields, sectionMeta.assessmentEmpty)
-	addInitialAssessmentFieldSection(pdf, sectionMeta.outcomeTitle, data.OutcomeFields, sectionMeta.outcomeEmpty)
-	addOrderPrintSignatureSectionWithTTE(pdf, hospitalInfo, data.GeneratedAt, "Pasien / Keluarga", data.Visit.Patient.FullName, "Dokter Pemeriksa", data.Visit.Doctor.FullName, tteSignature)
+	kopBottomY := drawOfficialSuratKop(pdf, hospitalInfo)
+
+	pdf.SetY(kopBottomY + 3.0)
+	pdf.SetFont("Arial", "BU", 13)
+	pdf.SetTextColor(0, 0, 0)
+	pdf.CellFormat(contentWidth, 6.0, documentTitle, "", 1, "C", false, 0, "")
+
+	pdf.SetFont("Arial", "", 10)
+	pdf.CellFormat(contentWidth, 5.0, "Nomor : "+data.OfficialNumber, "", 1, "C", false, 0, "")
+
+	pdf.SetY(pdf.GetY() + 4.0)
+	pdf.SetFont("Arial", "", 9.5)
+	instName := fallbackText(hospitalInfo.Name)
+	openingText := fmt.Sprintf("Kami yang bertanda tangan dibawah ini Dokter %s, dengan ini menerangkan bahwa :", instName)
+	pdf.MultiCell(contentWidth, 5.0, openingText, "", "L", false)
+
+	pdf.SetY(pdf.GetY() + 2.5)
+	indentX := startX + 6.0
+	labelWidth := 40.0
+	sepWidth := 4.0
+	valWidth := endX - indentX - labelWidth - sepWidth
+
+	patient := data.Visit.Patient
+	birthDateStr := "-"
+	if patient.BirthDate != nil && !patient.BirthDate.IsZero() {
+		birthDateStr = patient.BirthDate.Format("02-01-2006")
+	}
+	birthPlaceDate := birthDateStr
+	if strings.TrimSpace(patient.BirthPlace) != "" {
+		birthPlaceDate = formatTitleCase(patient.BirthPlace) + ", " + birthDateStr
+	}
+
+	biodataItems := []struct {
+		label  string
+		value  string
+		isBold bool
+	}{
+		{"Nama", strings.ToUpper(fallbackText(patient.FullName)), true},
+		{"Jenis Kelamin", formatGenderIndonesian(patient.Gender), false},
+		{"Tempat, Tgl Lahir", birthPlaceDate, false},
+		{"Warga Negara", "Indonesia", false},
+		{"Agama", formatReligionIndonesian(patient.Religion), false},
+		{"Pekerjaan", formatOccupationIndonesian(patient.Occupation), false},
+		{"Alamat", formatPatientOfficialAddress(patient), false},
+	}
+
+	for _, item := range biodataItems {
+		currY := pdf.GetY()
+		pdf.SetXY(indentX, currY)
+		pdf.SetFont("Arial", "", 9.5)
+		pdf.CellFormat(labelWidth, 4.8, item.label, "", 0, "L", false, 0, "")
+		pdf.CellFormat(sepWidth, 4.8, ":", "", 0, "C", false, 0, "")
+
+		if item.isBold {
+			pdf.SetFont("Arial", "B", 9.5)
+		} else {
+			pdf.SetFont("Arial", "", 9.5)
+		}
+		if item.label == "Alamat" {
+			pdf.MultiCell(valWidth, 4.8, item.value, "", "L", false)
+		} else {
+			pdf.CellFormat(valWidth, 4.8, item.value, "", 1, "L", false, 0, "")
+		}
+	}
+
+	pdf.SetY(pdf.GetY() + 3.5)
+	pdf.SetFont("Arial", "B", 9.5)
+	pdf.SetX(indentX)
+	pdf.CellFormat(contentWidth-6.0, 5.0, "Data Pemeriksaan :", "", 1, "L", false, 0, "")
+
+	boxX := indentX
+	boxWidth := endX - boxX - 4.0
+	boxY := pdf.GetY() + 1.2
+	boxHeight := 24.0
+
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.3)
+	pdf.Rect(boxX, boxY, boxWidth, boxHeight, "D")
+
+	halfWidth := boxWidth / 2.0
+	pdf.Line(boxX+halfWidth, boxY, boxX+halfWidth, boxY+boxHeight)
+
+	bpStr := "-"
+	hrStr := "-"
+	weightStr := "-"
+	heightStr := "-"
+	if data.PhysicalExamRecord != nil {
+		if data.PhysicalExamRecord.BPSystolic > 0 {
+			bpStr = fmt.Sprintf("%d / %d mmHg", data.PhysicalExamRecord.BPSystolic, data.PhysicalExamRecord.BPDiastolic)
+		}
+		if data.PhysicalExamRecord.HeartRate > 0 {
+			hrStr = fmt.Sprintf("%d x/menit", data.PhysicalExamRecord.HeartRate)
+		}
+		if data.PhysicalExamRecord.Weight > 0 {
+			weightStr = fmt.Sprintf("%.0f Kg", data.PhysicalExamRecord.Weight)
+		}
+		if data.PhysicalExamRecord.Height > 0 {
+			heightStr = fmt.Sprintf("%.0f cm", data.PhysicalExamRecord.Height)
+		}
+	}
+
+	colorBlindStr := "Tidak"
+	if normalizeSuratTypeValue(data.SuratType) == medicalRecordEntryGroupPrefixSuratButaWarna {
+		if data.OutcomeRecord != nil && strings.TrimSpace(data.OutcomeRecord.DischargeCondition) != "" {
+			colorBlindStr = strings.TrimSpace(data.OutcomeRecord.DischargeCondition)
+		} else if data.AssessmentRecord != nil && strings.TrimSpace(data.AssessmentRecord.Assessment) != "" {
+			colorBlindStr = strings.TrimSpace(data.AssessmentRecord.Assessment)
+		}
+	}
+
+	leftColItems := []struct {
+		label string
+		val   string
+	}{
+		{"Tensi", bpStr},
+		{"Nadi", hrStr},
+		{"Berat Badan", weightStr},
+		{"Tinggi Badan", heightStr},
+	}
+
+	rightColItems := []struct {
+		label string
+		val   string
+	}{
+		{"Mata Ka/Ki", "Baik"},
+		{"Telinga Ka/Ki", "Baik"},
+		{"Buta Warna", colorBlindStr},
+		{"Keterangan Lain", "Baik"},
+	}
+
+	rowH := 5.4
+	colLabelW := 28.0
+	colSepW := 3.0
+
+	for i, item := range leftColItems {
+		rY := boxY + 1.2 + (float64(i) * rowH)
+		pdf.SetXY(boxX+3.0, rY)
+		pdf.SetFont("Arial", "", 9.0)
+		pdf.CellFormat(colLabelW, rowH, item.label, "", 0, "L", false, 0, "")
+		pdf.CellFormat(colSepW, rowH, ":", "", 0, "C", false, 0, "")
+		pdf.CellFormat(halfWidth-colLabelW-colSepW-6.0, rowH, item.val, "", 0, "L", false, 0, "")
+	}
+
+	for i, item := range rightColItems {
+		rY := boxY + 1.2 + (float64(i) * rowH)
+		pdf.SetXY(boxX+halfWidth+3.0, rY)
+		pdf.SetFont("Arial", "", 9.0)
+		pdf.CellFormat(colLabelW+4.0, rowH, item.label, "", 0, "L", false, 0, "")
+		pdf.CellFormat(colSepW, rowH, ":", "", 0, "C", false, 0, "")
+		pdf.CellFormat(halfWidth-colLabelW-colSepW-10.0, rowH, item.val, "", 0, "L", false, 0, "")
+	}
+
+	pdf.SetY(boxY + boxHeight + 4.5)
+
+	purposeText := ""
+	if data.AssessmentRecord != nil && strings.TrimSpace(data.AssessmentRecord.Plan) != "" {
+		purposeText = strings.TrimSpace(data.AssessmentRecord.Plan)
+	} else if data.OutcomeRecord != nil && strings.TrimSpace(data.OutcomeRecord.Notes) != "" {
+		purposeText = strings.TrimSpace(data.OutcomeRecord.Notes)
+	}
+	if purposeText == "" {
+		purposeText = "Persyaratan Administrasi"
+	}
+
+	switch normalizeSuratTypeValue(data.SuratType) {
+	case medicalRecordEntryGroupPrefixSuratSakit:
+		sickDays := "beberapa hari"
+		if data.OutcomeRecord != nil && strings.TrimSpace(data.OutcomeRecord.FollowUpInstruction) != "" {
+			sickDays = cleanSakitDuration(data.OutcomeRecord.FollowUpInstruction)
+		}
+		periodText := ""
+		if data.OutcomeRecord != nil {
+			periodText = formatSuratValidityPeriod(data.OutcomeRecord.ReferralDestination, data.OutcomeRecord.ReferralReason)
+		}
+		pdf.SetFont("Arial", "", 9.5)
+		sakitStatement := "Setelah kami lakukan pemeriksaan dengan seksama, yang bersangkutan pada saat ini dalam kondisi SAKIT dan memerlukan istirahat selama " + sickDays
+		if periodText != "-" && periodText != "" {
+			sakitStatement += ", terhitung mulai tanggal " + periodText + "."
+		} else {
+			sakitStatement += "."
+		}
+		pdf.MultiCell(contentWidth, 5.0, sakitStatement, "", "L", false)
+
+	case medicalRecordEntryGroupPrefixSuratButaWarna:
+		pdf.SetFont("Arial", "", 9.5)
+		pdf.MultiCell(contentWidth, 5.0, "Setelah kami lakukan pemeriksaan tes buta warna dengan seksama, yang bersangkutan pada saat ini kami nyatakan :", "", "L", false)
+		pdf.SetY(pdf.GetY() + 1.0)
+		pdf.SetFont("Arial", "B", 10.5)
+		resultStr := "TIDAK BUTA WARNA"
+		if colorBlindStr != "Tidak" && colorBlindStr != "" {
+			resultStr = strings.ToUpper(colorBlindStr)
+		}
+		pdf.CellFormat(contentWidth, 5.5, resultStr, "", 1, "L", false, 0, "")
+
+	case medicalRecordEntryGroupPrefixSuratMCU:
+		pdf.SetFont("Arial", "", 9.5)
+		pdf.MultiCell(contentWidth, 5.0, "Setelah kami lakukan serangkaian pemeriksaan kesehatan secara menyeluruh (Medical Check Up), yang bersangkutan pada saat ini dinyatakan :", "", "L", false)
+		pdf.SetY(pdf.GetY() + 1.0)
+		pdf.SetFont("Arial", "B", 10.5)
+		mcuResult := "SEHAT / MEMENUHI SYARAT KESEHATAN"
+		if data.OutcomeRecord != nil && strings.TrimSpace(data.OutcomeRecord.DischargeCondition) != "" {
+			mcuResult = strings.ToUpper(strings.TrimSpace(data.OutcomeRecord.DischargeCondition))
+		}
+		pdf.CellFormat(contentWidth, 5.5, mcuResult, "", 1, "L", false, 0, "")
+
+	default:
+		pdf.SetFont("Arial", "", 9.5)
+		pdf.MultiCell(contentWidth, 5.0, "Setelah kami lakukan pemeriksaan dengan seksama, yang bersangkutan pada saat ini kami nyatakan :", "", "L", false)
+		pdf.SetY(pdf.GetY() + 1.0)
+		pdf.SetFont("Arial", "B", 10.5)
+		sehatResult := "Baik / Sehat."
+		if data.OutcomeRecord != nil && strings.TrimSpace(data.OutcomeRecord.DischargeCondition) != "" {
+			sehatResult = strings.TrimSpace(data.OutcomeRecord.DischargeCondition)
+		}
+		pdf.CellFormat(contentWidth, 5.5, sehatResult, "", 1, "L", false, 0, "")
+	}
+
+	pdf.SetY(pdf.GetY() + 4.5)
+	pdf.SetFont("Arial", "", 9.5)
+	pdf.MultiCell(contentWidth, 5.0, "Surat Keterangan ini digunakan untuk : "+purposeText, "", "L", false)
+
+	pdf.SetY(pdf.GetY() + 4.5)
+	pdf.MultiCell(contentWidth, 5.0, "Demikian surat keterangan ini kami buat dengan sebenarnya untuk dapat dipergunakan sebagaimana mestinya.", "", "L", false)
+
+	sigWidth := 75.0
+	sigX := endX - sigWidth
+	sigY := pdf.GetY() + 8.0
+	if sigY < 170.0 {
+		sigY = 170.0
+	}
+	if sigY > 215.0 {
+		sigY = 215.0
+	}
+	drawOfficialDoctorSignature(pdf, sigX, sigY, sigWidth, hospitalInfo.City, data.GeneratedAt, data.Visit.Doctor, tteSignature)
 
 	var output bytes.Buffer
 	if err := pdf.Output(&output); err != nil {

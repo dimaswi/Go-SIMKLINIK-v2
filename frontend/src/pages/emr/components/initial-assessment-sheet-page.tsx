@@ -515,9 +515,8 @@ export function InitialAssessmentSheetPage({
           <aside className="border-b border-border/70 bg-background xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden xl:border-b-0 xl:border-r xl:border-r-border/70">
             <div className="border-b border-border/70 px-3 py-3">
               <h2 className="text-sm font-semibold">{activeSheetConfig.label}</h2>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">{activeSheetConfig.helper}</p>
 
-              <div className="mt-3 space-y-1.5">
+              <div className="mt-2.5 space-y-1.5">
                 {activeSheetConfig.sections.map((section) => {
                   const sectionRecord = getSectionRecord(section);
                   const sectionStatus = getSectionRowStatus(section, sectionRecord ? [sectionRecord] : [], Boolean(workspaceLocked));
@@ -538,17 +537,12 @@ export function InitialAssessmentSheetPage({
                     >
                       <div>
                         <p className="text-[12px] font-medium">{sectionLabel}</p>
-                        <p className="text-[10px] text-muted-foreground">{sectionRecord ? 'Bagian entri aktif' : 'Belum dibuat di entri ini'}</p>
                       </div>
                       <SectionStatusBadge label={sectionStatus.label} tone={sectionStatus.tone} />
                     </button>
                   );
                 })}
               </div>
-
-              <p className="mt-3 text-[10px] leading-4 text-muted-foreground">
-                Timeline di bawah mewakili satu entri {entryLabelLower} utuh, bukan entri per section.
-              </p>
 
               {!workspaceLocked && isSuratSheet && (
                 <div className="mt-3 space-y-1.5">
@@ -618,9 +612,11 @@ export function InitialAssessmentSheetPage({
                             <h3 className="text-[13px] font-semibold tracking-tight">{sectionLabel}</h3>
                             <SectionStatusBadge label={sectionStatus.label} tone={sectionStatus.tone} />
                           </div>
-                          <p className="mt-0.5 text-[11px] text-muted-foreground">
-                            {record ? `Bagian ini terhubung ke entri ${entryLabelLower} yang sedang dipilih.` : `Bagian ini belum tersedia pada entri ${entryLabelLower} ini.`}
-                          </p>
+                          {!record && (
+                            <p className="mt-0.5 text-[11px] text-muted-foreground">
+                              Bagian ini belum tersedia pada entri {entryLabelLower} ini.
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>
