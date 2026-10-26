@@ -2,75 +2,96 @@ version: '3.8'
 
 services:
   # PostgreSQL Database
-  simklinik-database:
+  ikami-database:
     image: postgres:15-alpine
-    container_name: simklinik-database
+    container_name: ikami-database
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-simklinik}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-simklinik123}
-      POSTGRES_DB: ${POSTGRES_DB:-simklinik}
+      POSTGRES_USER: ${POSTGRES_USER:-ikami}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ikami123}
+      POSTGRES_DB: ${POSTGRES_DB:-ikami}
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "${POSTGRES_PORT:-5434}:5432"
+      - "${POSTGRES_PORT:-5435}:5432"
     volumes:
-      - simklinik_postgres_data:/var/lib/postgresql/data
+      - ikami_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-simklinik} -d ${POSTGRES_DB:-simklinik}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ikami} -d ${POSTGRES_DB:-ikami}"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - simklinik-network
+      - ikami-network
 
   # Backend API (Go)
-  simklinik-backend:
+  ikami-backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: simklinik-backend
+    container_name: ikami-backend
     environment:
       APP_ENV: ${APP_ENV:-production}
-      DATABASE_HOST: simklinik-database
+      DATABASE_HOST: ikami-database
       DATABASE_PORT: 5432
-      DATABASE_USER: ${POSTGRES_USER:-simklinik}
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-simklinik123}
-      DATABASE_NAME: ${POSTGRES_DB:-simklinik}
+      DATABASE_USER: ${POSTGRES_USER:-ikami}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-ikami123}
+      DATABASE_NAME: ${POSTGRES_DB:-ikami}
       DATABASE_SSLMODE: ${DATABASE_SSLMODE:-disable}
       DATABASE_TIMEZONE: ${DATABASE_TIMEZONE:-Asia/Jakarta}
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       SERVER_PORT: ${BACKEND_PORT:-8080}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3001,http://119.28.111.184:3001,http://119.28.111.184,https://ikami.wismed.my.id,http://ikami.wismed.my.id}
     ports:
-      - "${BACKEND_PORT:-8080}:8080"
+      - "${BACKEND_PORT:-8081}:8080"
     depends_on:
-      simklinik-database:
+      ikami-database:
         condition: service_healthy
     networks:
-      - simklinik-network
+      ikami-network:
+        aliases:
+          - ikami-backend
+          - simklinik-backend
     restart: unless-stopped
     volumes:
-      - simklinik_uploads:/root/uploads
-      - simklinik_backups:/root/backups
+      - ikami_uploads:/root/uploads
+      - ikami_backups:/root/backups
 
   # Frontend (React)
-  simklinik-frontend:
+  ikami-frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: simklinik-frontend
+    container_name: ikami-frontend
     ports:
-      - "${FRONTEND_PORT:-3000}:80"
+      - "${FRONTEND_PORT:-3001}:80"
     depends_on:
-      - simklinik-backend
+      - ikami-backend
     networks:
-      - simklinik-network
+      ikami-network:
+        aliases:
+          - ikami-frontend
+          - simklinik-frontend
     restart: unless-stopped
 
+  # Cloudflare Tunnel (Opsional jika ingin menjalankan tunnel via Docker Compose)
+  ikami-cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: ikami-cloudflared
+    command: tunnel --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./cloudflared:/etc/cloudflared:ro
+    depends_on:
+      - ikami-frontend
+    restart: unless-stopped
+    networks:
+      - ikami-network
+    profiles:
+      - tunnel
+
 volumes:
-  simklinik_postgres_data:
-  simklinik_uploads:
-  simklinik_backups:
+  ikami_postgres_data:
+  ikami_uploads:
+  ikami_backups:
 
 networks:
-  simklinik-network:
+  ikami-network:
     driver: bridge
