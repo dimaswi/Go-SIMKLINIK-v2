@@ -50,7 +50,10 @@ services:
       - simklinik_backups:/root/backups
     restart: unless-stopped
     networks:
-      - simklinik-network
+      simklinik-network:
+        aliases:
+          - simklinik-backend
+          - dr-aryo-backend
 
   simklinik-frontend:
     image: ${FRONTEND_IMAGE}

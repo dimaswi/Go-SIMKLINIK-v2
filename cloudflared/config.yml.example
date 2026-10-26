@@ -5,7 +5,7 @@ tunnel: REPLACE_WITH_TUNNEL_ID
 credentials-file: /etc/cloudflared/REPLACE_WITH_TUNNEL_ID.json
 
 ingress:
-  - hostname: simrs.domain-anda.com
+  - hostname: aryo.wismed.my.id
     service: http://simklinik-frontend:80
     originRequest:
       disableChunkedEncoding: true

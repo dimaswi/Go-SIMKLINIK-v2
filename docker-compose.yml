@@ -2,75 +2,96 @@ version: '3.8'
 
 services:
   # PostgreSQL Database
-  simklinik-database:
+  dr-aryo-database:
     image: postgres:15-alpine
-    container_name: simklinik-database
+    container_name: dr-aryo-database
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-simklinik}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-simklinik123}
-      POSTGRES_DB: ${POSTGRES_DB:-simklinik}
+      POSTGRES_USER: ${POSTGRES_USER:-dr_aryo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aryok123}
+      POSTGRES_DB: ${POSTGRES_DB:-dr_aryo}
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
       - "${POSTGRES_PORT:-5434}:5432"
     volumes:
-      - simklinik_postgres_data:/var/lib/postgresql/data
+      - dr-aryo_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-simklinik} -d ${POSTGRES_DB:-simklinik}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dr_aryo} -d ${POSTGRES_DB:-dr_aryo}"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - simklinik-network
+      - dr-aryo-network
 
   # Backend API (Go)
-  simklinik-backend:
+  dr-aryo-backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: simklinik-backend
+    container_name: dr-aryo-backend
     environment:
       APP_ENV: ${APP_ENV:-production}
-      DATABASE_HOST: simklinik-database
+      DATABASE_HOST: dr-aryo-database
       DATABASE_PORT: 5432
-      DATABASE_USER: ${POSTGRES_USER:-simklinik}
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-simklinik123}
-      DATABASE_NAME: ${POSTGRES_DB:-simklinik}
+      DATABASE_USER: ${POSTGRES_USER:-dr_aryo}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-aryok123}
+      DATABASE_NAME: ${POSTGRES_DB:-dr_aryo}
       DATABASE_SSLMODE: ${DATABASE_SSLMODE:-disable}
       DATABASE_TIMEZONE: ${DATABASE_TIMEZONE:-Asia/Jakarta}
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       SERVER_PORT: ${BACKEND_PORT:-8080}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000,http://119.28.111.184:3000,http://119.28.111.184,https://aryo.wismed.my.id,http://aryo.wismed.my.id}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     depends_on:
-      simklinik-database:
+      dr-aryo-database:
         condition: service_healthy
     networks:
-      - simklinik-network
+      dr-aryo-network:
+        aliases:
+          - simklinik-backend
+          - dr-aryo-backend
     restart: unless-stopped
     volumes:
-      - simklinik_uploads:/root/uploads
-      - simklinik_backups:/root/backups
+      - dr-aryo_uploads:/root/uploads
+      - dr-aryo_backups:/root/backups
 
   # Frontend (React)
-  simklinik-frontend:
+  dr-aryo-frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: simklinik-frontend
+    container_name: dr-aryo-frontend
     ports:
       - "${FRONTEND_PORT:-3000}:80"
     depends_on:
-      - simklinik-backend
+      - dr-aryo-backend
     networks:
-      - simklinik-network
+      dr-aryo-network:
+        aliases:
+          - simklinik-frontend
+          - dr-aryo-frontend
     restart: unless-stopped
 
+  # Cloudflare Tunnel (Opsional jika ingin menjalankan tunnel via Docker Compose)
+  dr-aryo-cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: dr-aryo-cloudflared
+    command: tunnel --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./cloudflared:/etc/cloudflared:ro
+    depends_on:
+      - dr-aryo-frontend
+    restart: unless-stopped
+    networks:
+      - dr-aryo-network
+    profiles:
+      - tunnel
+
 volumes:
-  simklinik_postgres_data:
-  simklinik_uploads:
-  simklinik_backups:
+  dr-aryo_postgres_data:
+  dr-aryo_uploads:
+  dr-aryo_backups:
 
 networks:
-  simklinik-network:
+  dr-aryo-network:
     driver: bridge
