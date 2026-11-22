@@ -701,14 +701,20 @@ func drawPrescriptionA5Header(pdf *gofpdf.Fpdf, info initialAssessmentHospitalIn
 }
 
 func renderPrescriptionOrderPDF(hospitalInfo initialAssessmentHospitalInfo, data prescriptionPrintViewData) ([]byte, string, error) {
-	pdf := gofpdf.New("P", "mm", "A5", "")
-	pdf.SetMargins(8, 5, 8)
+	// Eksplisit ukuran kertas A5 Portrait (148 x 210 mm) dengan display mode fullpage agar proporsi A5 akurat di semua PDF viewer
+	pdf := gofpdf.NewCustom(&gofpdf.InitType{
+		OrientationStr: "P",
+		UnitStr:        "mm",
+		Size:           gofpdf.SizeType{Wd: 148, Ht: 210},
+	})
+	pdf.SetMargins(6, 5, 6)
 	pdf.SetAutoPageBreak(false, 0)
+	pdf.SetDisplayMode("fullpage", "single")
 	pdf.AliasNbPages("")
 
-	docTitle := "Resep & Terapi"
+	docTitle := "Resep & Terapi (A5)"
 	if strings.TrimSpace(data.DocumentTitle) != "" {
-		docTitle = data.DocumentTitle
+		docTitle = data.DocumentTitle + " (A5)"
 	}
 
 	pdf.SetTitle(sanitizePDFText(docTitle), false)
@@ -719,29 +725,36 @@ func renderPrescriptionOrderPDF(hospitalInfo initialAssessmentHospitalInfo, data
 	// 1. Gambar KOP A5
 	startBoxY := drawPrescriptionA5Header(pdf, hospitalInfo)
 
-	xLeft := 8.0
-	xRight := 140.0
-	contentWidth := 132.0
-	splitX := 74.0 // Garis tengah pembagi (kiri 66 mm, kanan 66 mm)
+	xLeft := 6.0
+	xRight := 142.0
+	contentWidth := 136.0
+	splitX := 74.0 // Garis tengah pembagi (kiri 68 mm, kanan 68 mm)
 
 	// 2. KOTAK 1: INFORMASI DOKTER & PASIEN (Header Box)
-	box1H := 32.5
+	box1H := 33.5
+	pdf.SetDrawColor(0, 0, 0)
 	pdf.SetLineWidth(0.3)
 	pdf.Rect(xLeft, startBoxY, contentWidth, box1H, "D")
 	pdf.Line(splitX, startBoxY, splitX, startBoxY+box1H)
 
 	// Sisi Kiri Kotak 1
 	leftX := xLeft + 2.5
-	curY := startBoxY + 1.8
-	lineH := 4.1
+	curY := startBoxY + 1.6
+	lineH := 4.2
 	labelW := 19.0
-	valW := splitX - leftX - labelW - 3.5
+	colonW := 3.2
+	valGap := 0.8
+	valW := splitX - leftX - labelW - colonW - valGap - 1.5
 
 	drawRow := func(label, val string) {
 		pdf.SetXY(leftX, curY)
-		pdf.SetFont("Arial", "", 7.2)
+		pdf.SetFont("Arial", "", 7.5)
 		pdf.CellFormat(labelW, lineH, label, "", 0, "L", false, 0, "")
-		pdf.CellFormat(2.5, lineH, ":", "", 0, "L", false, 0, "")
+		pdf.CellFormat(colonW, lineH, ":", "", 0, "C", false, 0, "")
+		pdf.SetXY(leftX+labelW+colonW+valGap, curY)
+		if label == "PRO" || label == "No. RM" {
+			pdf.SetFont("Arial", "B", 7.5)
+		}
 		fittedVal := fitTextToWidth(pdf, sanitizePDFText(val), valW)
 		pdf.CellFormat(valW, lineH, fittedVal, "", 0, "L", false, 0, "")
 		curY += lineH
@@ -751,8 +764,8 @@ func renderPrescriptionOrderPDF(hospitalInfo initialAssessmentHospitalInfo, data
 	drawRow("SIP", data.DoctorSIP)
 	drawRow("PRO", data.PatientName)
 	// Baris Gender/Umur di bawah PRO
-	pdf.SetXY(leftX+labelW+2.5, curY)
-	pdf.SetFont("Arial", "", 7.0)
+	pdf.SetXY(leftX+labelW+colonW+valGap, curY)
+	pdf.SetFont("Arial", "", 7.2)
 	pdf.CellFormat(valW, lineH-0.6, fitTextToWidth(pdf, sanitizePDFText(data.PatientGenderAge), valW), "", 0, "L", false, 0, "")
 	curY += lineH - 0.6
 
@@ -762,15 +775,19 @@ func renderPrescriptionOrderPDF(hospitalInfo initialAssessmentHospitalInfo, data
 
 	// Sisi Kanan Kotak 1
 	rightX := splitX + 2.5
-	curY = startBoxY + 1.8
+	curY = startBoxY + 1.6
 	labelWRight := 20.0
-	valWRight := xRight - rightX - labelWRight - 3.5
+	valWRight := xRight - rightX - labelWRight - colonW - valGap - 1.5
 
 	drawRightRow := func(label, val string) {
 		pdf.SetXY(rightX, curY)
-		pdf.SetFont("Arial", "", 7.2)
+		pdf.SetFont("Arial", "", 7.5)
 		pdf.CellFormat(labelWRight, lineH, label, "", 0, "L", false, 0, "")
-		pdf.CellFormat(2.5, lineH, ":", "", 0, "L", false, 0, "")
+		pdf.CellFormat(colonW, lineH, ":", "", 0, "C", false, 0, "")
+		pdf.SetXY(rightX+labelWRight+colonW+valGap, curY)
+		if label == "No. Resep" {
+			pdf.SetFont("Arial", "B", 7.5)
+		}
 		fittedVal := fitTextToWidth(pdf, sanitizePDFText(val), valWRight)
 		pdf.CellFormat(valWRight, lineH, fittedVal, "", 0, "L", false, 0, "")
 		curY += lineH
@@ -783,9 +800,9 @@ func renderPrescriptionOrderPDF(hospitalInfo initialAssessmentHospitalInfo, data
 	drawRightRow("BB / TB", data.WeightHeightStr)
 	drawRightRow("Riwayat Alergi", data.AllergyNotes)
 
-	// 3. KOTAK 2: BADAN RESEP & CHECKLIST
+	// 3. KOTAK 2: BADAN RESEP & CHECKLIST (Menyatu sempurna tanpa jarak pada ukuran A5 148x210mm)
 	box2Y := startBoxY + box1H
-	box2Bottom := 197.5
+	box2Bottom := 196.0
 	box2H := box2Bottom - box2Y
 
 	pdf.SetLineWidth(0.3)
@@ -799,7 +816,7 @@ func renderPrescriptionOrderPDF(hospitalInfo initialAssessmentHospitalInfo, data
 
 	// Non-Racikan
 	for _, item := range data.Items {
-		if rxCurY > box2Bottom-15 {
+		if rxCurY > box2Bottom-35 {
 			break
 		}
 		pdf.SetXY(rxLeftMargin, rxCurY)
@@ -844,7 +861,7 @@ func renderPrescriptionOrderPDF(hospitalInfo initialAssessmentHospitalInfo, data
 
 	// Racikan
 	for _, comp := range data.Compounds {
-		if rxCurY > box2Bottom-20 {
+		if rxCurY > box2Bottom-38 {
 			break
 		}
 		pdf.SetXY(rxLeftMargin, rxCurY)
@@ -859,7 +876,7 @@ func renderPrescriptionOrderPDF(hospitalInfo initialAssessmentHospitalInfo, data
 		doseW := 16.0
 		ingNameW := rxRightEdge - rxLeftMargin - 5.0 - doseW
 		for _, ing := range comp.Ingredients {
-			if rxCurY > box2Bottom-15 {
+			if rxCurY > box2Bottom-35 {
 				break
 			}
 			pdf.SetXY(rxLeftMargin+5.0, rxCurY)
@@ -912,14 +929,22 @@ func renderPrescriptionOrderPDF(hospitalInfo initialAssessmentHospitalInfo, data
 	}
 
 	// --- KOLOM KANAN: CHECKLIST FARMASI & TTD ---
-	rightColW := xRight - splitX // 66.0 mm
+	rightColW := xRight - splitX // 68.0 mm
 	chkCurY := box2Y
 
+	drawChecklistBar := func(yPos float64, label string) float64 {
+		pdf.SetDrawColor(0, 0, 0)
+		pdf.SetLineWidth(0.25)
+		pdf.Rect(splitX, yPos, rightColW, 5.0, "D")
+		pdf.SetXY(splitX, yPos+0.4)
+		pdf.SetFont("Arial", "B", 7.6)
+		pdf.SetTextColor(0, 0, 0)
+		pdf.CellFormat(rightColW, 4.2, label, "", 0, "C", false, 0, "")
+		return yPos + 5.8
+	}
+
 	// Sub-seksi 1: TELAAH RESEP
-	pdf.SetXY(splitX, chkCurY+1.5)
-	pdf.SetFont("Arial", "BU", 7.8)
-	pdf.CellFormat(rightColW, 4.0, "TELAAH RESEP", "", 0, "C", false, 0, "")
-	chkCurY += 6.0
+	chkCurY = drawChecklistBar(chkCurY, "TELAAH RESEP")
 
 	tList := []struct {
 		chk bool
@@ -939,24 +964,20 @@ func renderPrescriptionOrderPDF(hospitalInfo initialAssessmentHospitalInfo, data
 
 	for _, item := range tList {
 		pdf.SetXY(splitX+2.0, chkCurY)
-		pdf.SetFont("Arial", "", 6.7)
+		pdf.SetFont("Arial", "", 7.0)
+		pdf.SetTextColor(0, 0, 0)
 		mark := "[   ]"
 		if item.chk {
 			mark = "[ v ]"
 		}
-		pdf.CellFormat(6.5, 3.2, mark, "", 0, "L", false, 0, "")
-		pdf.CellFormat(rightColW-8.5, 3.2, sanitizePDFText(item.txt), "", 0, "L", false, 0, "")
-		chkCurY += 3.2
+		pdf.CellFormat(6.8, 3.5, mark, "", 0, "L", false, 0, "")
+		pdf.CellFormat(rightColW-8.8, 3.5, sanitizePDFText(item.txt), "", 0, "L", false, 0, "")
+		chkCurY += 3.5
 	}
-	chkCurY += 1.5
-	pdf.SetLineWidth(0.3)
-	pdf.Line(splitX, chkCurY, xRight, chkCurY)
+	chkCurY += 1.4
 
 	// Sub-seksi 2: VERIFIKASI AKHIR
-	pdf.SetXY(splitX, chkCurY+1.5)
-	pdf.SetFont("Arial", "BU", 7.8)
-	pdf.CellFormat(rightColW, 4.0, "VERIFIKASI AKHIR", "", 0, "C", false, 0, "")
-	chkCurY += 6.0
+	chkCurY = drawChecklistBar(chkCurY, "VERIFIKASI AKHIR")
 
 	vList := []struct {
 		chk bool
@@ -971,23 +992,20 @@ func renderPrescriptionOrderPDF(hospitalInfo initialAssessmentHospitalInfo, data
 
 	for _, item := range vList {
 		pdf.SetXY(splitX+2.0, chkCurY)
-		pdf.SetFont("Arial", "", 6.7)
+		pdf.SetFont("Arial", "", 7.0)
+		pdf.SetTextColor(0, 0, 0)
 		mark := "[   ]"
 		if item.chk {
 			mark = "[ v ]"
 		}
-		pdf.CellFormat(6.5, 3.2, mark, "", 0, "L", false, 0, "")
-		pdf.CellFormat(rightColW-8.5, 3.2, sanitizePDFText(item.txt), "", 0, "L", false, 0, "")
-		chkCurY += 3.2
+		pdf.CellFormat(6.8, 3.5, mark, "", 0, "L", false, 0, "")
+		pdf.CellFormat(rightColW-8.8, 3.5, sanitizePDFText(item.txt), "", 0, "L", false, 0, "")
+		chkCurY += 3.5
 	}
-	chkCurY += 1.5
-	pdf.Line(splitX, chkCurY, xRight, chkCurY)
+	chkCurY += 1.4
 
 	// Sub-seksi 3: PIO
-	pdf.SetXY(splitX, chkCurY+1.5)
-	pdf.SetFont("Arial", "BU", 7.8)
-	pdf.CellFormat(rightColW, 4.0, "PIO", "", 0, "C", false, 0, "")
-	chkCurY += 6.0
+	chkCurY = drawChecklistBar(chkCurY, "PIO (INFORMASI OBAT)")
 
 	pList := []struct {
 		chk bool
@@ -1002,29 +1020,54 @@ func renderPrescriptionOrderPDF(hospitalInfo initialAssessmentHospitalInfo, data
 
 	for _, item := range pList {
 		pdf.SetXY(splitX+2.0, chkCurY)
-		pdf.SetFont("Arial", "", 6.7)
+		pdf.SetFont("Arial", "", 7.0)
+		pdf.SetTextColor(0, 0, 0)
 		mark := "[   ]"
 		if item.chk {
 			mark = "[ v ]"
 		}
-		pdf.CellFormat(6.5, 3.2, mark, "", 0, "L", false, 0, "")
-		pdf.CellFormat(rightColW-8.5, 3.2, sanitizePDFText(item.txt), "", 0, "L", false, 0, "")
-		chkCurY += 3.2
+		pdf.CellFormat(6.8, 3.5, mark, "", 0, "L", false, 0, "")
+		pdf.CellFormat(rightColW-8.8, 3.5, sanitizePDFText(item.txt), "", 0, "L", false, 0, "")
+		chkCurY += 3.5
 	}
-	chkCurY += 1.5
+	chkCurY += 1.4
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.25)
 	pdf.Line(splitX, chkCurY, xRight, chkCurY)
 
-	// Sub-seksi 4: Tanda Tangan Penerima (SECARA EKSPLISIT DI KOLOM KANAN)
-	signY := chkCurY + 2.5
-	pdf.SetXY(splitX, signY)
-	pdf.SetFont("Arial", "", 7.0)
-	pdf.CellFormat(rightColW, 3.5, sanitizePDFText(fmt.Sprintf("%s, %s", data.City, data.PrintDateStr)), "", 0, "C", false, 0, "")
+	// Sub-seksi 4: Tanda Tangan Dokter Peresep (Kiri) & Penerima (Kanan) Sejajar Presisi
+	leftColW := splitX - xLeft // 68.0 mm
+	tteSignature := loadTTESignedSignatureByDocumentKeyWithBaseURL(fmt.Sprintf("prescription:%d", data.Record.ID), data.ValidationBaseURL)
+	docSignerName := resolveTTEPrintSignatureName(tteSignature, data.DoctorName)
 
-	signY += 3.8
+	signY := chkCurY + 2.2
 	pdf.SetXY(splitX, signY)
-	pdf.CellFormat(rightColW, 3.5, "Penerima", "", 0, "C", false, 0, "")
+	pdf.SetFont("Arial", "", 7.4)
+	pdf.SetTextColor(0, 0, 0)
+	pdf.CellFormat(rightColW, 3.6, sanitizePDFText(fmt.Sprintf("%s, %s", data.City, data.PrintDateStr)), "", 0, "C", false, 0, "")
 
-	pdf.SetXY(splitX, box2Bottom-7.5)
+	roleTitleY := signY + 4.0
+	pdf.SetXY(xLeft, roleTitleY)
+	pdf.SetFont("Arial", "", 7.4)
+	pdf.CellFormat(leftColW, 3.6, "Dokter Peresep", "", 0, "C", false, 0, "")
+
+	pdf.SetXY(splitX, roleTitleY)
+	pdf.CellFormat(rightColW, 3.6, "Penerima", "", 0, "C", false, 0, "")
+
+	if tteSignature != nil {
+		qrBoxW := 22.0
+		qrBoxX := xLeft + (leftColW-qrBoxW)/2
+		drawTTESignatureAnnotation(pdf, qrBoxX, roleTitleY+4.0, qrBoxW, tteSignature)
+	}
+
+	nameBottomY := box2Bottom - 6.0
+	pdf.SetXY(xLeft+2.0, nameBottomY)
+	pdf.SetFont("Arial", "B", 7.6)
+	pdf.SetTextColor(0, 0, 0)
+	pdf.CellFormat(leftColW-4.0, 4.0, fitTextToWidth(pdf, sanitizePDFText("( "+fallbackText(docSignerName)+" )"), leftColW-4.0), "", 0, "C", false, 0, "")
+
+	pdf.SetXY(splitX, nameBottomY)
+	pdf.SetFont("Arial", "", 7.6)
 	pdf.CellFormat(rightColW, 4.0, "(____________________)", "", 0, "C", false, 0, "")
 
 	// 4. FOOTER DI LUAR KOTAK (Paling Bawah)

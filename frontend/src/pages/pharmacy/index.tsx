@@ -30,6 +30,7 @@ import {
   formatCurrency,
   formatDateTime,
   getPolyclinicOptions,
+  getPrescriptionRoomOptions,
   getRecordStockSummary,
   getRecordTotalPrice,
   STATUS_FILTER_OPTIONS,
@@ -55,6 +56,7 @@ export default function PharmacyIndex() {
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [polyclinicFilter, setPolyclinicFilter] = useState('');
+  const [prescriptionRoomFilter, setPrescriptionRoomFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState(getLocalISODate());
   const [preparingRecordId, setPreparingRecordId] = useState<number | null>(null);
@@ -163,9 +165,10 @@ export default function PharmacyIndex() {
   };
 
   const polyclinicOptions = useMemo(() => getPolyclinicOptions(orders), [orders]);
+  const prescriptionRoomOptions = useMemo(() => getPrescriptionRoomOptions(orders), [orders]);
 
   const filteredOrders = useMemo(() => {
-    let result = filterPharmacyOrders(orders, search, polyclinicFilter);
+    let result = filterPharmacyOrders(orders, search, polyclinicFilter, prescriptionRoomFilter);
     if (dateFilter) {
       result = result.filter((record) => {
         const orderDate = (record.prescription_ordered_at || record.record_date || record.visit?.visit_date || '')?.slice(0, 10);
@@ -178,7 +181,7 @@ export default function PharmacyIndex() {
       );
     }
     return result;
-  }, [dateFilter, orders, polyclinicFilter, search, statusFilter]);
+  }, [dateFilter, orders, polyclinicFilter, prescriptionRoomFilter, search, statusFilter]);
 
   const columns = useMemo<ColumnDef<MedicalRecord>[]>(() => {
     return [
@@ -238,6 +241,7 @@ export default function PharmacyIndex() {
             </p>
             <p className="text-xs text-muted-foreground truncate">
               {row.original.polyclinic?.name || '-'}
+              {row.original.prescription_room?.name ? ` → ${row.original.prescription_room.name}` : ''}
             </p>
           </div>
         ),
@@ -423,6 +427,17 @@ export default function PharmacyIndex() {
                 onValueChange={setPolyclinicFilter}
                 placeholder="Semua Poli"
                 className="h-9 w-36 rounded-none text-xs focus:ring-inset shrink-0"
+                square
+              />
+            )}
+
+            {prescriptionRoomOptions.length > 0 && (
+              <SearchableSelect
+                options={[{ value: '', label: 'Semua Apotek' }, ...prescriptionRoomOptions]}
+                value={prescriptionRoomFilter}
+                onValueChange={setPrescriptionRoomFilter}
+                placeholder="Semua Apotek"
+                className="h-9 w-40 rounded-none text-xs focus:ring-inset shrink-0"
                 square
               />
             )}

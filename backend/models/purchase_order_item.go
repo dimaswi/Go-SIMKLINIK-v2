@@ -12,7 +12,10 @@ type PurchaseOrderItem struct {
 	MedicineID       uint          `gorm:"not null;index" json:"medicine_id"`
 	Quantity         int           `json:"quantity"`
 	ReceivedQuantity int           `gorm:"default:0" json:"received_quantity"`
+	UnitMode         string        `gorm:"size:20;default:'small'" json:"unit_mode"`
+	ConversionFactor int           `gorm:"default:1" json:"conversion_factor"`
 	UnitPrice        float64       `json:"unit_price"`
+	SellingPrice     float64       `gorm:"default:0" json:"selling_price"`
 	TotalPrice       float64       `json:"total_price"`
 	BatchNumber      string        `gorm:"size:50" json:"batch_number"`
 	ExpiryDate       *time.Time    `json:"expiry_date"`

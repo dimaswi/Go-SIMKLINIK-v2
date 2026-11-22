@@ -294,6 +294,7 @@ export function buildDraft(record?: MedicalRecord, visit?: Visit): MedicalRecord
     follow_up_instruction: record?.follow_up_instruction || '',
     follow_up_at: formatDateTimeLocal(record?.follow_up_at),
     prescription_fulfillment_mode: record?.prescription_fulfillment_mode || '',
+    prescription_room_id: record?.prescription_room_id ?? null,
     disposition: record?.disposition || '',
     discharge_condition: record?.discharge_condition || '',
     referral_destination: record?.referral_destination || '',
@@ -624,17 +625,15 @@ export function getSheetStatus(
       return { label: visitLocked ? 'Final' : 'Siap cetak', tone: 'success' as SectionStatusTone };
     }
     case 'informed-consent': {
-      const consentCount = collectVisitInformedConsents(getRecordsForSheetSections(recordsBySection, sheet.sections)).length;
+      const allRecords = Object.values(recordsBySection).flat();
+      const consentCount = collectVisitInformedConsents(allRecords).length;
       if (consentCount === 0) return { label: 'Belum ada', tone: 'muted' as SectionStatusTone };
       return { label: `${consentCount} consent`, tone: 'info' as SectionStatusTone };
     }
     case 'lembar-tindakan-kecil': {
       const procedureRecords = recordsBySection.procedure || [];
       const hasProcedure = procedureRecords.some((record) => isRecordComplete('procedure', record));
-      const consentCount = collectVisitInformedConsents(getRecordsForSheetSections(recordsBySection, ['procedure'])).length;
-      const needsConsent = procedureRecords.some((record) => (record.actions || []).some((action) => action.requires_consent_snapshot));
-      if (!hasProcedure && consentCount === 0) return { label: 'Belum ada', tone: 'muted' as SectionStatusTone };
-      if (needsConsent && consentCount === 0) return { label: 'Perlu consent', tone: 'warning' as SectionStatusTone };
+      if (!hasProcedure) return { label: 'Belum ada', tone: 'muted' as SectionStatusTone };
       return { label: 'Tersedia', tone: 'success' as SectionStatusTone };
     }
     case 'lembar-resep-terapi': {
@@ -707,7 +706,8 @@ export function getSheetSummary(
       return outcome?.disposition || assessment?.working_diagnosis || getPrimaryDiagnosis(assessment)?.working_diagnosis || 'Resume medis belum siap';
     }
     case 'informed-consent': {
-      const consents = collectVisitInformedConsents(getRecordsForSheetSections(recordsBySection, ['procedure']));
+      const allRecords = Object.values(recordsBySection).flat();
+      const consents = collectVisitInformedConsents(allRecords);
       return consents[0]?.action_name || 'Belum ada informed consent tersimpan';
     }
     case 'lembar-resep-terapi': {

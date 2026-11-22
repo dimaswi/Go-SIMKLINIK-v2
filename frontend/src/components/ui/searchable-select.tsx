@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, ChevronsUpDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -7,6 +7,10 @@ import { Input } from '@/components/ui/input'
 export interface SearchableSelectOption {
   value: string
   label: string
+  description?: string
+  badge?: string
+  badgeClassName?: string
+  searchText?: string
 }
 
 interface SearchableSelectProps {
@@ -85,7 +89,12 @@ export function SearchableSelect({
       return sanitizedOptions
     }
 
-    return sanitizedOptions.filter((option) => option.label.toLowerCase().includes(normalizedSearch))
+    return sanitizedOptions.filter((option) => {
+      if (option.label.toLowerCase().includes(normalizedSearch)) return true
+      if (option.description?.toLowerCase().includes(normalizedSearch)) return true
+      if (option.searchText?.toLowerCase().includes(normalizedSearch)) return true
+      return false
+    })
   }, [open, sanitizedOptions, searchText, selectedOption])
 
   const exactMatch = useMemo(() => {
@@ -129,14 +138,25 @@ export function SearchableSelect({
     setHighlightedIndex(filteredOptions.length > 0 ? 0 : -1)
   }, [filteredOptions, open])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const container = containerRef.current
+    if (container) {
+      setIsInsideDialog(Boolean(container.closest('[role="dialog"]')))
+    }
+  }, [open])
+
+  useLayoutEffect(() => {
     if (!open || !shouldUsePortal) {
       return
     }
 
-    const updateDropdownPosition = () => {
+    const updateDropdownPosition = (event?: Event) => {
+      if (event?.type === 'scroll' && event.target instanceof Node && dropdownRef.current?.contains(event.target)) {
+        return
+      }
+
       const rect = inputRef.current?.getBoundingClientRect()
-      if (!rect) {
+      if (!rect || (rect.width === 0 && rect.height === 0)) {
         return
       }
 
@@ -172,16 +192,7 @@ export function SearchableSelect({
       window.removeEventListener('resize', updateDropdownPosition)
       window.removeEventListener('scroll', updateDropdownPosition, true)
     }
-  }, [open, shouldUsePortal])
-
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) {
-      return
-    }
-
-    setIsInsideDialog(Boolean(container.closest('[role="dialog"]')))
-  }, [])
+  }, [open, shouldUsePortal, filteredOptions.length])
 
   const selectOption = (option: SearchableSelectOption) => {
     onValueChange(option.value)
@@ -369,7 +380,7 @@ export function SearchableSelect({
                         key={option.value}
                         type="button"
                         className={cn(
-                          'flex w-full items-center px-3 py-2 text-left text-sm whitespace-nowrap hover:bg-accent hover:text-accent-foreground',
+                          'flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground',
                           highlightedIndex >= 0 && filteredOptions[highlightedIndex]?.value === option.value && 'bg-accent text-accent-foreground',
                           square && 'rounded-none'
                         )}
@@ -377,8 +388,26 @@ export function SearchableSelect({
                         onMouseEnter={() => setHighlightedIndex(filteredOptions.findIndex((item) => item.value === option.value))}
                         onClick={() => selectOption(option)}
                       >
-                        <Check className={cn('mr-2 h-4 w-4 shrink-0', value === option.value ? 'opacity-100' : 'opacity-0')} />
-                        <span className="whitespace-nowrap">{option.label}</span>
+                        <div className="flex min-w-0 items-center">
+                          <Check className={cn('mr-2 h-4 w-4 shrink-0', value === option.value ? 'opacity-100' : 'opacity-0')} />
+                          <div className="min-w-0">
+                            <span className={cn('block whitespace-nowrap', option.description && 'font-medium')}>{option.label}</span>
+                            {option.description ? (
+                              <span className="block text-[11px] text-muted-foreground whitespace-nowrap">{option.description}</span>
+                            ) : null}
+                          </div>
+                        </div>
+                        {option.badge ? (
+                          <span
+                            className={cn(
+                              'shrink-0 border px-1.5 py-0.5 text-[10px] font-mono font-medium whitespace-nowrap',
+                              square ? 'rounded-none' : 'rounded-sm',
+                              option.badgeClassName
+                            )}
+                          >
+                            {option.badge}
+                          </span>
+                        ) : null}
                       </button>
                     ))
                   )}
@@ -442,7 +471,7 @@ export function SearchableSelect({
                         key={option.value}
                         type="button"
                         className={cn(
-                          'flex w-full items-center px-3 py-2 text-left text-sm whitespace-nowrap hover:bg-accent hover:text-accent-foreground',
+                          'flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground',
                           highlightedIndex >= 0 && filteredOptions[highlightedIndex]?.value === option.value && 'bg-accent text-accent-foreground',
                           square && 'rounded-none'
                         )}
@@ -450,8 +479,26 @@ export function SearchableSelect({
                         onMouseEnter={() => setHighlightedIndex(filteredOptions.findIndex((item) => item.value === option.value))}
                         onClick={() => selectOption(option)}
                       >
-                        <Check className={cn('mr-2 h-4 w-4 shrink-0', value === option.value ? 'opacity-100' : 'opacity-0')} />
-                        <span className="whitespace-nowrap">{option.label}</span>
+                        <div className="flex min-w-0 items-center">
+                          <Check className={cn('mr-2 h-4 w-4 shrink-0', value === option.value ? 'opacity-100' : 'opacity-0')} />
+                          <div className="min-w-0">
+                            <span className={cn('block whitespace-nowrap', option.description && 'font-medium')}>{option.label}</span>
+                            {option.description ? (
+                              <span className="block text-[11px] text-muted-foreground whitespace-nowrap">{option.description}</span>
+                            ) : null}
+                          </div>
+                        </div>
+                        {option.badge ? (
+                          <span
+                            className={cn(
+                              'shrink-0 border px-1.5 py-0.5 text-[10px] font-mono font-medium whitespace-nowrap',
+                              square ? 'rounded-none' : 'rounded-sm',
+                              option.badgeClassName
+                            )}
+                          >
+                            {option.badge}
+                          </span>
+                        ) : null}
                       </button>
                     ))
                   )}

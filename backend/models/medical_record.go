@@ -51,6 +51,7 @@ type MedicalRecord struct {
 	FollowUpInstruction            string                   `gorm:"type:text" json:"follow_up_instruction"`
 	FollowUpAt                     *time.Time               `json:"follow_up_at"`
 	PrescriptionFulfillmentMode    string                   `gorm:"size:20" json:"prescription_fulfillment_mode"`
+	PrescriptionRoomID             *uint                    `gorm:"index" json:"prescription_room_id"`
 	PrescriptionWorkflowStatus     string                   `gorm:"size:20;default:'draft'" json:"prescription_workflow_status"`
 	PrescriptionOrderedAt          *time.Time               `json:"prescription_ordered_at"`
 	PrescriptionOrderedBy          *uint                    `gorm:"index" json:"prescription_ordered_by"`
@@ -93,6 +94,7 @@ type MedicalRecord struct {
 	Patient                        Patient                  `gorm:"foreignKey:PatientID" json:"patient,omitempty"`
 	Doctor                         Doctor                   `gorm:"foreignKey:DoctorID" json:"doctor,omitempty"`
 	Polyclinic                     Polyclinic               `gorm:"foreignKey:PolyclinicID" json:"polyclinic,omitempty"`
+	PrescriptionRoom               *Polyclinic              `gorm:"foreignKey:PrescriptionRoomID" json:"prescription_room,omitempty"`
 	Diagnoses                      []MedicalRecordDiagnosis `gorm:"foreignKey:MedicalRecordID" json:"diagnoses,omitempty"`
 	Prescriptions                  []Prescription           `gorm:"foreignKey:MedicalRecordID" json:"prescriptions,omitempty"`
 	PrescriptionCompounds          []PrescriptionCompound   `gorm:"foreignKey:MedicalRecordID" json:"prescription_compounds,omitempty"`

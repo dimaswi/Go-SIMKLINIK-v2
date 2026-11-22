@@ -93,6 +93,8 @@ export interface TteVerificationResult {
   title: string;
   description: string;
   hospital_name: string;
+  hospital_address?: string;
+  hospital_contact?: string;
   hospital_logo_url: string;
   hospital_website: string;
   document_label: string;
@@ -101,6 +103,8 @@ export interface TteVerificationResult {
   signed_at_label: string;
   visit_number: string;
   patient_name: string;
+  medical_record_number?: string;
+  polyclinic_name?: string;
   document_reference: string;
   checked_at_label: string;
   verification_hash: string;
@@ -192,7 +196,7 @@ export const settingsApi = {
       responseType: 'blob',
     }),
 
-  uploadLogo: (file: File, type: 'logo' | 'favicon' | 'print_logo') => {
+  uploadLogo: (file: File, type: 'logo' | 'favicon' | 'print_logo' | 'display_video' | 'display_ad') => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('type', type);
@@ -574,6 +578,9 @@ export interface Polyclinic {
   id: number;
   name: string;
   code: string;
+  room_type?: 'poliklinik' | 'depo' | 'apotek' | 'radiologi' | 'laboratorium' | 'lainnya' | string;
+  is_default_depo?: boolean;
+  is_default_apotek?: boolean;
   description: string;
   admin_fee: number;
   is_active: boolean;
@@ -697,6 +704,8 @@ export interface Medicine {
   generic_name: string;
   category_id: number;
   unit_id: number;
+  large_unit_id?: number | null;
+  conversion_factor?: number;
   type: string;
   form: string;
   strength: string;
@@ -710,6 +719,28 @@ export interface Medicine {
   satusehat_medication_synced_at?: string;
   category?: MedicineCategory;
   unit?: Unit;
+  large_unit?: Unit;
+  room_stocks?: MedicineRoomStock[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface MedicineRoom extends Polyclinic {
+  type?: 'depo' | 'apotek' | 'unit' | string;
+  is_default_depo: boolean;
+  is_default_apotek: boolean;
+  total_medicines?: number;
+  total_stock?: number;
+}
+
+export interface MedicineRoomStock {
+  id: number;
+  medicine_id: number;
+  room_id: number;
+  quantity: number;
+  min_stock: number;
+  medicine?: Medicine;
+  room?: MedicineRoom;
   created_at?: string;
   updated_at?: string;
 }
@@ -1094,26 +1125,55 @@ export interface PurchaseOrderItem {
   medicine_id: number;
   quantity: number;
   received_quantity: number;
+  unit_mode?: 'small' | 'large';
+  conversion_factor?: number;
   unit_price: number;
+  selling_price?: number;
   total_price: number;
   batch_number: string;
   expiry_date?: string;
   medicine?: Medicine;
 }
 
+export interface PurchaseOrderPayment {
+  id: number;
+  purchase_order_id: number;
+  payment_number: string;
+  payment_date: string;
+  payment_method_id?: number;
+  amount: number;
+  reference_number?: string;
+  notes?: string;
+  created_by: number;
+  payment_method?: PaymentMethod;
+  creator?: User;
+  created_at?: string;
+}
+
 export interface PurchaseOrder {
   id: number;
   po_number: string;
   supplier_id: number;
+  destination_room_id?: number;
   order_date: string;
   received_date?: string;
   status: 'draft' | 'ordered' | 'partial' | 'received';
+  subtotal?: number;
+  discount_percent?: number;
+  discount_amount?: number;
+  include_ppn?: boolean;
+  ppn_percent?: number;
+  ppn_amount?: number;
   total_amount: number;
+  payment_status?: 'unpaid' | 'partial' | 'paid';
+  paid_amount?: number;
   notes: string;
   created_by: number;
   supplier?: Supplier;
+  destination_room?: MedicineRoom;
   creator?: User;
   items?: PurchaseOrderItem[];
+  payments?: PurchaseOrderPayment[];
   created_at?: string;
   updated_at?: string;
 }
@@ -1121,7 +1181,8 @@ export interface PurchaseOrder {
 export interface StockMovement {
   id: number;
   medicine_id: number;
-  type: 'in' | 'out' | 'adjustment';
+  room_id?: number;
+  type: 'in' | 'out' | 'transfer_in' | 'transfer_out' | 'adjustment';
   quantity: number;
   previous_stock: number;
   new_stock: number;
@@ -1132,8 +1193,42 @@ export interface StockMovement {
   notes: string;
   created_by: number;
   medicine?: Medicine;
+  room?: MedicineRoom;
   creator?: User;
   created_at?: string;
+}
+
+export interface StockRequestItem {
+  id: number;
+  stock_request_id: number;
+  medicine_id: number;
+  requested_quantity: number;
+  approved_quantity: number;
+  unit_mode?: 'small' | 'large';
+  conversion_factor?: number;
+  notes?: string;
+  medicine?: Medicine;
+}
+
+export interface StockRequest {
+  id: number;
+  request_number: string;
+  from_room_id: number;
+  to_room_id: number;
+  request_date: string;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  notes?: string;
+  rejection_reason?: string;
+  requested_by: number;
+  approved_by?: number;
+  approved_at?: string;
+  from_room?: MedicineRoom;
+  to_room?: MedicineRoom;
+  requester?: User;
+  approver?: User;
+  items?: StockRequestItem[];
+  created_at?: string;
+  updated_at?: string;
 }
 
 export const purchaseOrdersApi = {
@@ -1143,10 +1238,28 @@ export const purchaseOrdersApi = {
   update: (id: number, data: any) => api.put(`/purchase-orders/${id}`, data),
   delete: (id: number) => api.delete(`/purchase-orders/${id}`),
   receive: (id: number, data: any) => api.post(`/purchase-orders/${id}/receive`, data),
+  recordPayment: (id: number, data: any) => api.post(`/purchase-orders/${id}/payments`, data),
 };
 
 export const stockMovementsApi = {
   getAll: (params?: string) => api.get(`/stock-movements${params ? `?${params}` : ''}`),
+};
+
+export const medicineRoomsApi = {
+  getAll: (params?: string) => api.get<{ data: MedicineRoom[] }>(`/medicine-rooms${params ? `?${params}` : ''}`),
+  getById: (id: number, params?: string) => api.get<{ data: MedicineRoom; stocks: MedicineRoomStock[]; total: number; page: number; per_page: number }>(`/medicine-rooms/${id}${params ? `?${params}` : ''}`),
+  create: (data: any) => api.post<{ data: MedicineRoom }>('/medicine-rooms', data),
+  update: (id: number, data: any) => api.put<{ data: MedicineRoom }>(`/medicine-rooms/${id}`, data),
+  delete: (id: number) => api.delete(`/medicine-rooms/${id}`),
+};
+
+export const stockRequestsApi = {
+  getAll: (params?: string) => api.get(`/stock-requests${params ? `?${params}` : ''}`),
+  getById: (id: number) => api.get(`/stock-requests/${id}`),
+  create: (data: any) => api.post('/stock-requests', data),
+  approve: (id: number, data?: any) => api.post(`/stock-requests/${id}/approve`, data || {}),
+  reject: (id: number, data?: { reason?: string }) => api.post(`/stock-requests/${id}/reject`, data || {}),
+  cancel: (id: number) => api.post(`/stock-requests/${id}/cancel`),
 };
 
 // ========================
@@ -1340,10 +1453,78 @@ export const visitsApi = {
   callBPJS: (id: number) => api.post(`/visits/${id}/bpjs/panggil`),
 };
 
+export interface QueueCall {
+  id: number;
+  created_at: string;
+  queue_number: number;
+  patient_name: string;
+  unit_type: string;
+  destination_name: string;
+  called_by?: number;
+}
+
+export interface DisplayClinicInfo {
+  name: string;
+  subtitle: string;
+  logo: string;
+  display_video_url?: string;
+  display_ads?: string;
+  display_running_text?: string;
+}
+
+export interface DisplayQueueTicket {
+  queue_number: number;
+  patient_name: string;
+  medical_record_number: string;
+  polyclinic_name: string;
+  doctor_name: string;
+  payment_type: string;
+  priority: string;
+  status: string;
+  status_label: string;
+  updated_at: string;
+}
+
+export interface DisplayUnitCounts {
+  waiting: number;
+  in_service: number;
+  done: number;
+  total: number;
+}
+
+export interface DisplayUnitQueue {
+  unit_key: string;
+  unit_type: 'pendaftaran' | 'kasir' | 'poliklinik' | 'farmasi' | 'laboratorium' | 'radiologi' | string;
+  polyclinic_id?: number;
+  name: string;
+  code?: string;
+  subtitle: string;
+  latest_call: QueueCall | null;
+  active: DisplayQueueTicket | null;
+  waiting: DisplayQueueTicket[];
+  in_service: DisplayQueueTicket[];
+  done: DisplayQueueTicket[];
+  counts: DisplayUnitCounts;
+}
+
+export interface DisplayBoardResponse {
+  date: string;
+  clinic_info: DisplayClinicInfo;
+  latest_call: QueueCall | null;
+  recent_calls: QueueCall[];
+  registration: DisplayUnitQueue;
+  cashier: DisplayUnitQueue;
+  rooms: DisplayUnitQueue[];
+}
+
 export const queueApi = {
   getPolyclinics: () => api.get<{ data: Polyclinic[] }>(`/queue/polyclinics`),
   getByPolyclinic: (polyclinicId: number) => api.get(`/queue/${polyclinicId}`),
   callNext: (polyclinicId: number) => api.post(`/queue/${polyclinicId}/call-next`),
+  call: (data: { queue_number: number; patient_name?: string; unit_type: string; destination_name: string }) =>
+    api.post<{ data: QueueCall }>('/queue/call', data),
+  getLatestCall: () => publicApi.get<{ data: QueueCall | null }>('/public/queue/latest-call'),
+  getDisplayBoard: () => publicApi.get<{ data: DisplayBoardResponse }>('/public/queue/display-board'),
 };
 
 export const registrationQueueApi = {
@@ -1623,20 +1804,30 @@ export interface RadiologyOrderItem {
 
 export interface InformedConsent {
   id: number;
+  visit_id?: number;
   medical_record_id: number;
-  medical_action_id?: number;
+  medical_action_id?: number | null;
+  medical_service_id?: number | null;
   patient_id: number;
   doctor_id: number;
+  nurse_name?: string;
   action_name: string;
+  diagnosis?: string;
   action_description: string;
   risks: string;
   benefits: string;
+  alternatives?: string;
+  prognosis?: string;
   patient_decision: string;
   consent_date: string;
   consent_giver_name: string;
   consent_giver_relation: string;
   consent_giver_id_number: string;
+  patient_signature?: string;
+  patient_signed_at?: string;
   witness_name: string;
+  witness_signature?: string;
+  witness_signed_at?: string;
   notes: string;
   created_at?: string;
   updated_at?: string;
@@ -1692,6 +1883,7 @@ export interface EmrReferencesResponse {
   medicines: Medicine[];
   medical_services: MedicalService[];
   physical_exam_images: PhysicalExamImageMaster[];
+  apotek_rooms?: Polyclinic[];
 }
 
 export interface TteRequestPayload {
@@ -1724,16 +1916,49 @@ export interface TteInboxItem {
   visit_status: string;
 }
 
+export interface CreateInformedConsentPayload {
+  visit_id: number;
+  medical_record_id?: number | null;
+  medical_action_id?: number | null;
+  medical_service_id?: number | null;
+  action_name?: string;
+  diagnosis?: string;
+  action_description?: string;
+  risks?: string;
+  benefits?: string;
+  alternatives?: string;
+  prognosis?: string;
+  patient_decision?: string;
+  consent_date?: string;
+  consent_giver_name?: string;
+  consent_giver_relation?: string;
+  consent_giver_id_number?: string;
+  witness_name?: string;
+  nurse_name?: string;
+  patient_signature?: string;
+  witness_signature?: string;
+  notes?: string;
+}
+
 export interface UpdateInformedConsentPayload {
+  medical_action_id?: number | null;
+  medical_service_id?: number | null;
+  action_name: string;
+  diagnosis: string;
   action_description: string;
   risks: string;
   benefits: string;
+  alternatives: string;
+  prognosis: string;
   patient_decision: string;
   consent_date: string;
   consent_giver_name: string;
   consent_giver_relation: string;
   consent_giver_id_number: string;
   witness_name: string;
+  nurse_name: string;
+  patient_signature?: string;
+  witness_signature?: string;
   notes: string;
 }
 
@@ -1809,6 +2034,8 @@ export interface MedicalRecord {
   follow_up_instruction: string;
   follow_up_at?: string;
   prescription_fulfillment_mode: '' | 'internal' | 'print';
+  prescription_room_id?: number | null;
+  prescription_room?: Polyclinic | null;
   prescription_workflow_status: '' | 'draft' | 'ordered' | 'preparing' | 'ready' | 'dispensed' | 'printed';
   prescription_ordered_at?: string;
   prescription_processed_at?: string;
@@ -2048,14 +2275,92 @@ export const medicalRecordsApi = {
   getByPatient: (patientId: number) => api.get(`/patients/${patientId}/medical-records`),
 };
 
+export interface PublicInformedConsentSignSession {
+  consent_id: number;
+  role: 'patient' | 'witness';
+  role_label: string;
+  patient_token?: string;
+  witness_token?: string;
+  hospital_name: string;
+  hospital_logo_url: string;
+  visit_number: string;
+  patient_name: string;
+  medical_record_number: string;
+  doctor_name: string;
+  nurse_name: string;
+  action_name: string;
+  diagnosis: string;
+  action_description: string;
+  benefits: string;
+  risks: string;
+  alternatives: string;
+  prognosis: string;
+  patient_decision: string;
+  patient_decision_label: string;
+  decision_statement: string;
+  signer_name: string;
+  consent_giver_name?: string;
+  consent_giver_relation: string;
+  consent_giver_id_number: string;
+  patient_signature?: string;
+  patient_signed_at?: string;
+  witness_name?: string;
+  witness_signature?: string;
+  witness_signed_at?: string;
+  current_signature: string;
+  signed_at?: string;
+  is_locked: boolean;
+}
+
 export const informedConsentsApi = {
+  create: (data: CreateInformedConsentPayload) =>
+    api.post<{ data: InformedConsent; medical_record?: MedicalRecord; created_new_record?: boolean }>('/informed-consents', data),
+  getById: (id: number) => api.get<{ data: InformedConsent }>(`/informed-consents/${id}`),
+  getSignQrBlob: (id: number, role: 'patient' | 'witness', baseUrl?: string) =>
+    api.get(`/informed-consents/${id}/sign-qr`, {
+      params: { role, ...(baseUrl ? { base_url: baseUrl } : {}) },
+      responseType: 'blob',
+    }),
+  getSignQrMeta: (id: number, role: 'patient' | 'witness', baseUrl?: string) =>
+    api.get<{ data: { token: string; role: string; sign_url: string } }>(`/informed-consents/${id}/sign-qr`, {
+      params: { role, format: 'json', ...(baseUrl ? { base_url: baseUrl } : {}) },
+    }),
   print: (id: number) => api.get(`/informed-consents/${id}/print`, { responseType: 'blob' }),
   update: (id: number, data: UpdateInformedConsentPayload) => api.put<{ data: InformedConsent }>(`/informed-consents/${id}`, data),
+  delete: (id: number) => api.delete<{ message: string; deleted_consent_id: number; medical_record_id: number }>(`/informed-consents/${id}`),
 };
+
+export const publicInformedConsentsApi = {
+  getSession: (token: string) =>
+    publicApi.get<{ data: PublicInformedConsentSignSession }>('/public/informed-consents/sign-session', {
+      params: { token },
+    }),
+  submitSignature: (data: {
+    token: string;
+    role?: 'patient' | 'witness';
+    signer_name: string;
+    consent_giver_relation?: string;
+    consent_giver_id_number?: string;
+    signature_data: string;
+  }) =>
+    publicApi.post<{ data: PublicInformedConsentSignSession; message: string }>('/public/informed-consents/sign', data),
+};
+
+export interface TteEmployeeOption {
+  id: number;
+  full_name: string;
+  employee_code?: string;
+  profession?: string;
+  license_number?: string;
+  user_id?: number | null;
+}
 
 export const tteApi = {
   getSigners: () => api.get<{ data: TteSigner[] }>('/tte/signers'),
+  getEmployees: () => api.get<{ data: TteEmployeeOption[] }>('/tte/employees'),
   getVisitDocuments: (visitId: number) => api.get<{ data: TteVisitDocumentsResponse }>(`/tte/visits/${visitId}/documents`),
+  sign: (data: { visit_id: number; document_key: string; employee_id: number; notes?: string }) =>
+    api.post<{ data: TteVisitDocument; message: string }>('/tte/sign', data),
   request: (data: TteRequestPayload) => api.post<{ data: TteVisitDocument; message: string }>('/tte/requests', data),
   getInbox: () => api.get<{ data: TteInboxItem[] }>('/tte/requests/inbox'),
   approve: (id: number) => api.post<{ data: TteInboxItem; message: string }>(`/tte/requests/${id}/approve`),
@@ -2354,7 +2659,7 @@ export const billingApi = {
     api.delete<{ message: string; status: string }>(`/invoices/${invoiceId}/payments/${paymentId}`),
   cancelAllPayments: (invoiceId: number) =>
     api.post<{ message: string; status: string }>(`/invoices/${invoiceId}/cancel-payment`),
-  print: (id: number, format: 'a4' | 'a5' | 'thermal' = 'a4') =>
+  print: (id: number, format: 'a4' | 'a5' | 'thermal' | 'kwitansi' = 'a4') =>
     api.get(`/invoices/${id}/print?format=${format}`, { responseType: 'blob' }),
   getQueue: (date?: string, search?: string) => {
     const params = new URLSearchParams();

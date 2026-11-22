@@ -237,14 +237,48 @@ func ensurePrescriptionRecordPharmacyEditable(record models.MedicalRecord) (stri
 	return "", true
 }
 
+func resolvePrescriptionApotekRoom(tx *gorm.DB, record models.MedicalRecord) (models.Polyclinic, error) {
+	if record.PrescriptionRoomID != nil && *record.PrescriptionRoomID != 0 {
+		var room models.Polyclinic
+		if err := tx.First(&room, *record.PrescriptionRoomID).Error; err != nil {
+			return room, fmt.Errorf("ruangan apotek tujuan tidak ditemukan")
+		}
+		if strings.ToLower(strings.TrimSpace(room.RoomType)) != "apotek" {
+			return room, fmt.Errorf("ruangan tujuan resep harus berjenis Apotek, bukan Depo atau ruangan lain")
+		}
+		return room, nil
+	}
+	return getDefaultApotekRoom(tx)
+}
+
 func collectPrescriptionStockIssues(record models.MedicalRecord) []string {
 	issues := make([]string, 0)
+	apotekRoom, apotekErr := resolvePrescriptionApotekRoom(database.DB, record)
+	if apotekErr != nil {
+		return []string{apotekErr.Error()}
+	}
+
+	totalRequiredByMedicine := make(map[uint]int)
+	medicineNames := make(map[uint]string)
+	availableByMedicine := make(map[uint]int)
+
+	getAvailable := func(medicineID uint) int {
+		if qty, exists := availableByMedicine[medicineID]; exists {
+			return qty
+		}
+		qty := getRoomMedicineStockQty(database.DB, medicineID, apotekRoom.ID)
+		availableByMedicine[medicineID] = qty
+		return qty
+	}
 
 	for _, prescription := range record.Prescriptions {
 		medicineName := fallbackText(prescription.Medicine.Name)
-		availableStock := prescription.Medicine.CurrentStock
+		medicineNames[prescription.MedicineID] = medicineName
+		totalRequiredByMedicine[prescription.MedicineID] += prescription.Quantity
+
+		availableStock := getAvailable(prescription.MedicineID)
 		if availableStock < prescription.Quantity {
-			issues = append(issues, fmt.Sprintf("stok %s tidak mencukupi. Tersedia %d", medicineName, availableStock))
+			issues = append(issues, fmt.Sprintf("stok %s di %s tidak mencukupi. Tersedia %d", medicineName, apotekRoom.Name, availableStock))
 		}
 	}
 
@@ -252,9 +286,22 @@ func collectPrescriptionStockIssues(record models.MedicalRecord) []string {
 		compoundName := fallbackText(compound.Name)
 		for _, ingredient := range compound.Items {
 			medicineName := fallbackText(ingredient.Medicine.Name)
-			availableStock := ingredient.Medicine.CurrentStock
+			medicineNames[ingredient.MedicineID] = medicineName
+			totalRequiredByMedicine[ingredient.MedicineID] += ingredient.Quantity
+
+			availableStock := getAvailable(ingredient.MedicineID)
 			if availableStock < ingredient.Quantity {
-				issues = append(issues, fmt.Sprintf("stok bahan %s untuk racikan %s tidak mencukupi. Tersedia %d", medicineName, compoundName, availableStock))
+				issues = append(issues, fmt.Sprintf("stok bahan %s untuk racikan %s di %s tidak mencukupi. Tersedia %d", medicineName, compoundName, apotekRoom.Name, availableStock))
+			}
+		}
+	}
+
+	// Validasi akumulasi jika obat yang sama dipakai di beberapa item / racikan sekaligus
+	if len(issues) == 0 {
+		for medicineID, totalNeeded := range totalRequiredByMedicine {
+			availableStock := getAvailable(medicineID)
+			if availableStock < totalNeeded {
+				issues = append(issues, fmt.Sprintf("total kebutuhan stok %s (%d) di %s tidak mencukupi. Tersedia %d", medicineNames[medicineID], totalNeeded, apotekRoom.Name, availableStock))
 			}
 		}
 	}
@@ -375,6 +422,7 @@ func AddPrescriptionCompound(c *gin.Context) {
 		Preload("Items").
 		Preload("Items.Medicine").
 		Preload("Items.Medicine.Unit").
+		Preload("Items.Medicine.RoomStocks.Room").
 		First(&compound, compound.ID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -455,6 +503,14 @@ func SubmitPrescriptionOrder(c *gin.Context) {
 	}
 	if normalizePrescriptionFulfillmentMode(record.PrescriptionFulfillmentMode) != prescriptionFulfillmentModeInternal {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Mode order ini bukan order internal farmasi"})
+		return
+	}
+	if record.PrescriptionRoomID == nil || *record.PrescriptionRoomID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Pilih ruangan apotek tujuan terlebih dahulu sebelum mengirim order internal farmasi"})
+		return
+	}
+	if _, err := resolvePrescriptionApotekRoom(database.DB, record); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	if countPrescriptionOrderLines(record) == 0 {
@@ -731,7 +787,7 @@ func ReadyPrescriptionOrder(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": updatedRecord, "message": "Order resep siap diambil pasien"})
 }
 
-func dispenseMedicineStockTx(tx *gorm.DB, medicineID uint, quantity int, referenceType string, referenceID uint, notes string, userID uint) (models.Medicine, error) {
+func dispenseMedicineStockTx(tx *gorm.DB, apotekRoomID uint, medicineID uint, quantity int, referenceType string, referenceID uint, notes string, userID uint) (models.Medicine, error) {
 	var medicine models.Medicine
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&medicine, medicineID).Error; err != nil {
 		return medicine, err
@@ -742,31 +798,24 @@ func dispenseMedicineStockTx(tx *gorm.DB, medicineID uint, quantity int, referen
 	if quantity < 1 {
 		return medicine, fmt.Errorf("jumlah obat tidak valid")
 	}
-	if medicine.CurrentStock < quantity {
-		return medicine, fmt.Errorf("stok %s tidak mencukupi. Tersedia %d", medicine.Name, medicine.CurrentStock)
-	}
 
-	previousStock := medicine.CurrentStock
-	medicine.CurrentStock -= quantity
-	if err := tx.Model(&medicine).Update("current_stock", medicine.CurrentStock).Error; err != nil {
+	if _, err := adjustRoomStockTx(
+		tx,
+		medicine.ID,
+		apotekRoomID,
+		-quantity,
+		"out",
+		referenceType,
+		referenceID,
+		"",
+		nil,
+		notes,
+		userID,
+	); err != nil {
 		return medicine, err
 	}
 
-	movement := models.StockMovement{
-		MedicineID:    medicine.ID,
-		Type:          "out",
-		Quantity:      quantity,
-		PreviousStock: previousStock,
-		NewStock:      medicine.CurrentStock,
-		ReferenceType: referenceType,
-		ReferenceID:   referenceID,
-		Notes:         notes,
-		CreatedBy:     userID,
-	}
-	if err := tx.Create(&movement).Error; err != nil {
-		return medicine, err
-	}
-
+	tx.First(&medicine, medicine.ID)
 	return medicine, nil
 }
 
@@ -838,9 +887,17 @@ func DispensePrescriptionOrder(c *gin.Context) {
 		return
 	}
 
+	apotekRoom, err := resolvePrescriptionApotekRoom(tx, record)
+	if err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	for _, prescription := range record.Prescriptions {
 		medicine, err := dispenseMedicineStockTx(
 			tx,
+			apotekRoom.ID,
 			prescription.MedicineID,
 			prescription.Quantity,
 			"prescription",
@@ -901,6 +958,7 @@ func DispensePrescriptionOrder(c *gin.Context) {
 			if qtyToDeduct > 0 {
 				if _, err := dispenseMedicineStockTx(
 					tx,
+					apotekRoom.ID,
 					ingredient.MedicineID,
 					qtyToDeduct,
 					"prescription_compound",

@@ -34,6 +34,7 @@ export type MedicalRecordDraft = {
   follow_up_instruction: string;
   follow_up_at: string;
   prescription_fulfillment_mode: '' | 'internal' | 'print';
+  prescription_room_id: number | null;
   disposition: string;
   discharge_condition: string;
   referral_destination: string;

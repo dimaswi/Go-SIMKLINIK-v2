@@ -193,15 +193,17 @@ func buildProcedurePrintActionViews(actions []models.MedicalAction) []procedureP
 
 func renderProcedurePrintPDF(hospitalInfo initialAssessmentHospitalInfo, data procedurePrintViewData) ([]byte, string, error) {
 	pdf := newInitialAssessmentStyledPDF("Lembar Tindakan", "SIMKLINIK", data.GeneratedAt)
-	beginInitialAssessmentStyledSection(pdf, hospitalInfo, "TINDAKAN", fallbackText(data.Visit.VisitNumber))
+	beginInitialAssessmentStyledSection(pdf, hospitalInfo, "LEMBAR TINDAKAN MEDIS", "No. Kunjungan : "+fallbackText(data.Visit.VisitNumber))
 
-	addInitialAssessmentCompactFieldSection(pdf, "DATA PASIEN", data.PatientFields, "Data pasien tidak tersedia.")
-	addInitialAssessmentCompactFieldSection(pdf, "DATA KUNJUNGAN", data.VisitFields, "Data kunjungan tidak tersedia.")
-	addInitialAssessmentCompactFieldSection(pdf, "DATA ENTRI TINDAKAN", data.EntryFields, "Data entri tindakan tidak tersedia.")
-	addProcedurePrintActionsSection(pdf, data.Actions)
+	identityFields := mergePatientVisitPrintFields(data.Visit.Patient, data.Visit,
+		initialAssessmentPrintField{Label: "Tanggal Entri", Value: formatDateTimeIndonesian(data.Record.RecordDate)},
+		initialAssessmentPrintField{Label: "Status Entri", Value: procedureRecordStatusLabel(data.Record.Status)},
+	)
+	addInitialAssessmentCompactFieldSection(pdf, "IDENTITAS PASIEN & KUNJUNGAN", identityFields, "Data pasien tidak tersedia.")
+	addProcedurePrintActionsSection(pdf, data.Actions, data.Record.Actions)
 
 	if data.EntryNotes != "" {
-		addInitialAssessmentFieldSection(pdf, "CATATAN ENTRI", []initialAssessmentPrintField{{Label: "Catatan", Value: data.EntryNotes}}, "Tidak ada catatan entri tindakan.")
+		addInitialAssessmentCompactFieldSection(pdf, "CATATAN ENTRI", []initialAssessmentPrintField{{Label: "Catatan", Value: data.EntryNotes}}, "")
 	}
 
 	if data.OdontogramEntry != nil {
@@ -218,43 +220,109 @@ func renderProcedurePrintPDF(hospitalInfo initialAssessmentHospitalInfo, data pr
 	return pdfBytes, fileName, nil
 }
 
-func addProcedurePrintActionsSection(pdf *gofpdf.Fpdf, actions []procedurePrintActionView) {
-	addInitialAssessmentSectionTitle(pdf, "TINDAKAN YANG DIKERJAKAN")
+func addProcedurePrintActionsSection(pdf *gofpdf.Fpdf, actions []procedurePrintActionView, rawActions []models.MedicalAction) {
+	left, _, right, _ := pdf.GetMargins()
+	pageWidth, _ := pdf.GetPageSize()
+	contentWidth := pageWidth - left - right
 	if len(actions) == 0 {
+		addInitialAssessmentSectionTitle(pdf, "DAFTAR TINDAKAN MEDIS")
+		boxStartY := pdf.GetY()
+		pdf.SetY(boxStartY + 1.2)
 		addInitialAssessmentFullWidthRow(pdf, "Belum ada item tindakan pada entri ini.", false)
+		boxEndY := pdf.GetY() + 1.2
+		pdf.SetDrawColor(0, 0, 0)
+		pdf.SetLineWidth(0.25)
+		pdf.Rect(left, boxStartY, contentWidth, boxEndY-boxStartY, "D")
+		pdf.SetLineWidth(0.2)
+		pdf.SetY(boxEndY)
 		addInitialAssessmentSectionSpacing(pdf)
 		return
 	}
 
+	rows := make([]supportingOrderResultTableRow, 0, len(actions))
+	grandTotal := 0.0
 	for index, action := range actions {
-		addInitialAssessmentFullWidthRow(pdf, fmt.Sprintf("%d. %s", index+1, action.Title), true)
-		addInitialAssessmentKeyValueRow(pdf, "Kode Layanan", action.Code)
-		addInitialAssessmentKeyValueRow(pdf, "Domain", action.Domain)
-		addInitialAssessmentKeyValueRow(pdf, "Cakupan Target", action.TargetScope)
-		addInitialAssessmentKeyValueRow(pdf, "Jumlah", action.QuantityLabel)
-		addInitialAssessmentKeyValueRow(pdf, "Tarif Satuan", action.PriceLabel)
-		addInitialAssessmentKeyValueRow(pdf, "Total", action.TotalLabel)
+		if index < len(rawActions) {
+			qty := maxInt(rawActions[index].Quantity, 1)
+			grandTotal += rawActions[index].Price * float64(qty)
+		}
+
+		detailParts := make([]string, 0, 4)
+		if action.Domain != "" && action.Domain != "-" {
+			detailParts = append(detailParts, "Domain: "+action.Domain)
+		}
 		if len(action.Targets) > 0 {
-			addInitialAssessmentKeyValueRow(pdf, "Pekerjaan / Target", strings.Join(action.Targets, "\n"))
+			detailParts = append(detailParts, "Target: "+strings.Join(action.Targets, "; "))
+		}
+		for _, param := range action.Parameters {
+			if strings.TrimSpace(param.Value) != "" && strings.TrimSpace(param.Value) != "-" {
+				detailParts = append(detailParts, param.Label+": "+param.Value)
+			}
 		}
 		if action.Notes != "" {
-			addInitialAssessmentKeyValueRow(pdf, "Catatan Tindakan", action.Notes)
+			detailParts = append(detailParts, "Catatan: "+action.Notes)
 		}
-		for _, parameter := range action.Parameters {
-			addInitialAssessmentKeyValueRow(pdf, parameter.Label, parameter.Value)
+		detailText := "-"
+		if len(detailParts) > 0 {
+			detailText = strings.Join(detailParts, " | ")
 		}
+
+		rows = append(rows, supportingOrderResultTableRow{
+			Values: []string{
+				strconv.Itoa(index + 1),
+				action.Code,
+				action.Title,
+				detailText,
+				action.QuantityLabel,
+				action.PriceLabel,
+				action.TotalLabel,
+			},
+		})
 	}
-	addInitialAssessmentSectionSpacing(pdf)
+
+	columns := []supportingOrderResultTableColumn{
+		{Title: "No", WidthRatio: 0.05, Align: "C"},
+		{Title: "Kode", WidthRatio: 0.10, Align: "C"},
+		{Title: "Nama Tindakan", WidthRatio: 0.24, Align: "L"},
+		{Title: "Target / Detail / Catatan", WidthRatio: 0.29, Align: "L"},
+		{Title: "Qty", WidthRatio: 0.06, Align: "C"},
+		{Title: "Tarif", WidthRatio: 0.13, Align: "R"},
+		{Title: "Subtotal", WidthRatio: 0.13, Align: "R"},
+	}
+	addSupportingOrderResultTable(pdf, "DAFTAR TINDAKAN MEDIS", columns, rows, "Belum ada item tindakan pada entri ini.")
+
+	// Baris Total Biaya Tindakan (menyatu langsung di bawah tabel)
+	summaryH := 5.6
+	ensureInitialAssessmentPDFSpace(pdf, summaryH+2)
+	y := pdf.GetY()
+	labelW := contentWidth * 0.74
+	valW := contentWidth - labelW
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.25)
+	pdf.Rect(left, y, labelW, summaryH, "D")
+	pdf.Rect(left+labelW, y, valW, summaryH, "D")
+	pdf.SetLineWidth(0.2)
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetFont("Arial", "B", 8.2)
+	pdf.SetXY(left, y+0.3)
+	pdf.CellFormat(labelW-2, summaryH-0.6, "TOTAL BIAYA TINDAKAN", "", 0, "R", false, 0, "")
+	pdf.SetXY(left+labelW, y+0.3)
+	pdf.CellFormat(valW-1.5, summaryH-0.6, formatProcedureCurrency(grandTotal), "", 0, "R", false, 0, "")
+	pdf.SetY(y + summaryH)
 }
 
 func addProcedureOdontogramSection(pdf *gofpdf.Fpdf, entry models.OdontogramEntry) {
-	addInitialAssessmentSectionTitle(pdf, "ODONTOGRAM TERKAIT")
-	addInitialAssessmentCompactFieldSection(pdf, "RINGKASAN ODONTOGRAM", []initialAssessmentPrintField{
+	addInitialAssessmentCompactFieldSection(pdf, "RINGKASAN ODONTOGRAM TERKAIT", []initialAssessmentPrintField{
 		{Label: "Jenis Chart", Value: fallbackText(entry.ChartType)},
 		{Label: "Status", Value: odontogramStatusLabel(entry.Status)},
 		{Label: "Update Terakhir", Value: formatDateTimeIndonesian(entry.UpdatedAt)},
 		{Label: "Ringkasan", Value: buildProcedureOdontogramSummary(entry)},
 	}, "Data odontogram tidak tersedia.")
+
+	addInitialAssessmentSectionTitle(pdf, "DIAGRAM ODONTOGRAM")
+	left, _, right, _ := pdf.GetMargins()
+	pageWidth, _ := pdf.GetPageSize()
+	contentWidth := pageWidth - left - right
 
 	toothMap := make(map[string]models.OdontogramTooth, len(entry.Teeth))
 	for _, tooth := range entry.Teeth {
@@ -276,7 +344,8 @@ func addProcedureOdontogramSection(pdf *gofpdf.Fpdf, entry models.OdontogramEntr
 	chartNeededHeight := chartTopPadding + odontogramPDFToothLabelHeight + odontogramPDFToothLabelGap + (3 * rowAdvance) + odontogramPDFToothSize + odontogramPDFConditionBadgeGap + odontogramPDFConditionBadgeHeight + odontogramPDFToothLabelGap + odontogramPDFToothLabelHeight + 2
 	ensureInitialAssessmentPDFSpace(pdf, chartNeededHeight)
 
-	currentY := pdf.GetY() + chartTopPadding + odontogramPDFToothLabelHeight + odontogramPDFToothLabelGap
+	chartBoxStartY := pdf.GetY()
+	currentY := chartBoxStartY + chartTopPadding + odontogramPDFToothLabelHeight + odontogramPDFToothLabelGap
 	startX := odontogramPDFRowStartX(pdf, 16)
 	drawOdontogramPDFRow(pdf, startX, currentY, rowDefs["permanent_upper"], toothMap, true)
 	currentY += rowAdvance
@@ -288,11 +357,16 @@ func addProcedureOdontogramSection(pdf *gofpdf.Fpdf, entry models.OdontogramEntr
 	currentY += rowAdvance
 	startX = odontogramPDFRowStartX(pdf, 16)
 	drawOdontogramPDFRow(pdf, startX, currentY, rowDefs["permanent_lower"], toothMap, false)
-	currentY += odontogramPDFToothSize + odontogramPDFConditionBadgeGap + odontogramPDFConditionBadgeHeight + odontogramPDFToothLabelGap + odontogramPDFToothLabelHeight + 2
+	currentY += odontogramPDFToothSize + odontogramPDFConditionBadgeGap + odontogramPDFConditionBadgeHeight + odontogramPDFToothLabelGap + odontogramPDFToothLabelHeight + 2.5
 	pdf.SetY(currentY)
 
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.25)
+	pdf.Rect(left, chartBoxStartY, contentWidth, currentY-chartBoxStartY, "D")
+	pdf.SetLineWidth(0.2)
+
 	if trimmedNotes := strings.TrimSpace(entry.Notes); trimmedNotes != "" {
-		addInitialAssessmentKeyValueRow(pdf, "Catatan Odontogram", trimmedNotes)
+		addInitialAssessmentCompactFieldSection(pdf, "CATATAN ODONTOGRAM", []initialAssessmentPrintField{{Label: "Catatan", Value: trimmedNotes}}, "")
 	}
 	addInitialAssessmentSectionSpacing(pdf)
 }

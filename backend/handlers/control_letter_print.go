@@ -100,10 +100,10 @@ func buildControlLetterPrintViewData(c *gin.Context, visit models.Visit, outcome
 		PatientFields: buildInitialAssessmentPatientFields(visit.Patient),
 		VisitFields: []initialAssessmentPrintField{
 			{Label: "No. Kunjungan", Value: fallbackText(visit.VisitNumber)},
-			{Label: "Tanggal Kunjungan", Value: visit.VisitDate.Format("02 Jan 2006 15:04")},
+			{Label: "Tanggal Kunjungan", Value: formatVisitDateForPrint(visit.VisitDate)},
 			{Label: "Poliklinik", Value: fallbackText(visit.Polyclinic.Name)},
 			{Label: "Dokter Pemeriksa", Value: fallbackText(visit.Doctor.FullName)},
-			{Label: "Jenis Kunjungan", Value: fallbackText(visit.VisitType)},
+			{Label: "Jenis Kunjungan", Value: formatVisitTypeForPrint(visit.VisitType)},
 		},
 		ControlFields: buildControlLetterFields(outcome),
 		Statement:     buildControlLetterStatement(visit, outcome),
@@ -141,10 +141,10 @@ func renderControlLetterPDF(hospitalInfo initialAssessmentHospitalInfo, data con
 	defer clearInitialAssessmentPDFPageContentStartOverrides(pdf)
 	tteSignature := loadTTESignedSignatureByDocumentKeyWithBaseURL(buildTTEControlLetterDocumentKey(data.Visit.ID), data.ValidationBaseURL)
 
-	marginLeft := 20.0
-	marginRight := 20.0
-	marginTop := 12.0
-	marginBottom := 12.0
+	marginLeft := 16.0
+	marginRight := 16.0
+	marginTop := 10.0
+	marginBottom := 10.0
 	contentWidth := 210.0 - marginLeft - marginRight
 	startX := marginLeft
 	endX := 210.0 - marginRight
@@ -158,24 +158,24 @@ func renderControlLetterPDF(hospitalInfo initialAssessmentHospitalInfo, data con
 	pdf.SetCreator("SIMKLINIK", false)
 	pdf.AddPage()
 
-	// 1. KOP Surat Resmi Puskesmas
+	// 1. KOP Surat Resmi Indonesia
 	kopBottomY := drawOfficialSuratKop(pdf, hospitalInfo)
 
 	// 2. Judul & Nomor Surat
 	officialNumber := generateOfficialSuratNumber(hospitalInfo, "surat-kontrol", data.Visit, data.Visit.ID)
-	pdf.SetY(kopBottomY + 3.0)
-	pdf.SetFont("Arial", "BU", 13)
+	pdf.SetY(kopBottomY + 2.0)
+	pdf.SetFont("Arial", "B", 12.5)
 	pdf.SetTextColor(0, 0, 0)
-	pdf.CellFormat(contentWidth, 6.0, documentTitle, "", 1, "C", false, 0, "")
+	pdf.CellFormat(contentWidth, 5.8, documentTitle, "", 1, "C", false, 0, "")
 
-	pdf.SetFont("Arial", "", 10)
-	pdf.CellFormat(contentWidth, 5.0, "Nomor : "+officialNumber, "", 1, "C", false, 0, "")
+	pdf.SetFont("Arial", "", 9.2)
+	pdf.CellFormat(contentWidth, 4.6, "Nomor : "+officialNumber, "", 1, "C", false, 0, "")
 
 	// 3. Kalimat Pembuka
-	pdf.SetY(pdf.GetY() + 4.0)
+	pdf.SetY(pdf.GetY() + 4.5)
 	pdf.SetFont("Arial", "", 9.5)
 	instName := fallbackText(hospitalInfo.Name)
-	openingText := fmt.Sprintf("Kami yang bertanda tangan dibawah ini Dokter %s, dengan ini menerangkan bahwa :", instName)
+	openingText := fmt.Sprintf("Yang bertanda tangan di bawah ini, Dokter %s, dengan ini menerangkan bahwa :", instName)
 	pdf.MultiCell(contentWidth, 5.0, openingText, "", "L", false)
 
 	// 4. Biodata Pasien
@@ -201,6 +201,7 @@ func renderControlLetterPDF(hospitalInfo initialAssessmentHospitalInfo, data con
 		isBold bool
 	}{
 		{"Nama", strings.ToUpper(fallbackText(patient.FullName)), true},
+		{"No. Rekam Medis", fallbackText(patient.MedicalRecordNumber), false},
 		{"Jenis Kelamin", formatGenderIndonesian(patient.Gender), false},
 		{"Tempat, Tgl Lahir", birthPlaceDate, false},
 		{"Warga Negara", "Indonesia", false},
@@ -212,102 +213,138 @@ func renderControlLetterPDF(hospitalInfo initialAssessmentHospitalInfo, data con
 	for _, item := range biodataItems {
 		currY := pdf.GetY()
 		pdf.SetXY(indentX, currY)
-		pdf.SetFont("Arial", "", 9.5)
+		pdf.SetTextColor(0, 0, 0)
+		pdf.SetFont("Arial", "", 9.2)
 		pdf.CellFormat(labelWidth, 4.8, item.label, "", 0, "L", false, 0, "")
 		pdf.CellFormat(sepWidth, 4.8, ":", "", 0, "C", false, 0, "")
 
 		if item.isBold {
 			pdf.SetFont("Arial", "B", 9.5)
 		} else {
-			pdf.SetFont("Arial", "", 9.5)
+			pdf.SetFont("Arial", "", 9.2)
 		}
 		if item.label == "Alamat" {
-			pdf.MultiCell(valWidth, 4.8, item.value, "", "L", false)
+			pdf.MultiCell(valWidth, 4.8, sanitizePDFText(item.value), "", "L", false)
 		} else {
-			pdf.CellFormat(valWidth, 4.8, item.value, "", 1, "L", false, 0, "")
+			pdf.CellFormat(valWidth, 4.8, sanitizePDFSingleLineText(item.value), "", 1, "L", false, 0, "")
 		}
 	}
 
-	// 5. Data Kontrol Ulang (Box 2 Kolom Bergaris)
-	pdf.SetY(pdf.GetY() + 3.0)
+	// 5. Data Kontrol Ulang (Box 2 Kolom Hitam Putih Dinamis tanpa terpotong)
+	pdf.SetY(pdf.GetY() + 3.5)
 	pdf.SetFont("Arial", "B", 9.5)
+	pdf.SetTextColor(0, 0, 0)
 	pdf.SetX(indentX)
 	pdf.CellFormat(contentWidth-6.0, 5.0, "Rencana Kontrol Ulang :", "", 1, "L", false, 0, "")
 
 	boxX := indentX
 	boxWidth := endX - boxX - 4.0
 	boxY := pdf.GetY() + 1.0
-	boxHeight := 24.0
-
-	pdf.SetDrawColor(0, 0, 0)
-	pdf.SetLineWidth(0.3)
-	pdf.Rect(boxX, boxY, boxWidth, boxHeight, "D")
-
 	halfWidth := boxWidth / 2.0
-	pdf.Line(boxX+halfWidth, boxY, boxX+halfWidth, boxY+boxHeight)
 
 	controlSchedule := "-"
 	if data.Outcome.FollowUpAt != nil && !data.Outcome.FollowUpAt.IsZero() {
 		controlSchedule = formatDateTimeIndonesian(*data.Outcome.FollowUpAt)
 	}
 
-	leftColItems := []struct {
+	type ctrlItem struct {
 		label string
 		val   string
-	}{
+	}
+	leftColItems := []ctrlItem{
 		{"Jadwal Kontrol", controlSchedule},
 		{"Poliklinik Tujuan", fallbackText(data.Visit.Polyclinic.Name)},
 		{"Dokter Pemeriksa", formatDoctorOfficialName(data.Visit.Doctor.FullName)},
 	}
-
-	rightColItems := []struct {
-		label string
-		val   string
-	}{
+	rightColItems := []ctrlItem{
 		{"Diagnosa / Kondisi", fallbackText(data.Outcome.DischargeCondition)},
 		{"Instruksi Kontrol", fallbackText(data.Outcome.FollowUpInstruction)},
 		{"Catatan", fallbackText(data.Outcome.Notes)},
 	}
 
-	rowH := 7.0
-	colLabelW := 32.0
+	colLabelW := 30.0
 	colSepW := 3.0
+	colValW := halfWidth - colLabelW - colSepW - 5.0
+	lineH := 4.4
 
-	for i, item := range leftColItems {
-		rY := boxY + 1.5 + (float64(i) * rowH)
-		pdf.SetXY(boxX+3.0, rY)
-		pdf.SetFont("Arial", "", 9.0)
-		pdf.CellFormat(colLabelW, rowH-1, item.label, "", 0, "L", false, 0, "")
-		pdf.CellFormat(colSepW, rowH-1, ":", "", 0, "C", false, 0, "")
-		pdf.CellFormat(halfWidth-colLabelW-colSepW-6.0, rowH-1, item.val, "", 0, "L", false, 0, "")
+	measureCol := func(items []ctrlItem) (float64, []float64) {
+		heights := make([]float64, len(items))
+		total := 2.0
+		pdf.SetFont("Arial", "", 8.8)
+		for i, item := range items {
+			lines := pdf.SplitLines([]byte(sanitizePDFText(item.val)), colValW)
+			lc := len(lines)
+			if lc < 1 {
+				lc = 1
+			}
+			h := float64(lc)*lineH + 1.4
+			heights[i] = h
+			total += h
+		}
+		return total + 1.2, heights
 	}
 
+	leftH, leftRowHeights := measureCol(leftColItems)
+	rightH, rightRowHeights := measureCol(rightColItems)
+	boxHeight := maxFloat64(leftH, rightH)
+
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.25)
+	pdf.Rect(boxX, boxY, boxWidth, boxHeight, "D")
+	pdf.SetLineWidth(0.2)
+	pdf.Line(boxX+halfWidth, boxY, boxX+halfWidth, boxY+boxHeight)
+
+	pdf.SetTextColor(0, 0, 0)
+	curLeftY := boxY + 1.8
+	for i, item := range leftColItems {
+		pdf.SetXY(boxX+2.5, curLeftY)
+		pdf.SetFont("Arial", "", 8.6)
+		pdf.CellFormat(colLabelW, lineH, item.label, "", 0, "L", false, 0, "")
+		pdf.CellFormat(colSepW, lineH, ":", "", 0, "C", false, 0, "")
+		if i == 0 {
+			pdf.SetFont("Arial", "B", 8.8)
+		} else {
+			pdf.SetFont("Arial", "", 8.8)
+		}
+		pdf.MultiCell(colValW, lineH, sanitizePDFText(item.val), "", "L", false)
+		curLeftY += leftRowHeights[i]
+	}
+
+	curRightY := boxY + 1.8
 	for i, item := range rightColItems {
-		rY := boxY + 1.5 + (float64(i) * rowH)
-		pdf.SetXY(boxX+halfWidth+3.0, rY)
-		pdf.SetFont("Arial", "", 9.0)
-		pdf.CellFormat(colLabelW, rowH-1, item.label, "", 0, "L", false, 0, "")
-		pdf.CellFormat(colSepW, rowH-1, ":", "", 0, "C", false, 0, "")
-		pdf.CellFormat(halfWidth-colLabelW-colSepW-6.0, rowH-1, item.val, "", 0, "L", false, 0, "")
+		pdf.SetXY(boxX+halfWidth+2.5, curRightY)
+		pdf.SetFont("Arial", "", 8.6)
+		pdf.CellFormat(colLabelW, lineH, item.label, "", 0, "L", false, 0, "")
+		pdf.CellFormat(colSepW, lineH, ":", "", 0, "C", false, 0, "")
+		pdf.SetFont("Arial", "", 8.8)
+		pdf.MultiCell(colValW, lineH, sanitizePDFText(item.val), "", "L", false)
+		curRightY += rightRowHeights[i]
 	}
 
 	// 6. Pernyataan Penutup
-	pdf.SetY(boxY + boxHeight + 4.5)
-	pdf.SetFont("Arial", "", 9.5)
-	pdf.MultiCell(contentWidth, 5.0, "Pasien dianjurkan untuk datang kontrol ulang sesuai dengan jadwal dan instruksi di atas dengan membawa surat ini dan dokumen pendukung yang diperlukan.", "", "L", false)
+	pdf.SetY(boxY + boxHeight + 5.0)
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetFont("Arial", "", 9.4)
+	pdf.MultiCell(contentWidth, 5.0, "Pasien dianjurkan untuk datang kontrol ulang sesuai jadwal dan instruksi di atas dengan membawa surat ini serta dokumen pendukung yang diperlukan.", "", "L", false)
 
-	pdf.SetY(pdf.GetY() + 4.5)
+	pdf.SetY(pdf.GetY() + 4.0)
 	pdf.MultiCell(contentWidth, 5.0, "Demikian surat keterangan kontrol ini kami buat dengan sebenarnya untuk dapat dipergunakan sebagaimana mestinya.", "", "L", false)
 
 	// 7. Area Tanda Tangan Dokter & TTE (Rata Kanan)
 	sigWidth := 75.0
 	sigX := endX - sigWidth
-	sigY := pdf.GetY() + 8.0
-	if sigY < 170.0 {
-		sigY = 170.0
+	hasTTE := tteSignature != nil && hasTTEQRCode(tteSignature)
+	targetSigY := 222.0
+	if hasTTE {
+		targetSigY = 216.0
 	}
-	if sigY > 215.0 {
-		sigY = 215.0
+	sigY := maxFloat64(pdf.GetY()+10.0, targetSigY)
+	maxSigY := 238.0
+	if hasTTE {
+		maxSigY = 228.0
+	}
+	if sigY > maxSigY {
+		sigY = maxSigY
 	}
 	drawOfficialDoctorSignature(pdf, sigX, sigY, sigWidth, hospitalInfo.City, data.GeneratedAt, data.Visit.Doctor, tteSignature)
 

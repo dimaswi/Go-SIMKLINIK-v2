@@ -20,25 +20,29 @@ type tteVerificationRequest struct {
 }
 
 type tteVerificationResponse struct {
-	IsValid          bool   `json:"is_valid"`
-	StatusLabel      string `json:"status_label"`
-	StatusTone       string `json:"status_tone"`
-	Title            string `json:"title"`
-	Description      string `json:"description"`
-	HospitalName     string `json:"hospital_name"`
-	HospitalLogoURL  string `json:"hospital_logo_url"`
-	HospitalWebsite  string `json:"hospital_website"`
-	DocumentLabel    string `json:"document_label"`
-	DocumentKey      string `json:"document_key"`
-	SignerName       string `json:"signer_name"`
-	SignedAtLabel    string `json:"signed_at_label"`
-	VisitNumber      string `json:"visit_number"`
-	PatientName      string `json:"patient_name"`
-	DocumentRef      string `json:"document_reference"`
-	CheckedAtLabel   string `json:"checked_at_label"`
-	VerificationHash string `json:"verification_hash"`
-	Guidance         string `json:"guidance"`
-	Reason           string `json:"reason"`
+	IsValid             bool   `json:"is_valid"`
+	StatusLabel         string `json:"status_label"`
+	StatusTone          string `json:"status_tone"`
+	Title               string `json:"title"`
+	Description         string `json:"description"`
+	HospitalName        string `json:"hospital_name"`
+	HospitalAddress     string `json:"hospital_address"`
+	HospitalContact     string `json:"hospital_contact"`
+	HospitalLogoURL     string `json:"hospital_logo_url"`
+	HospitalWebsite     string `json:"hospital_website"`
+	DocumentLabel       string `json:"document_label"`
+	DocumentKey         string `json:"document_key"`
+	SignerName          string `json:"signer_name"`
+	SignedAtLabel       string `json:"signed_at_label"`
+	VisitNumber         string `json:"visit_number"`
+	PatientName         string `json:"patient_name"`
+	MedicalRecordNumber string `json:"medical_record_number"`
+	PolyclinicName      string `json:"polyclinic_name"`
+	DocumentRef         string `json:"document_reference"`
+	CheckedAtLabel      string `json:"checked_at_label"`
+	VerificationHash    string `json:"verification_hash"`
+	Guidance            string `json:"guidance"`
+	Reason              string `json:"reason"`
 }
 
 func VerifyTTESignature(c *gin.Context) {
@@ -58,6 +62,7 @@ func VerifyTTESignature(c *gin.Context) {
 	var signatureRequest models.DocumentSignatureRequest
 	err = database.DB.
 		Preload("Visit.Patient").
+		Preload("Visit.Polyclinic").
 		Preload("RequestedToUser").
 		First(&signatureRequest, claims.RequestID).Error
 	if err != nil {
@@ -85,49 +90,60 @@ func VerifyTTESignature(c *gin.Context) {
 		signerName = tteResolveUserDisplayName(signatureRequest.RequestedToUser)
 	}
 
-	hospitalName, hospitalLogoURL, hospitalWebsite := resolveTTEVerificationBranding()
+	hospitalName, hospitalAddress, hospitalContact, hospitalLogoURL, hospitalWebsite := resolveTTEVerificationBrandingFull()
 	response = tteVerificationResponse{
-		IsValid:          true,
-		StatusLabel:      "TTE valid",
-		StatusTone:       "valid",
-		Title:            "Dokumen tervalidasi",
-		Description:      "QR ini berasal dari dokumen yang telah ditandatangani secara elektronik di SIMKLINIK.",
-		HospitalName:     hospitalName,
-		HospitalLogoURL:  hospitalLogoURL,
-		HospitalWebsite:  hospitalWebsite,
-		DocumentLabel:    firstNonEmpty(strings.TrimSpace(signatureRequest.DocumentLabel), "Dokumen TTE"),
-		DocumentKey:      strings.TrimSpace(signatureRequest.DocumentKey),
-		SignerName:       firstNonEmpty(signerName, "Signer Internal"),
-		SignedAtLabel:    formatDateTimeIndonesian(*signatureRequest.SignedAt),
-		VisitNumber:      strings.TrimSpace(signatureRequest.Visit.VisitNumber),
-		PatientName:      strings.TrimSpace(signatureRequest.Visit.Patient.FullName),
-		DocumentRef:      localizeTTEDocumentReference(signatureRequest.DocumentKey),
-		CheckedAtLabel:   formatDateTimeIndonesian(time.Now()),
-		VerificationHash: buildTTEVerificationDisplayHash(claims, signatureRequest),
-		Guidance:         "Simpan halaman ini sebagai bukti bahwa dokumen masih berstatus valid pada saat dipindai.",
+		IsValid:             true,
+		StatusLabel:         "TERVERIFIKASI SAH",
+		StatusTone:          "valid",
+		Title:               "Dokumen Medis Tervalidasi",
+		Description:         "Dokumen ini sah dan telah ditandatangani secara elektronik (TTE) di sistem rekam medis klinik.",
+		HospitalName:        hospitalName,
+		HospitalAddress:     hospitalAddress,
+		HospitalContact:     hospitalContact,
+		HospitalLogoURL:     hospitalLogoURL,
+		HospitalWebsite:     hospitalWebsite,
+		DocumentLabel:       firstNonEmpty(strings.TrimSpace(signatureRequest.DocumentLabel), "Dokumen TTE"),
+		DocumentKey:         strings.TrimSpace(signatureRequest.DocumentKey),
+		SignerName:          firstNonEmpty(signerName, "Signer Internal"),
+		SignedAtLabel:       formatDateTimeIndonesian(*signatureRequest.SignedAt),
+		VisitNumber:         strings.TrimSpace(signatureRequest.Visit.VisitNumber),
+		PatientName:         strings.TrimSpace(signatureRequest.Visit.Patient.FullName),
+		MedicalRecordNumber: strings.TrimSpace(signatureRequest.Visit.Patient.MedicalRecordNumber),
+		PolyclinicName:      strings.TrimSpace(signatureRequest.Visit.Polyclinic.Name),
+		DocumentRef:         localizeTTEDocumentReference(signatureRequest.DocumentKey),
+		CheckedAtLabel:      formatDateTimeIndonesian(time.Now()),
+		VerificationHash:    buildTTEVerificationDisplayHash(claims, signatureRequest),
+		Guidance:            "Cocokkan Nama Pasien, No. Kunjungan, Nama Penandatangan, dan Waktu TTE dengan lembar dokumen cetak yang Anda pegang.",
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": response})
 }
 
 func buildInvalidTTEVerificationResponse(reason string) tteVerificationResponse {
-	hospitalName, hospitalLogoURL, hospitalWebsite := resolveTTEVerificationBranding()
+	hospitalName, hospitalAddress, hospitalContact, hospitalLogoURL, hospitalWebsite := resolveTTEVerificationBrandingFull()
 	return tteVerificationResponse{
 		IsValid:         false,
-		StatusLabel:     "TTE tidak valid",
+		StatusLabel:     "TIDAK VALID",
 		StatusTone:      "invalid",
-		Title:           "Validasi dokumen gagal",
-		Description:     "QR ini tidak bisa diverifikasi sebagai tanda tangan elektronik aktif di SIMKLINIK.",
+		Title:           "Validasi Dokumen Gagal",
+		Description:     "Kode QR ini tidak dapat diverifikasi sebagai tanda tangan elektronik aktif.",
 		HospitalName:    hospitalName,
+		HospitalAddress: hospitalAddress,
+		HospitalContact: hospitalContact,
 		HospitalLogoURL: hospitalLogoURL,
 		HospitalWebsite: hospitalWebsite,
 		CheckedAtLabel:  formatDateTimeIndonesian(time.Now()),
-		Guidance:        "Pastikan QR dipindai dari dokumen cetak terbaru dan dokumen belum direvoke atau diubah statusnya.",
-		Reason:          firstNonEmpty(strings.TrimSpace(reason), "Token validasi tidak dikenal."),
+		Guidance:        "Pastikan kode QR dipindai dari dokumen cetak terbaru dan dokumen belum dibatalkan.",
+		Reason:          firstNonEmpty(strings.TrimSpace(reason), "Token validasi tidak dikenali."),
 	}
 }
 
 func resolveTTEVerificationBranding() (string, string, string) {
+	name, _, _, logo, web := resolveTTEVerificationBrandingFull()
+	return name, logo, web
+}
+
+func resolveTTEVerificationBrandingFull() (string, string, string, string, string) {
 	var settings []models.Setting
 	database.DB.Find(&settings)
 
@@ -136,7 +152,28 @@ func resolveTTEVerificationBranding() (string, string, string) {
 		settingsMap[setting.Key] = strings.TrimSpace(setting.Value)
 	}
 
-	return firstNonEmpty(settingsMap["hospital_name"], settingsMap["app_name"], "SIMKLINIK"), strings.TrimSpace(firstNonEmpty(settingsMap["app_print_logo"], settingsMap["app_logo"])), normalizeTTEVerificationExternalURL(settingsMap["hospital_website"])
+	name := firstNonEmpty(settingsMap["hospital_name"], settingsMap["app_name"], "SIMKLINIK")
+	addrParts := make([]string, 0, 2)
+	if a := strings.TrimSpace(settingsMap["hospital_address"]); a != "" {
+		addrParts = append(addrParts, a)
+	}
+	if c := strings.TrimSpace(settingsMap["hospital_city"]); c != "" {
+		addrParts = append(addrParts, c)
+	}
+	address := strings.Join(addrParts, ", ")
+
+	contactParts := make([]string, 0, 2)
+	if p := strings.TrimSpace(settingsMap["hospital_phone"]); p != "" {
+		contactParts = append(contactParts, "Telp: "+p)
+	}
+	if e := strings.TrimSpace(settingsMap["hospital_email"]); e != "" {
+		contactParts = append(contactParts, e)
+	}
+	contact := strings.Join(contactParts, " | ")
+
+	logo := strings.TrimSpace(firstNonEmpty(settingsMap["app_print_logo"], settingsMap["app_logo"]))
+	website := normalizeTTEVerificationExternalURL(settingsMap["hospital_website"])
+	return name, address, contact, logo, website
 }
 
 func normalizeTTEVerificationExternalURL(rawValue string) string {
@@ -208,7 +245,9 @@ func localizeTTEDocumentReference(documentKey string) string {
 	case "radiology_result_staff":
 		return "Dokumen hasil radiologi - TTD petugas"
 	case "informed_consent":
-		return "Dokumen persetujuan tindakan"
+		return "Dokumen persetujuan tindakan - TTD dokter"
+	case "informed_consent_nurse":
+		return "Dokumen persetujuan tindakan - TTD perawat"
 	case "odontogram":
 		return "Dokumen odontogram"
 	case "resume_medis":

@@ -57,7 +57,7 @@ export function SheetWorkspaceTable({
         : isInitialAssessmentSheetKey(sheet.key)
         ? buildSheetEntryGroups(recordsBySection as Record<MedicalRecordSectionType, any[]>, sheet.sections, initialAssessmentFilter).length
         : sheet.key === 'informed-consent'
-        ? collectVisitInformedConsents(relatedRecords).length
+        ? collectVisitInformedConsents(Object.values(recordsBySection).flat() as any[]).length
         : relatedRecords.length;
 
       const relatedDataText = isSuratSheet

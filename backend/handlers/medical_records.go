@@ -412,16 +412,19 @@ func preloadMedicalRecordRelations(query *gorm.DB) *gorm.DB {
 		Preload("Patient").
 		Preload("Doctor").
 		Preload("Polyclinic").
+		Preload("PrescriptionRoom").
 		Preload("Visit").
 		Preload("Diagnoses").
 		Preload("Diagnoses.ICD10").
 		Preload("Prescriptions").
 		Preload("Prescriptions.Medicine").
 		Preload("Prescriptions.Medicine.Unit").
+		Preload("Prescriptions.Medicine.RoomStocks.Room").
 		Preload("PrescriptionCompounds").
 		Preload("PrescriptionCompounds.Items").
 		Preload("PrescriptionCompounds.Items.Medicine").
 		Preload("PrescriptionCompounds.Items.Medicine.Unit").
+		Preload("PrescriptionCompounds.Items.Medicine.RoomStocks.Room").
 		Preload("LaboratoryOrderItems").
 		Preload("LaboratoryOrderItems.MedicalService").
 		Preload("LaboratoryOrderItems.MedicalService.Category").
@@ -667,11 +670,11 @@ func CreateMedicalRecord(c *gin.Context) {
 	}
 
 	record := models.MedicalRecord{
-		VisitID:        visit.ID,
-		PatientID:      visit.PatientID,
-		DoctorID:       visit.DoctorID,
-		PolyclinicID:   visit.PolyclinicID,
-		SectionType:    sectionType,
+		VisitID:       visit.ID,
+		PatientID:     visit.PatientID,
+		DoctorID:      visit.DoctorID,
+		PolyclinicID:  visit.PolyclinicID,
+		SectionType:   sectionType,
 		EntryGroupKey: strings.TrimSpace(req.EntryGroupKey),
 		SheetKey:      sheetKey,
 		RecordDate:    time.Now(),
@@ -771,6 +774,7 @@ type UpdateMedicalRecordRequest struct {
 	PhysicalExamination         string                         `json:"physical_examination"`
 	SupportingExamination       string                         `json:"supporting_examination"`
 	PrescriptionFulfillmentMode string                         `json:"prescription_fulfillment_mode"`
+	PrescriptionRoomID          *uint                          `json:"prescription_room_id"`
 	PhysicalExamImages          []PhysicalExamImagePickRequest `json:"physical_exam_images"`
 	WorkingDiagnosis            string                         `json:"working_diagnosis"`
 	DifferentialDiagnosis       string                         `json:"differential_diagnosis"`
@@ -838,6 +842,24 @@ func UpdateMedicalRecord(c *gin.Context) {
 
 	prescriptionFulfillmentMode := normalizePrescriptionFulfillmentMode(req.PrescriptionFulfillmentMode)
 
+	var prescriptionRoomID interface{} = nil
+	if prescriptionFulfillmentMode == prescriptionFulfillmentModeInternal && req.PrescriptionRoomID != nil && *req.PrescriptionRoomID != 0 {
+		var targetRoom models.Polyclinic
+		if err := database.DB.First(&targetRoom, *req.PrescriptionRoomID).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ruangan apotek tujuan tidak ditemukan"})
+			return
+		}
+		if !targetRoom.IsActive {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ruangan apotek tujuan sedang tidak aktif"})
+			return
+		}
+		if strings.ToLower(strings.TrimSpace(targetRoom.RoomType)) != "apotek" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Permintaan obat resep hanya dapat ditujukan ke ruangan berjenis Apotek, bukan Depo atau ruangan lain"})
+			return
+		}
+		prescriptionRoomID = targetRoom.ID
+	}
+
 	updates := map[string]interface{}{
 		"chief_complaint":               req.ChiefComplaint,
 		"history_of_present_illness":    req.HistoryOfPresentIllness,
@@ -865,6 +887,7 @@ func UpdateMedicalRecord(c *gin.Context) {
 		"physical_examination":          req.PhysicalExamination,
 		"supporting_examination":        req.SupportingExamination,
 		"prescription_fulfillment_mode": prescriptionFulfillmentMode,
+		"prescription_room_id":          prescriptionRoomID,
 		"working_diagnosis":             req.WorkingDiagnosis,
 		"differential_diagnosis":        req.DifferentialDiagnosis,
 		"assessment":                    req.Assessment,
@@ -1962,7 +1985,7 @@ func AddPrescription(c *gin.Context) {
 		return
 	}
 
-	database.DB.Preload("Medicine").Preload("Medicine.Unit").First(&prescription, prescription.ID)
+	database.DB.Preload("Medicine").Preload("Medicine.Unit").Preload("Medicine.RoomStocks.Room").First(&prescription, prescription.ID)
 
 	c.JSON(http.StatusCreated, gin.H{"data": prescription, "message": "Resep berhasil ditambahkan"})
 }
@@ -2187,20 +2210,12 @@ func saveMedicalAction(record models.MedicalRecord, action *models.MedicalAction
 		// Non-fatal: do not rollback if auto-generation fails
 	}
 
-	informedConsent, removedInformedConsentID, err := syncMedicalActionInformedConsentTx(tx, record, action, service, targets)
-	if err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-
 	if err := tx.Commit().Error; err != nil {
 		return nil, err
 	}
 
 	return &medicalActionSaveResult{
-		OdontogramEntry:          syncedOdontogramEntry,
-		InformedConsent:          informedConsent,
-		RemovedInformedConsentID: removedInformedConsentID,
+		OdontogramEntry: syncedOdontogramEntry,
 	}, nil
 }
 
@@ -2399,21 +2414,7 @@ func DeleteMedicalAction(c *gin.Context) {
 	}
 
 	var removedInformedConsentID uint
-	var informedConsent models.InformedConsent
-	if err := tx.Where("medical_action_id = ?", action.ID).First(&informedConsent).Error; err != nil {
-		if err != gorm.ErrRecordNotFound {
-			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-	} else {
-		removedInformedConsentID = informedConsent.ID
-		if err := tx.Delete(&informedConsent).Error; err != nil {
-			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-	}
+	_ = tx.Model(&models.InformedConsent{}).Where("medical_action_id = ?", action.ID).Update("medical_action_id", nil).Error
 
 	if err := tx.Where("medical_action_id = ?", action.ID).Delete(&models.MedicalActionTarget{}).Error; err != nil {
 		tx.Rollback()

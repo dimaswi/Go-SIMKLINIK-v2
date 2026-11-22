@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { PrescriptionCompound, PrescriptionCompoundItem } from '@/lib/api';
+import { getMedicineRoomStock } from '../utils';
 
 export interface CompoundDeductionItem {
   compound_item_id: number;
@@ -33,6 +34,8 @@ interface CompoundDeductionModalProps {
   onOpenChange: (open: boolean) => void;
   compounds: PrescriptionCompound[];
   patientName?: string;
+  roomId?: number | null;
+  roomName?: string;
   isDispenseStep?: boolean;
   onConfirm: (deductions: CompoundDeductionItem[]) => void;
   onSaveOnly?: (deductions: CompoundDeductionItem[]) => Promise<void>;
@@ -44,6 +47,8 @@ export function CompoundDeductionModal({
   onOpenChange,
   compounds,
   patientName,
+  roomId,
+  roomName,
   isDispenseStep = true,
   onConfirm,
   onSaveOnly,
@@ -114,7 +119,7 @@ export function CompoundDeductionModal({
   compounds.forEach((comp) => {
     (comp.items || []).forEach((item: PrescriptionCompoundItem) => {
       const enteredQty = deductions[item.id] ?? item.quantity ?? 1;
-      const currentStock = item.medicine?.current_stock ?? 0;
+      const currentStock = getMedicineRoomStock(item.medicine, roomId);
       if (enteredQty > currentStock) {
         hasShortage = true;
       }
@@ -197,7 +202,7 @@ export function CompoundDeductionModal({
                     <thead>
                       <tr className="border-b border-border bg-muted/10 text-[11px] font-semibold text-muted-foreground text-left">
                         <th className="py-2 px-3">Bahan Obat</th>
-                        <th className="py-2 px-3 text-center">Stok Apotek</th>
+                        <th className="py-2 px-3 text-center">Stok {roomName || 'Apotek'}</th>
                         <th className="py-2 px-3 text-center">Hitungan Resep</th>
                         <th className="py-2 px-3 text-center w-48">Potong Stok Riil (Farmasi)</th>
                         <th className="py-2 px-3 text-center">Status</th>
@@ -206,7 +211,7 @@ export function CompoundDeductionModal({
                     <tbody className="divide-y divide-border/60">
                       {(compound.items || []).map((item: PrescriptionCompoundItem) => {
                         const medicine = item.medicine;
-                        const currentStock = medicine?.current_stock ?? 0;
+                        const currentStock = getMedicineRoomStock(medicine, roomId);
                         const enteredQty = deductions[item.id] ?? item.quantity ?? 1;
                         const isShortage = enteredQty > currentStock;
                         const isZero = enteredQty === 0;

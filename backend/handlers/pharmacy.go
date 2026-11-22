@@ -154,14 +154,17 @@ func preloadPharmacyPrescriptionOrderRelations(query *gorm.DB) *gorm.DB {
 		Preload("Patient").
 		Preload("Doctor").
 		Preload("Polyclinic").
+		Preload("PrescriptionRoom").
 		Preload("Visit").
 		Preload("Prescriptions").
 		Preload("Prescriptions.Medicine").
 		Preload("Prescriptions.Medicine.Unit").
+		Preload("Prescriptions.Medicine.RoomStocks.Room").
 		Preload("PrescriptionCompounds").
 		Preload("PrescriptionCompounds.Items").
 		Preload("PrescriptionCompounds.Items.Medicine").
 		Preload("PrescriptionCompounds.Items.Medicine.Unit").
+		Preload("PrescriptionCompounds.Items.Medicine.RoomStocks.Room").
 		Preload("PrescriptionProcessor")
 }
 
@@ -202,6 +205,10 @@ func GetPharmacyPrescriptionOrders(c *gin.Context) {
 
 	if polyclinicID := c.Query("polyclinic_id"); polyclinicID != "" {
 		query = query.Where("medical_records.polyclinic_id = ?", polyclinicID)
+	}
+
+	if prescriptionRoomID := c.Query("prescription_room_id"); prescriptionRoomID != "" {
+		query = query.Where("medical_records.prescription_room_id = ?", prescriptionRoomID)
 	}
 
 	if date := strings.TrimSpace(c.Query("date")); date != "" {

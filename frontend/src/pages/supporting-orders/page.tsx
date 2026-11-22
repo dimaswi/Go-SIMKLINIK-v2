@@ -11,6 +11,7 @@ import {
   Loader2,
   RefreshCw,
   ScanLine,
+  Volume2,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,7 @@ import {
   type MedicalRecord,
 } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
+import { announceQueueCall } from '@/lib/queue-caller';
 import {
   getSupportingOrderWorkflowBadgeClassName,
   getSupportingOrderWorkflowLabel,
@@ -94,6 +96,7 @@ export default function SupportingOrdersPage({
   const [dateFilter, setDateFilter] = useState(getLocalISODate());
   const [preparingRecordId, setPreparingRecordId] = useState<number | null>(null);
   const [downloadingRecordId, setDownloadingRecordId] = useState<number | null>(null);
+  const [callingRecordId, setCallingRecordId] = useState<number | null>(null);
 
   const loadOrders = useCallback(async () => {
     const params = new URLSearchParams({ per_page: '200' });
@@ -213,6 +216,18 @@ export default function SupportingOrdersPage({
   const columns = useMemo<ColumnDef<MedicalRecord>[]>(() => {
     return [
       {
+        id: 'queue_number',
+        header: 'Antrian',
+        cell: ({ row }) => {
+          const q = row.original.visit?.queue_number;
+          return (
+            <Badge variant="outline" className="rounded-none font-mono text-xs font-semibold shadow-none">
+              {q ? String(q).padStart(3, '0') : '-'}
+            </Badge>
+          );
+        },
+      },
+      {
         id: 'ordered_at',
         header: 'Tanggal Order',
         cell: ({ row }) => (
@@ -274,9 +289,50 @@ export default function SupportingOrdersPage({
           const status = getSupportingWorkflowStatus(record, unitType);
           const isPreparing = preparingRecordId === record.id;
           const isDownloading = downloadingRecordId === record.id;
+          const isCalling = callingRecordId === record.id;
 
           return (
             <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+              {record.visit?.queue_number ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-2 text-xs rounded-none shadow-none shrink-0"
+                  title={`Panggil pasien ke ${unit.title}`}
+                  disabled={isCalling}
+                  onClick={async () => {
+                    const numLabel = String(record.visit!.queue_number).padStart(3, '0');
+                    setCallingRecordId(record.id);
+                    try {
+                      const saved = await announceQueueCall({
+                        queueNumber: record.visit!.queue_number,
+                        patientName: record.visit?.patient?.full_name,
+                        unitType: unitType === 'laboratory' ? 'laboratorium' : 'radiologi',
+                        destinationName: unit.title,
+                      });
+                      if (saved) {
+                        toast({
+                          variant: 'success',
+                          title: `Memanggil No. ${numLabel}`,
+                          description: `Panggilan berhasil dikirim ke display tujuan ${unit.title}.`,
+                        });
+                      } else {
+                        toast({
+                          variant: 'destructive',
+                          title: `Gagal memanggil No. ${numLabel}`,
+                          description: 'Tidak dapat mengirim panggilan ke server display.',
+                        });
+                      }
+                    } finally {
+                      setCallingRecordId(null);
+                    }
+                  }}
+                >
+                  {isCalling ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Volume2 className="mr-1 h-3.5 w-3.5" />}
+                  {isCalling ? 'Memanggil...' : 'Panggil'}
+                </Button>
+              ) : null}
               {status === 'ordered' && canManage ? (
                 <Button
                   type="button"
@@ -339,7 +395,7 @@ export default function SupportingOrdersPage({
         },
       },
     ];
-  }, [canManage, downloadingRecordId, navigate, preparingRecordId, unit.label, unit.rootPath, unitType]);
+  }, [callingRecordId, canManage, downloadingRecordId, navigate, preparingRecordId, toast, unit.label, unit.rootPath, unit.title, unitType]);
 
   if (loading) {
     return (

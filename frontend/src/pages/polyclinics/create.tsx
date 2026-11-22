@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useBpjsAntreanEnabled } from "@/hooks/use-bpjs-antrean-enabled";
 import { polyclinicsApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -19,6 +20,7 @@ export default function PolyclinicCreate() {
   const { bpjsAntreanEnabled } = useBpjsAntreanEnabled();
   const [formData, setFormData] = useState({
     name: "",
+    room_type: "poliklinik",
     description: "",
     admin_fee: 0,
     is_active: true,
@@ -29,7 +31,7 @@ export default function PolyclinicCreate() {
   });
 
   useEffect(() => {
-    setPageTitle("Tambah Poliklinik");
+    setPageTitle("Tambah Ruangan");
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -53,30 +55,49 @@ export default function PolyclinicCreate() {
   return (
     <form id="polyclinic-create-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <MasterDataPageShell
-        title="Tambah Poliklinik"
-        subtitle="Atur unit poliklinik yang dipakai pada pendaftaran, EMR, dan antrean."
+        title="Tambah Ruangan"
+        subtitle="Atur ruangan / unit klinik (Poliklinik, Depo Farmasi, Apotek, Radiologi, Lab, atau ruang lain)."
         onBack={() => navigate('/polyclinics')}
         actions={
           <Button type="submit" form="polyclinic-create-form" disabled={loading} size="sm" className="h-8 px-4 text-xs rounded-none shadow-none">
             {loading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-            Simpan Poliklinik
+            Simpan Ruangan
           </Button>
         }
       >
         <div className="space-y-4">
           <div className="space-y-2.5">
             <div className="border-b border-border/60 pb-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Detail Poliklinik</span>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Detail Ruangan</span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               <div className="space-y-1">
-                <Label htmlFor="name" className="text-xs font-medium">Nama Poliklinik *</Label>
+                <Label htmlFor="name" className="text-xs font-medium">Nama Ruangan *</Label>
                 <Input
                   id="name"
                   required
-                  placeholder="Contoh: Poli Umum"
+                  placeholder="Contoh: Poli Umum / Depo IGD / Radiologi"
                   value={formData.name}
                   onChange={e => setFormData({ ...formData, name: e.target.value })}
+                  className="h-9 text-xs rounded-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">Jenis Ruangan *</Label>
+                <SearchableSelect
+                  options={[
+                    { value: "poliklinik", label: "Poliklinik" },
+                    { value: "depo", label: "Depo Farmasi" },
+                    { value: "apotek", label: "Ruangan Apotek" },
+                    { value: "radiologi", label: "Radiologi" },
+                    { value: "laboratorium", label: "Laboratorium" },
+                    { value: "lainnya", label: "Ruang Lainnya" },
+                  ]}
+                  value={formData.room_type}
+                  onValueChange={v => setFormData({ ...formData, room_type: v || "poliklinik" })}
+                  placeholder="Pilih jenis ruangan..."
+                  square
                   className="h-9 text-xs rounded-none"
                 />
               </div>

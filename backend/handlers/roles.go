@@ -78,6 +78,17 @@ func UpdateRole(c *gin.Context) {
 		return
 	}
 
+	var existing models.Role
+	if err := database.DB.Unscoped().Where("LOWER(name) = LOWER(?) AND id <> ?", req.Name, role.ID).First(&existing).Error; err == nil {
+		if existing.DeletedAt.Valid {
+			database.DB.Model(&existing).Association("Permissions").Clear()
+			database.DB.Unscoped().Delete(&existing)
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Nama role sudah digunakan oleh role lain"})
+			return
+		}
+	}
+
 	role.Name = req.Name
 	role.Description = req.Description
 
@@ -86,9 +97,11 @@ func UpdateRole(c *gin.Context) {
 		return
 	}
 
-	if len(req.PermissionIDs) > 0 {
+	if req.PermissionIDs != nil {
 		var permissions []models.Permission
-		database.DB.Find(&permissions, req.PermissionIDs)
+		if len(req.PermissionIDs) > 0 {
+			database.DB.Find(&permissions, req.PermissionIDs)
+		}
 		database.DB.Model(&role).Association("Permissions").Replace(permissions)
 	}
 

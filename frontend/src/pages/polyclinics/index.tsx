@@ -8,6 +8,7 @@ import { polyclinicsApi, type Polyclinic } from '@/lib/api';
 import { usePermission } from '@/hooks/usePermission';
 import { useToast } from '@/hooks/use-toast';
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { setPageTitle } from '@/lib/page-title';
 import { Building2, Loader2, Plus, RefreshCw } from 'lucide-react';
 
@@ -19,6 +20,7 @@ export default function PolyclinicsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
+  const [roomTypeFilter, setRoomTypeFilter] = useState('all');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<number | null>(null);
 
@@ -34,7 +36,7 @@ export default function PolyclinicsPage() {
   }, [toast]);
 
   useEffect(() => {
-    setPageTitle('Poliklinik');
+    setPageTitle('Master Ruangan');
     loadData();
   }, [loadData]);
 
@@ -68,10 +70,14 @@ export default function PolyclinicsPage() {
   }), [hasPermission, navigate]);
 
   const filteredData = useMemo(() => {
-    if (!search.trim()) return data;
-    const q = search.toLowerCase();
-    return data.filter((p) => p.name?.toLowerCase().includes(q) || p.code?.toLowerCase().includes(q));
-  }, [data, search]);
+    return data.filter((p) => {
+      const matchesRoomType = roomTypeFilter === 'all' || (p.room_type || 'poliklinik') === roomTypeFilter;
+      if (!matchesRoomType) return false;
+      if (!search.trim()) return true;
+      const q = search.toLowerCase();
+      return p.name?.toLowerCase().includes(q) || p.code?.toLowerCase().includes(q);
+    });
+  }, [data, search, roomTypeFilter]);
 
   if (loading) {
     return (
@@ -91,7 +97,7 @@ export default function PolyclinicsPage() {
             </div>
             <div>
               <h1 className="text-base font-semibold tracking-tight text-foreground">
-                Poliklinik
+                Master Ruangan
               </h1>
             </div>
           </div>
@@ -100,9 +106,28 @@ export default function PolyclinicsPage() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Cari nama atau kode poli..."
+              placeholder="Cari nama atau kode ruangan..."
               className="h-9 w-48 sm:w-56 rounded-none text-xs focus:ring-inset"
             />
+
+            <div className="w-44">
+              <SearchableSelect
+                options={[
+                  { value: 'all', label: 'Semua Jenis Ruangan' },
+                  { value: 'poliklinik', label: 'Poliklinik' },
+                  { value: 'depo', label: 'Depo Farmasi' },
+                  { value: 'apotek', label: 'Ruangan Apotek' },
+                  { value: 'radiologi', label: 'Radiologi' },
+                  { value: 'laboratorium', label: 'Laboratorium' },
+                  { value: 'lainnya', label: 'Ruang Lainnya' },
+                ]}
+                value={roomTypeFilter}
+                onValueChange={(v) => setRoomTypeFilter(v || 'all')}
+                placeholder="Jenis ruangan..."
+                square
+                className="h-9 text-xs rounded-none"
+              />
+            </div>
 
             <Button
               type="button"
@@ -122,7 +147,7 @@ export default function PolyclinicsPage() {
                 onClick={() => navigate('/polyclinics/create')}
               >
                 <Plus className="mr-1.5 h-3.5 w-3.5" />
-                Tambah Poliklinik
+                Tambah Ruangan
               </Button>
             ) : null}
           </div>

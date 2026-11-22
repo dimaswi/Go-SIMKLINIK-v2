@@ -71,10 +71,14 @@ func main() {
 		api.POST("/auth/login", handlers.Login)
 		api.GET("/settings", handlers.GetSettings) // Public access to settings
 		api.POST("/tte/verify", handlers.VerifyTTESignature)
+		api.GET("/public/informed-consents/sign-session", handlers.GetPublicInformedConsentSignSession)
+		api.POST("/public/informed-consents/sign", handlers.SubmitPublicInformedConsentSignature)
 		api.POST("/public/registration-queue", handlers.CreateRegistrationQueue)
 		api.GET("/public/registration-queue/today", handlers.GetRegistrationQueues)
 		api.GET("/public/polyclinics", handlers.GetPolyclinics)
 		api.GET("/public/doctors", handlers.GetDoctors)
+		api.GET("/public/queue/display-board", handlers.GetQueueDisplayBoard)
+		api.GET("/public/queue/latest-call", handlers.GetLatestQueueCall)
 
 		registerBPJSWebhookRoutes(api, "/bpjs/webhook")
 
@@ -83,9 +87,11 @@ func main() {
 		protected.Use(middleware.AuthMiddleware())
 		{
 			protected.GET("/auth/profile", handlers.GetProfile)
-			protected.GET("/tte/signers", middleware.RequirePermission("document_signatures.request"), handlers.GetTTESigners)
+			protected.GET("/tte/signers", middleware.RequireAnyPermission("document_signatures.request", "document_signatures.approve"), handlers.GetTTESigners)
+			protected.GET("/tte/employees", middleware.RequireAnyPermission("document_signatures.request", "document_signatures.approve"), handlers.GetTTEEmployees)
 			protected.GET("/tte/visits/:visitId/documents", middleware.RequireAnyPermission("document_signatures.view", "document_signatures.request", "document_signatures.approve"), handlers.GetVisitTTEDocuments)
-			protected.POST("/tte/requests", middleware.RequirePermission("document_signatures.request"), handlers.UpsertTTEDocumentRequest)
+			protected.POST("/tte/sign", middleware.RequireAnyPermission("document_signatures.request", "document_signatures.approve"), handlers.SignTTEDocument)
+			protected.POST("/tte/requests", middleware.RequireAnyPermission("document_signatures.request", "document_signatures.approve"), handlers.UpsertTTEDocumentRequest)
 			protected.GET("/tte/requests/inbox", middleware.RequirePermission("document_signatures.approve"), handlers.GetIncomingTTEDocumentRequests)
 			protected.POST("/tte/requests/:id/approve", middleware.RequirePermission("document_signatures.approve"), handlers.ApproveTTEDocumentRequest)
 			protected.POST("/tte/requests/:id/reject", middleware.RequirePermission("document_signatures.approve"), handlers.RejectTTEDocumentRequest)
@@ -226,14 +232,14 @@ func main() {
 			protected.DELETE("/service-categories/:id", middleware.RequirePermission("medical_services.delete"), handlers.DeleteServiceCategory)
 
 			// Payment Methods
-			protected.GET("/payment-methods", middleware.RequirePermission("settings.view"), handlers.GetPaymentMethods)
+			protected.GET("/payment-methods", middleware.RequireAnyPermission("payment_methods.view", "settings.view", "purchase_orders.pay", "invoices.pay", "visits.create"), handlers.GetPaymentMethods)
 			protected.GET("/payment-methods/:id", middleware.RequirePermission("settings.view"), handlers.GetPaymentMethod)
 			protected.POST("/payment-methods", middleware.RequirePermission("settings.update"), handlers.CreatePaymentMethod)
 			protected.PUT("/payment-methods/:id", middleware.RequirePermission("settings.update"), handlers.UpdatePaymentMethod)
 			protected.DELETE("/payment-methods/:id", middleware.RequirePermission("settings.update"), handlers.DeletePaymentMethod)
 
 			// Suppliers
-			protected.GET("/suppliers", middleware.RequirePermission("suppliers.view"), handlers.GetSuppliers)
+			protected.GET("/suppliers", middleware.RequireAnyPermission("suppliers.view", "purchase_orders.view", "purchase_orders.create", "purchase_orders.update"), handlers.GetSuppliers)
 			protected.GET("/suppliers/:id", middleware.RequirePermission("suppliers.view"), handlers.GetSupplier)
 			protected.POST("/suppliers", middleware.RequirePermission("suppliers.create"), handlers.CreateSupplier)
 			protected.PUT("/suppliers/:id", middleware.RequirePermission("suppliers.update"), handlers.UpdateSupplier)
@@ -257,9 +263,25 @@ func main() {
 			protected.PUT("/purchase-orders/:id", middleware.RequirePermission("purchase_orders.update"), handlers.UpdatePurchaseOrder)
 			protected.DELETE("/purchase-orders/:id", middleware.RequirePermission("purchase_orders.delete"), handlers.DeletePurchaseOrder)
 			protected.POST("/purchase-orders/:id/receive", middleware.RequirePermission("purchase_orders.receive"), handlers.ReceivePurchaseOrder)
+			protected.POST("/purchase-orders/:id/payments", middleware.RequirePermission("purchase_orders.pay"), handlers.RecordPurchaseOrderPayment)
 
 			// Stock Movements
 			protected.GET("/stock-movements", middleware.RequirePermission("stock_movements.view"), handlers.GetStockMovements)
+
+			// Medicine Rooms (Depo & Ruangan Obat)
+			protected.GET("/medicine-rooms", middleware.RequireAnyPermission("medicine_rooms.view", "purchase_orders.view", "stock_requests.view", "medicines.view"), handlers.GetMedicineRooms)
+			protected.GET("/medicine-rooms/:id", middleware.RequirePermission("medicine_rooms.view"), handlers.GetMedicineRoom)
+			protected.POST("/medicine-rooms", middleware.RequirePermission("medicine_rooms.create"), handlers.CreateMedicineRoom)
+			protected.PUT("/medicine-rooms/:id", middleware.RequirePermission("medicine_rooms.update"), handlers.UpdateMedicineRoom)
+			protected.DELETE("/medicine-rooms/:id", middleware.RequirePermission("medicine_rooms.delete"), handlers.DeleteMedicineRoom)
+
+			// Stock Requests (Permintaan Stok ke Depo)
+			protected.GET("/stock-requests", middleware.RequirePermission("stock_requests.view"), handlers.GetStockRequests)
+			protected.GET("/stock-requests/:id", middleware.RequirePermission("stock_requests.view"), handlers.GetStockRequest)
+			protected.POST("/stock-requests", middleware.RequirePermission("stock_requests.create"), handlers.CreateStockRequest)
+			protected.POST("/stock-requests/:id/approve", middleware.RequirePermission("stock_requests.approve"), handlers.ApproveStockRequest)
+			protected.POST("/stock-requests/:id/reject", middleware.RequirePermission("stock_requests.approve"), handlers.RejectStockRequest)
+			protected.POST("/stock-requests/:id/cancel", middleware.RequirePermission("stock_requests.delete"), handlers.CancelStockRequest)
 
 			// ========================
 			// Phase 2: Front Office
@@ -283,11 +305,11 @@ func main() {
 			protected.DELETE("/registration-queue/:id", middleware.RequireAnyPermission("visits.create", "queue.manage"), handlers.DeleteRegistrationQueue)
 
 			// Visits / Pendaftaran
-			protected.GET("/visits", middleware.RequirePermission("visits.view"), handlers.GetVisits)
+			protected.GET("/visits", middleware.RequireAnyPermission("visits.view", "medical_records.view", "invoices.view"), handlers.GetVisits)
 			protected.GET("/visits/control-schedules", middleware.RequirePermission("visits.view"), handlers.GetControlSchedules)
-			protected.GET("/visits/today", middleware.RequirePermission("visits.view"), handlers.GetTodayVisits)
+			protected.GET("/visits/today", middleware.RequireAnyPermission("visits.view", "medical_records.view"), handlers.GetTodayVisits)
 			protected.GET("/visits/active-patient/:patientId", middleware.RequireAnyPermission("visits.view", "visits.create"), handlers.GetActiveVisitByPatient)
-			protected.GET("/visits/:id", middleware.RequirePermission("visits.view"), handlers.GetVisit)
+			protected.GET("/visits/:id", middleware.RequireAnyPermission("visits.view", "medical_records.view", "invoices.view"), handlers.GetVisit)
 			protected.POST("/visits", middleware.RequirePermission("visits.create"), handlers.CreateVisit)
 			protected.PUT("/visits/:id", middleware.RequirePermission("visits.update"), handlers.UpdateVisit)
 			protected.DELETE("/visits/:id", middleware.RequirePermission("visits.delete"), handlers.DeleteVisit)
@@ -297,6 +319,9 @@ func main() {
 
 			// Queue
 			protected.GET("/queue/polyclinics", middleware.RequireAnyPermission("queue.view", "queue.manage", "visits.view", "visits.create"), handlers.GetQueuePolyclinicOptions)
+			protected.GET("/queue/display-board", handlers.GetQueueDisplayBoard)
+			protected.GET("/queue/latest-call", handlers.GetLatestQueueCall)
+			protected.POST("/queue/call", handlers.CreateQueueCall)
 			protected.GET("/queue/:polyclinicId", middleware.RequirePermission("queue.view"), handlers.GetQueueByPolyclinic)
 			protected.POST("/queue/:polyclinicId/call-next", middleware.RequirePermission("queue.manage"), handlers.CallNextQueue)
 
@@ -320,9 +345,13 @@ func main() {
 			protected.POST("/medical-records/visit/:visitId/unfinalize", middleware.RequirePermission("medical_records.finalize"), handlers.CancelFinalizeMedicalRecordVisit)
 			protected.GET("/odontogram-entries/visit/:visitId", middleware.RequirePermission("medical_records.view"), handlers.GetOdontogramEntriesByVisit)
 			protected.GET("/odontogram-entries/:id/print", middleware.RequirePermission("medical_records.view"), handlers.PrintOdontogramEntry)
+			protected.POST("/informed-consents", middleware.RequirePermission("medical_records.create"), handlers.CreateInformedConsent)
+			protected.GET("/informed-consents/:id", middleware.RequirePermission("medical_records.view"), handlers.GetInformedConsent)
+			protected.GET("/informed-consents/:id/sign-qr", middleware.RequirePermission("medical_records.view"), handlers.GetInformedConsentSignQR)
 			protected.GET("/informed-consents/:id/print", middleware.RequirePermission("medical_records.view"), handlers.PrintInformedConsent)
 			protected.GET("/medical-records/:id", middleware.RequirePermission("medical_records.view"), handlers.GetMedicalRecord)
 			protected.PUT("/informed-consents/:id", middleware.RequirePermission("medical_records.update"), handlers.UpdateInformedConsent)
+			protected.DELETE("/informed-consents/:id", middleware.RequirePermission("medical_records.update"), handlers.DeleteInformedConsent)
 			protected.POST("/medical-records/initial-assessment", middleware.RequirePermission("medical_records.create"), handlers.CreateInitialAssessmentEntry)
 			protected.POST("/medical-records", middleware.RequirePermission("medical_records.create"), handlers.CreateMedicalRecord)
 			protected.POST("/odontogram-entries", middleware.RequirePermission("medical_records.create"), handlers.CreateOdontogramEntry)

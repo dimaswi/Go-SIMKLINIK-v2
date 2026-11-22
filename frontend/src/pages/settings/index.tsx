@@ -8,12 +8,18 @@ import {
   Eye,
   FileImage,
   FileText,
+  Film,
   HardDrive,
   Image,
   Loader2,
+  Monitor,
   PlugZap,
+  Plus,
   Save,
   Settings,
+  Sparkles,
+  Trash2,
+  Tv,
   Upload,
 } from "lucide-react";
 
@@ -21,6 +27,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { parseDisplayAds, type DisplayAdItem } from "@/components/queue-display/display-media-panel";
 import { cn } from "@/lib/utils";
 import { usePermission } from "@/hooks/usePermission";
 import { useToast } from "@/hooks/use-toast";
@@ -55,7 +63,7 @@ export default function SettingsPage() {
   const { toast } = useToast();
   const canAccessIntegrations = hasPermission("settings.update");
 
-  const [activeTab, setActiveTab] = useState<"app" | "branding" | "kop">("app");
+  const [activeTab, setActiveTab] = useState<"app" | "branding" | "kop" | "display">("app");
 
   const [appName, setAppName] = useState("SIMKLINIK");
   const [appSubtitle, setAppSubtitle] = useState("Sistem Informasi Manajemen Klinik");
@@ -69,6 +77,15 @@ export default function SettingsPage() {
   const [hospitalEmail, setHospitalEmail] = useState("");
   const [hospitalWebsite, setHospitalWebsite] = useState("");
   const [printLogo, setPrintLogo] = useState("");
+  const [displayVideoUrl, setDisplayVideoUrl] = useState("");
+  const [displayAds, setDisplayAds] = useState<DisplayAdItem[]>([]);
+  const [displayRunningText, setDisplayRunningText] = useState("");
+  const [newAdUrl, setNewAdUrl] = useState("");
+  const [newAdTitle, setNewAdTitle] = useState("");
+  const [newAdSubtitle, setNewAdSubtitle] = useState("");
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [uploadingAd, setUploadingAd] = useState(false);
+  const [savingMedia, setSavingMedia] = useState(false);
   const [loading, setLoading] = useState(false);
   const [savingHospitalSettings, setSavingHospitalSettings] = useState(false);
   const [previewingHospitalPdf, setPreviewingHospitalPdf] = useState(false);
@@ -80,6 +97,8 @@ export default function SettingsPage() {
   const logoInputRef = useRef<HTMLInputElement>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
   const printLogoInputRef = useRef<HTMLInputElement>(null);
+  const videoFileRef = useRef<HTMLInputElement>(null);
+  const adFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setPageTitle("Settings");
@@ -117,6 +136,9 @@ export default function SettingsPage() {
       setHospitalEmail(settings.hospital_email || "");
       setHospitalWebsite(settings.hospital_website || "");
       setPrintLogo(settings.app_print_logo || settings.app_logo || "");
+      setDisplayVideoUrl(settings.display_video_url || "");
+      setDisplayAds(settings.display_ads ? parseDisplayAds(settings.display_ads) : []);
+      setDisplayRunningText(settings.display_running_text || "");
     } catch (error) {
       console.error("Failed to load settings:", error);
       toast({
@@ -206,6 +228,94 @@ export default function SettingsPage() {
     } finally {
       setUploadingPrintLogo(false);
       event.target.value = "";
+    }
+  };
+
+  const handleUploadDisplayVideo = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploadingVideo(true);
+    try {
+      const response = await settingsApi.uploadLogo(file, "display_video");
+      const url = response.data?.url || "";
+      if (url) {
+        setDisplayVideoUrl(url);
+        toast({ variant: "success", title: "Video diunggah", description: "Klik Simpan Media Display untuk menerapkan ke TV antrian." });
+      }
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Gagal unggah video",
+        description: resolveUploadErrorMessage(error, "Pastikan format MP4, WebM, atau MOV."),
+      });
+    } finally {
+      setUploadingVideo(false);
+      event.target.value = "";
+    }
+  };
+
+  const handleUploadDisplayAd = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploadingAd(true);
+    try {
+      const response = await settingsApi.uploadLogo(file, "display_ad");
+      const url = response.data?.url || "";
+      if (url) {
+        setDisplayAds((prev) => [
+          ...prev,
+          {
+            url,
+            title: newAdTitle.trim() || undefined,
+            subtitle: newAdSubtitle.trim() || undefined,
+          },
+        ]);
+        setNewAdTitle("");
+        setNewAdSubtitle("");
+        toast({ variant: "success", title: "Gambar iklan diunggah", description: "Klik Simpan Media Display agar tampil di layar TV." });
+      }
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Gagal unggah iklan",
+        description: resolveUploadErrorMessage(error, "Pastikan format PNG, JPG, JPEG, WebP, atau GIF."),
+      });
+    } finally {
+      setUploadingAd(false);
+      event.target.value = "";
+    }
+  };
+
+  const handleAddAdByUrl = () => {
+    if (!newAdUrl.trim()) return;
+    setDisplayAds((prev) => [
+      ...prev,
+      {
+        url: newAdUrl.trim(),
+        title: newAdTitle.trim() || undefined,
+        subtitle: newAdSubtitle.trim() || undefined,
+      },
+    ]);
+    setNewAdUrl("");
+    setNewAdTitle("");
+    setNewAdSubtitle("");
+  };
+
+  const handleSaveDisplayMedia = async () => {
+    setSavingMedia(true);
+    try {
+      await settingsApi.update({
+        display_video_url: displayVideoUrl.trim(),
+        display_ads: JSON.stringify(displayAds),
+        display_running_text: displayRunningText.trim(),
+      });
+      toast({ variant: "success", title: "Media display tersimpan", description: "Slot video, iklan banner, dan teks berjalan berhasil diperbarui." });
+    } catch {
+      toast({ variant: "destructive", title: "Simpan gagal", description: "Pengaturan media display belum berhasil disimpan." });
+    } finally {
+      setSavingMedia(false);
     }
   };
 
@@ -455,6 +565,19 @@ export default function SettingsPage() {
                 >
                   <FileText className="size-4 shrink-0" />
                   <span>KOP Dokumen PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("display")}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors rounded-none",
+                    activeTab === "display"
+                      ? "bg-primary text-primary-foreground font-semibold"
+                      : "text-muted-foreground hover:bg-muted/40 hover:text-foreground font-medium"
+                  )}
+                >
+                  <Tv className="size-4 shrink-0" />
+                  <span>Display &amp; Slot Iklan</span>
                 </button>
               </div>
             </div>
@@ -737,6 +860,226 @@ export default function SettingsPage() {
                         <div className="h-2 bg-slate-200 rounded w-5/6" />
                       </div>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "display" && (
+                <div className="space-y-5">
+                  {renderSectionHeader(<Tv className="size-4 text-muted-foreground" />, "Media Display TV, Slot Iklan & Link Publik")}
+
+                  {/* Quick Public Display Links */}
+                  <div className="border border-border/70 p-4 bg-card space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wider text-foreground">
+                          Link Display Antrian Publik (Tanpa Login)
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          Layar TV di ruang tunggu dapat langsung membuka tautan publik berikut tanpa login.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs rounded-none shadow-none"
+                          onClick={() => window.open("/queue/display?mode=pendaftaran", "_blank")}
+                        >
+                          <Monitor className="mr-1.5 size-3.5" />
+                          Display Pendaftaran
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs rounded-none shadow-none"
+                          onClick={() => window.open("/queue/display?mode=kasir", "_blank")}
+                        >
+                          <Monitor className="mr-1.5 size-3.5" />
+                          Display Kasir
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 text-xs rounded-none shadow-none"
+                          onClick={() => window.open("/queue/display?mode=ruangan", "_blank")}
+                        >
+                          <Monitor className="mr-1.5 size-3.5" />
+                          Display Ruangan
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Video Slot */}
+                  <div className="border border-border/70 p-4 bg-card space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Film className="size-4 text-muted-foreground" />
+                      <Label htmlFor="displayVideoUrl" className="text-xs font-bold uppercase tracking-wider text-foreground">
+                        Slot Video (YouTube URL atau Upload MP4 / WebM)
+                      </Label>
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Input
+                        id="displayVideoUrl"
+                        value={displayVideoUrl}
+                        onChange={(e) => setDisplayVideoUrl(e.target.value)}
+                        placeholder="https://www.youtube.com/watch?v=... atau /uploads/video.mp4"
+                        className="h-9 text-xs rounded-none"
+                      />
+                      <input
+                        ref={videoFileRef}
+                        type="file"
+                        accept="video/mp4,video/webm,video/quicktime"
+                        onChange={handleUploadDisplayVideo}
+                        className="hidden"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={uploadingVideo}
+                        onClick={() => videoFileRef.current?.click()}
+                        className="h-9 shrink-0 text-xs rounded-none shadow-none"
+                      >
+                        {uploadingVideo ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <Upload className="mr-1.5 size-3.5" />}
+                        Unggah Video MP4
+                      </Button>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Kosongkan jika ingin menampilkan kartu info fasilitas kesehatan di slot video display.
+                    </p>
+                  </div>
+
+                  {/* Ads Carousel Slot */}
+                  <div className="border border-border/70 p-4 bg-card space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <Label className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-foreground">
+                        <Sparkles className="size-4 text-amber-500" />
+                        Slot Iklan / Banner Promosi ({displayAds.length} slide)
+                      </Label>
+                      <div>
+                        <input
+                          ref={adFileRef}
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/gif"
+                          onChange={handleUploadDisplayAd}
+                          className="hidden"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={uploadingAd}
+                          onClick={() => adFileRef.current?.click()}
+                          className="h-8 text-xs rounded-none shadow-none"
+                        >
+                          {uploadingAd ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <Upload className="mr-1.5 size-3.5" />}
+                          Unggah Gambar Iklan
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-2.5 sm:grid-cols-2">
+                      <Input
+                        value={newAdTitle}
+                        onChange={(e) => setNewAdTitle(e.target.value)}
+                        placeholder="Judul promo / informasi layanan (opsional)"
+                        className="h-9 text-xs rounded-none"
+                      />
+                      <Input
+                        value={newAdSubtitle}
+                        onChange={(e) => setNewAdSubtitle(e.target.value)}
+                        placeholder="Subjudul singkat (opsional)"
+                        className="h-9 text-xs rounded-none"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Input
+                        value={newAdUrl}
+                        onChange={(e) => setNewAdUrl(e.target.value)}
+                        placeholder="Atau tempel URL gambar iklan..."
+                        className="h-9 text-xs rounded-none"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={!newAdUrl.trim()}
+                        onClick={handleAddAdByUrl}
+                        className="h-9 shrink-0 text-xs rounded-none shadow-none"
+                      >
+                        <Plus className="mr-1.5 size-3.5" />
+                        Tambah URL Iklan
+                      </Button>
+                    </div>
+
+                    {displayAds.length > 0 && (
+                      <div className="grid gap-2 pt-1 md:grid-cols-2">
+                        {displayAds.map((ad, idx) => (
+                          <div
+                            key={`${ad.url}-${idx}`}
+                            className="flex items-center justify-between gap-3 border border-border/70 bg-muted/20 p-2.5 text-xs"
+                          >
+                            <img
+                              src={ad.url.startsWith("http") ? ad.url : `${BASE_URL}${ad.url.startsWith("/") ? "" : "/"}${ad.url}`}
+                              alt={ad.title || `Iklan ${idx + 1}`}
+                              className="h-11 w-16 shrink-0 border border-border bg-white object-cover"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate font-semibold text-foreground">
+                                {ad.title || `Banner Informasi #${idx + 1}`}
+                              </div>
+                              {ad.subtitle && (
+                                <div className="truncate text-[11px] text-muted-foreground">{ad.subtitle}</div>
+                              )}
+                              <div className="truncate font-mono text-[10px] text-muted-foreground">{ad.url}</div>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 shrink-0 rounded-none text-destructive hover:text-destructive"
+                              onClick={() => setDisplayAds((prev) => prev.filter((_, i) => i !== idx))}
+                              title="Hapus iklan"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Running Text */}
+                  <div className="border border-border/70 p-4 bg-card space-y-2">
+                    <Label htmlFor="displayRunningText" className="text-xs font-bold uppercase tracking-wider text-foreground">
+                      Teks Berjalan (Running Text Footer Display)
+                    </Label>
+                    <Textarea
+                      id="displayRunningText"
+                      rows={2}
+                      value={displayRunningText}
+                      onChange={(e) => setDisplayRunningText(e.target.value)}
+                      placeholder="Selamat datang... Gunakan 1 nomor antrian terpadu..."
+                      className="rounded-none text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleSaveDisplayMedia}
+                      disabled={savingMedia}
+                      className="h-8 px-4 text-xs rounded-none shadow-none"
+                    >
+                      {savingMedia ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <Save className="mr-1.5 size-3.5" />}
+                      Simpan Media Display
+                    </Button>
                   </div>
                 </div>
               )}

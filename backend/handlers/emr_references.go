@@ -17,6 +17,7 @@ type emrReferencesResponse struct {
 	Medicines          []models.Medicine                `json:"medicines"`
 	MedicalServices    []models.MedicalService          `json:"medical_services"`
 	PhysicalExamImages []models.PhysicalExamImageMaster `json:"physical_exam_images"`
+	ApotekRooms        []models.Polyclinic              `json:"apotek_rooms"`
 }
 
 func GetEMRReferences(c *gin.Context) {
@@ -40,6 +41,8 @@ func GetEMRReferences(c *gin.Context) {
 	if err := database.DB.
 		Preload("Category").
 		Preload("Unit").
+		Preload("LargeUnit").
+		Preload("RoomStocks.Room").
 		Where("is_active = ?", true).
 		Order("name ASC").
 		Limit(500).
@@ -85,11 +88,21 @@ func GetEMRReferences(c *gin.Context) {
 		return
 	}
 
+	apotekRooms := make([]models.Polyclinic, 0)
+	if err := database.DB.
+		Where("room_type = ? AND is_active = ?", "apotek", true).
+		Order("is_default_apotek DESC, sort_order ASC, name ASC").
+		Find(&apotekRooms).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{"data": emrReferencesResponse{
 		VisitID:            visit.ID,
 		Medicines:          medicines,
 		MedicalServices:    services,
 		PhysicalExamImages: physicalExamImages,
+		ApotekRooms:        apotekRooms,
 	}})
 }
 

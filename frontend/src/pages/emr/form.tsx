@@ -52,6 +52,7 @@ export default function EMRFormPage() {
     medicineList,
     serviceList,
     physicalExamImageList,
+    apotekRoomList,
     loading: loadingReferences,
     error: referenceError,
   } = useEmrReferences(visitId);
@@ -644,6 +645,7 @@ export default function EMRFormPage() {
                   medicineList={medicineList}
                   serviceList={serviceList}
                   physicalExamImageList={physicalExamImageList}
+                  apotekRoomList={apotekRoomList}
                   onAddDiagnosis={addDiagnosis}
                   onDeleteDiagnosis={deleteDiagnosis}
                   onAddPrescription={addPrescription}

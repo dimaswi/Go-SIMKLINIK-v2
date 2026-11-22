@@ -1,4 +1,4 @@
-import type { MedicalRecord, Prescription, PrescriptionCompound, PrescriptionCompoundItem } from '@/lib/api';
+import type { MedicalRecord, Medicine, Prescription, PrescriptionCompound, PrescriptionCompoundItem } from '@/lib/api';
 
 export type PharmacyStatusFilter = 'all' | 'ordered' | 'preparing' | 'ready' | 'dispensed';
 export type PharmacyWorkflowAction = 'prepare' | 'ready' | 'dispense';
@@ -132,8 +132,28 @@ export function getRecordTotalPrice(record: MedicalRecord) {
   return buildOrderLines(record).reduce((total, item) => total + item.price, 0);
 }
 
-export function getPrescriptionStockStatus(item: Prescription): PharmacyStockStatus {
-  const availableStock = item.medicine?.current_stock || 0;
+export function getMedicineRoomStock(medicine?: Medicine | null, roomId?: number | null): number {
+  if (!medicine) return 0;
+  if (Array.isArray(medicine.room_stocks)) {
+    if (roomId) {
+      const matched = medicine.room_stocks.find((entry) => entry.room_id === roomId);
+      return matched ? matched.quantity : 0;
+    }
+    // Fallback aman untuk order lama tanpa prescription_room_id: ambil dari ruangan Apotek (bukan Depo)
+    const defaultApotek = medicine.room_stocks.find((entry) => entry.room?.is_default_apotek);
+    if (defaultApotek) {
+      return defaultApotek.quantity;
+    }
+    const apotekEntries = medicine.room_stocks.filter((entry) => entry.room?.room_type === 'apotek');
+    if (apotekEntries.length > 0) {
+      return apotekEntries.reduce((sum, entry) => sum + (entry.quantity || 0), 0);
+    }
+  }
+  return medicine.current_stock || 0;
+}
+
+export function getPrescriptionStockStatus(item: Prescription, roomId?: number | null): PharmacyStockStatus {
+  const availableStock = getMedicineRoomStock(item.medicine, roomId);
   if (availableStock < item.quantity) {
     return {
       available: false,
@@ -151,8 +171,8 @@ export function getPrescriptionStockStatus(item: Prescription): PharmacyStockSta
   };
 }
 
-export function getCompoundIngredientStockStatus(item: PrescriptionCompoundItem): PharmacyStockStatus {
-  const availableStock = item.medicine?.current_stock || 0;
+export function getCompoundIngredientStockStatus(item: PrescriptionCompoundItem, roomId?: number | null): PharmacyStockStatus {
+  const availableStock = getMedicineRoomStock(item.medicine, roomId);
   if (availableStock < item.quantity) {
     return {
       available: false,
@@ -170,8 +190,8 @@ export function getCompoundIngredientStockStatus(item: PrescriptionCompoundItem)
   };
 }
 
-export function getCompoundStockStatus(item: PrescriptionCompound): PharmacyStockStatus {
-  const ingredientIssues = (item.items || []).filter((ingredient) => !getCompoundIngredientStockStatus(ingredient).available);
+export function getCompoundStockStatus(item: PrescriptionCompound, roomId?: number | null): PharmacyStockStatus {
+  const ingredientIssues = (item.items || []).filter((ingredient) => !getCompoundIngredientStockStatus(ingredient, roomId).available);
 
   if (ingredientIssues.length > 0) {
     return {
@@ -191,18 +211,20 @@ export function getCompoundStockStatus(item: PrescriptionCompound): PharmacyStoc
 }
 
 export function getRecordStockIssueCount(record: MedicalRecord) {
-  const prescriptionIssues = (record.prescriptions || []).filter((item) => !getPrescriptionStockStatus(item).available).length;
-  const compoundIssues = (record.prescription_compounds || []).filter((item) => !getCompoundStockStatus(item).available).length;
+  const roomId = record.prescription_room_id;
+  const prescriptionIssues = (record.prescriptions || []).filter((item) => !getPrescriptionStockStatus(item, roomId).available).length;
+  const compoundIssues = (record.prescription_compounds || []).filter((item) => !getCompoundStockStatus(item, roomId).available).length;
   return prescriptionIssues + compoundIssues;
 }
 
 export function getRecordStockSummary(record: MedicalRecord): PharmacyStockStatus {
   const issueCount = getRecordStockIssueCount(record);
+  const roomLabel = record.prescription_room?.name ? ` di ${record.prescription_room.name}` : '';
   if (issueCount > 0) {
     return {
       available: false,
       label: `${issueCount} item bermasalah`,
-      helper: 'Periksa stok sebelum resep diproses lebih lanjut',
+      helper: `Periksa stok${roomLabel} sebelum resep diproses lebih lanjut`,
       badgeClassName: STOCK_ISSUE_BADGE_CLASSNAME,
     };
   }
@@ -210,7 +232,7 @@ export function getRecordStockSummary(record: MedicalRecord): PharmacyStockStatu
   return {
     available: true,
     label: 'Semua stok aman',
-    helper: 'Seluruh item resep tersedia saat ini',
+    helper: `Seluruh item resep tersedia${roomLabel} saat ini`,
     badgeClassName: STOCK_OK_BADGE_CLASSNAME,
   };
 }
@@ -228,11 +250,33 @@ export function getPolyclinicOptions(records: MedicalRecord[]) {
     .sort((left, right) => left.label.localeCompare(right.label, 'id-ID'));
 }
 
-export function filterPharmacyOrders(records: MedicalRecord[], search: string, polyclinicFilter: string) {
+export function getPrescriptionRoomOptions(records: MedicalRecord[]) {
+  const seen = new Map<string, string>();
+  records.forEach((record) => {
+    if (record.prescription_room?.id && record.prescription_room.name) {
+      seen.set(String(record.prescription_room.id), record.prescription_room.name);
+    }
+  });
+
+  return Array.from(seen.entries())
+    .map(([value, label]) => ({ value, label }))
+    .sort((left, right) => left.label.localeCompare(right.label, 'id-ID'));
+}
+
+export function filterPharmacyOrders(
+  records: MedicalRecord[],
+  search: string,
+  polyclinicFilter: string,
+  prescriptionRoomFilter = '',
+) {
   const loweredSearch = search.trim().toLowerCase();
 
   return records.filter((record) => {
     if (polyclinicFilter && String(record.polyclinic_id) !== polyclinicFilter) {
+      return false;
+    }
+
+    if (prescriptionRoomFilter && String(record.prescription_room_id || '') !== prescriptionRoomFilter) {
       return false;
     }
 
@@ -246,6 +290,7 @@ export function filterPharmacyOrders(records: MedicalRecord[], search: string, p
       record.visit?.visit_number,
       record.doctor?.full_name,
       record.polyclinic?.name,
+      record.prescription_room?.name,
       ...(record.prescriptions || []).map((item) => item.medicine?.name || ''),
       ...(record.prescription_compounds || []).map((item) => item.name || ''),
     ].join(' ').toLowerCase();

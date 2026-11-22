@@ -329,13 +329,16 @@ func renderDashboardOperationalReportPDF(hospitalInfo initialAssessmentHospitalI
 	pdf.SetTitle(documentTitle, false)
 	pdf.SetCreator("SIMKLINIK", false)
 	pdf.SetHeaderFuncMode(func() {
+		if pdf.PageNo() != 1 {
+			return
+		}
 		addInitialAssessmentPDFHeader(pdf, hospitalInfo, documentTitle, report.Summary.PeriodLabel)
 	}, true)
 	pdf.SetFooterFunc(func() {
-		pdf.SetY(-8)
-		pdf.SetFont("Arial", "", 8)
-		pdf.SetTextColor(90, 90, 90)
-		pdf.CellFormat(90, 4, "Dicetak: "+formatDateTimeIndonesian(report.GeneratedAt), "", 0, "L", false, 0, "")
+		pdf.SetY(-7.5)
+		pdf.SetFont("Arial", "", 7.5)
+		pdf.SetTextColor(70, 70, 70)
+		pdf.CellFormat(110, 4, "Dicetak: "+formatDateTimeIndonesian(report.GeneratedAt), "", 0, "L", false, 0, "")
 		pdf.CellFormat(0, 4, fmt.Sprintf("Halaman %d/{nb}", pdf.PageNo()), "", 0, "R", false, 0, "")
 		pdf.SetTextColor(0, 0, 0)
 	})
@@ -521,32 +524,42 @@ func renderDashboardOperationalReportExcel(report dashboardOperationalReportData
 	return output.Bytes(), fileName, nil
 }
 
-func addDashboardReportSimpleTable(pdf *gofpdf.Fpdf, title string, headers []string, widths []float64, rows [][]string) {
+func addDashboardReportSimpleTable(pdf *gofpdf.Fpdf, title string, headers []string, rawWidths []float64, rows [][]string) {
 	addInitialAssessmentSectionTitle(pdf, title)
+	pageWidth, _ := pdf.GetPageSize()
+	left, _, right, _ := pdf.GetMargins()
+	contentWidth := pageWidth - left - right
+	widths := normalizeReportCenterWidths(contentWidth, rawWidths)
+
+	headerH := 5.6
+	rowH := 5.4
 	dashboardDrawTableHeader := func() {
-		pdf.SetFont("Arial", "B", 9)
-		pdf.SetFillColor(30, 41, 59)
-		pdf.SetTextColor(255, 255, 255)
+		pdf.SetFont("Arial", "B", 7.8)
+		pdf.SetDrawColor(0, 0, 0)
+		pdf.SetTextColor(0, 0, 0)
+		pdf.SetLineWidth(0.25)
 		for index, header := range headers {
-			pdf.CellFormat(widths[index], 7, sanitizePDFSingleLineText(header), "1", 0, "C", true, 0, "")
+			pdf.CellFormat(widths[index], headerH, strings.ToUpper(sanitizePDFSingleLineText(header)), "1", 0, "C", false, 0, "")
 		}
 		pdf.Ln(-1)
-		pdf.SetTextColor(0, 0, 0)
+		pdf.SetLineWidth(0.2)
 	}
 
 	dashboardDrawTableHeader()
-	pdf.SetFont("Arial", "", 8.5)
+	pdf.SetFont("Arial", "", 7.8)
 	for _, row := range rows {
-		dashboardEnsureTableRowSpace(pdf, 6.5, func() {
+		dashboardEnsureTableRowSpace(pdf, rowH, func() {
 			addInitialAssessmentSectionTitle(pdf, title)
 			dashboardDrawTableHeader()
 		})
+		pdf.SetDrawColor(0, 0, 0)
+		pdf.SetTextColor(0, 0, 0)
 		for index, cell := range row {
 			align := "L"
 			if index == len(row)-1 {
 				align = "R"
 			}
-			pdf.CellFormat(widths[index], 6.5, sanitizePDFSingleLineText(dashboardReportEllipsis(cell, 72)), "1", 0, align, false, 0, "")
+			pdf.CellFormat(widths[index], rowH, sanitizePDFSingleLineText(dashboardReportEllipsis(cell, 84)), "1", 0, align, false, 0, "")
 		}
 		pdf.Ln(-1)
 	}
@@ -555,26 +568,35 @@ func addDashboardReportSimpleTable(pdf *gofpdf.Fpdf, title string, headers []str
 
 func addDashboardReportVisitsTable(pdf *gofpdf.Fpdf, rows []dashboardReportVisitRow) {
 	addInitialAssessmentSectionTitle(pdf, "DETAIL KUNJUNGAN")
-	headers := []string{"Tanggal", "No Visit", "Pasien", "Dokter", "Poli", "Visit", "Queue", "Invoice", "Tagihan", "Bayar"}
-	widths := []float64{23, 24, 46, 36, 24, 18, 18, 24, 22, 22}
+	pageWidth, _ := pdf.GetPageSize()
+	left, _, right, _ := pdf.GetMargins()
+	contentWidth := pageWidth - left - right
+	headers := []string{"Tanggal", "No Visit", "Pasien", "Dokter", "Poli", "Visit", "Antrian", "Invoice", "Tagihan", "Bayar"}
+	widths := normalizeReportCenterWidths(contentWidth, []float64{24, 27, 48, 38, 26, 19, 19, 26, 25, 25})
+	headerH := 5.6
+	rowH := 5.4
+
 	drawHeader := func() {
-		pdf.SetFont("Arial", "B", 8)
-		pdf.SetFillColor(30, 41, 59)
-		pdf.SetTextColor(255, 255, 255)
+		pdf.SetFont("Arial", "B", 7.6)
+		pdf.SetDrawColor(0, 0, 0)
+		pdf.SetTextColor(0, 0, 0)
+		pdf.SetLineWidth(0.25)
 		for index, header := range headers {
-			pdf.CellFormat(widths[index], 7, sanitizePDFSingleLineText(header), "1", 0, "C", true, 0, "")
+			pdf.CellFormat(widths[index], headerH, strings.ToUpper(sanitizePDFSingleLineText(header)), "1", 0, "C", false, 0, "")
 		}
 		pdf.Ln(-1)
-		pdf.SetTextColor(0, 0, 0)
+		pdf.SetLineWidth(0.2)
 	}
 
 	drawHeader()
-	pdf.SetFont("Arial", "", 7.8)
+	pdf.SetFont("Arial", "", 7.6)
 	for _, row := range rows {
-		dashboardEnsureTableRowSpace(pdf, 6.2, func() {
+		dashboardEnsureTableRowSpace(pdf, rowH, func() {
 			addInitialAssessmentSectionTitle(pdf, "DETAIL KUNJUNGAN")
 			drawHeader()
 		})
+		pdf.SetDrawColor(0, 0, 0)
+		pdf.SetTextColor(0, 0, 0)
 		cells := []string{
 			dashboardReportShortDate(row.VisitDate),
 			row.VisitNumber,
@@ -592,7 +614,7 @@ func addDashboardReportVisitsTable(pdf *gofpdf.Fpdf, rows []dashboardReportVisit
 			if index >= len(cells)-2 {
 				align = "R"
 			}
-			pdf.CellFormat(widths[index], 6.2, sanitizePDFSingleLineText(dashboardReportEllipsis(cell, 28)), "1", 0, align, false, 0, "")
+			pdf.CellFormat(widths[index], rowH, sanitizePDFSingleLineText(dashboardReportEllipsis(cell, 30)), "1", 0, align, false, 0, "")
 		}
 		pdf.Ln(-1)
 	}

@@ -277,9 +277,9 @@ func hasTTEQRCode(signature *ttePrintSignatureInfo) bool {
 }
 
 func resolveTTESignatureQRCodeSize(width float64) float64 {
-	qrSize := minFloat64(26.0, width-4)
-	if qrSize < 18 {
-		qrSize = 18
+	qrSize := minFloat64(20.0, width-4)
+	if qrSize < 16 {
+		qrSize = 16
 	}
 	return qrSize
 }
@@ -305,11 +305,11 @@ func drawTTESignatureAnnotation(pdf *gofpdf.Fpdf, x float64, y float64, width fl
 		}
 
 		pdf.SetFont("Arial", "", 7.2)
-		pdf.SetTextColor(24, 104, 74)
+		pdf.SetTextColor(0, 0, 0)
 		pdf.SetXY(x+1, y)
 		pdf.CellFormat(width-2, 3.3, annotationText, "", 0, "C", false, 0, "")
 		pdf.SetFont("Arial", "", 6.8)
-		pdf.SetTextColor(90, 90, 90)
+		pdf.SetTextColor(60, 60, 60)
 		pdf.SetXY(x+1, y+3.7)
 		pdf.CellFormat(width-2, 3.0, detailText, "", 0, "C", false, 0, "")
 		pdf.SetTextColor(0, 0, 0)

@@ -210,8 +210,8 @@ export const SHEET_CONFIGS: MedicalSheetConfig[] = [
   {
     key: 'informed-consent',
     label: 'Informed Consent',
-    description: 'Persetujuan tindakan invasif atau operasi kecil berikut risiko, manfaat, dan keputusan pasien.',
-    helper: 'Draft consent yang dibuat otomatis dari tindakan yang membutuhkan persetujuan akan ditampilkan di sini.',
+    description: 'Persetujuan atau penolakan tindakan kedokteran beserta pilihan tindakan, penjelasan klinis, dan 4 tanda tangan (Pasien/Wali, Saksi, Dokter, Perawat).',
+    helper: 'Tambahkan entri informed consent secara mandiri dan pilih tindakan medis yang akan dimintakan persetujuan.',
     icon: FileSignature,
     kind: 'consent',
     availability: 'ready',
@@ -220,7 +220,7 @@ export const SHEET_CONFIGS: MedicalSheetConfig[] = [
   {
     key: 'lembar-tindakan-kecil',
     label: 'Lembar Tindakan / Operasi Kecil',
-    description: 'Bundle tindakan kecil: tindakan yang dilakukan dan dokumen consent terkait.',
+    description: 'Pencatatan tindakan medis atau prosedur klinis yang dilakukan pada kunjungan ini.',
     helper: '',
     icon: Syringe,
     kind: 'section-editor',

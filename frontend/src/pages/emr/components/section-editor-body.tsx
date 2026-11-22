@@ -13,6 +13,7 @@ import type {
   Medicine,
   OdontogramEntry,
   PhysicalExamImageMaster,
+  Polyclinic,
 } from '@/lib/api';
 import { CONSCIOUSNESS_OPTIONS, DISPOSITION_OPTIONS } from '../constants';
 import type { MedicalRecordDraft } from '../types';
@@ -35,6 +36,7 @@ type SectionEditorBodyProps = {
   medicineList: Medicine[];
   serviceList: MedicalService[];
   physicalExamImageList: PhysicalExamImageMaster[];
+  apotekRoomList?: Polyclinic[];
   onAddDiagnosis: (payload: { icd10_id: number; diagnosis_type: 'primer' | 'sekunder'; working_diagnosis: string; differential_diagnosis: string; assessment_narrative: string; notes: string }) => void;
   onDeleteDiagnosis: (diagnosisId: number) => void;
   onAddPrescription: (payload: { medicine_id: number; quantity: number; dosage: string; frequency: string; duration: string; route: string; instructions: string; notes: string }) => void;
@@ -1167,6 +1169,7 @@ export function SectionEditorBody({
   medicineList,
   serviceList,
   physicalExamImageList,
+  apotekRoomList = [],
   onAddDiagnosis,
   onDeleteDiagnosis,
   onAddPrescription,
@@ -1351,6 +1354,7 @@ export function SectionEditorBody({
             prescriptions={record?.prescriptions || []}
             compounds={record?.prescription_compounds || []}
             medicines={medicineList}
+            apotekRooms={apotekRoomList}
             onAdd={onAddPrescription}
             onDelete={onDeletePrescription}
             onAddCompound={onAddPrescriptionCompound}

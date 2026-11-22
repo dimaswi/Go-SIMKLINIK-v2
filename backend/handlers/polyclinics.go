@@ -110,7 +110,8 @@ func GetQueuePolyclinicOptions(c *gin.Context) {
 	}
 
 	var polyclinics []models.Polyclinic
-	query := database.DB.Order("sort_order ASC, name ASC").Where("is_active = ?", true)
+	query := database.DB.Order("sort_order ASC, name ASC").
+		Where("is_active = ? AND (room_type = ? OR room_type IS NULL OR room_type = '')", true, "poliklinik")
 
 	if err := query.Find(&polyclinics).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -126,6 +127,12 @@ func GetPolyclinics(c *gin.Context) {
 
 	if search := c.Query("q"); search != "" {
 		query = query.Where("name ILIKE ? OR code ILIKE ?", "%"+search+"%", "%"+search+"%")
+	}
+	if roomType := c.Query("room_type"); roomType != "" {
+		query = query.Where("room_type = ?", roomType)
+	}
+	if isActive := c.Query("is_active"); isActive != "" {
+		query = query.Where("is_active = ?", isActive == "true")
 	}
 
 	if err := query.Find(&polyclinics).Error; err != nil {
@@ -149,14 +156,17 @@ func GetPolyclinic(c *gin.Context) {
 }
 
 type CreatePolyclinicRequest struct {
-	Name         string  `json:"name" binding:"required"`
-	Description  string  `json:"description"`
-	AdminFee     float64 `json:"admin_fee"`
-	IsActive     *bool   `json:"is_active"`
-	Color        string  `json:"color"`
-	Icon         string  `json:"icon"`
-	SortOrder    int     `json:"sort_order"`
-	BpjsPoliCode string  `json:"bpjs_poli_code"`
+	Name            string  `json:"name" binding:"required"`
+	RoomType        string  `json:"room_type"`
+	IsDefaultDepo   bool    `json:"is_default_depo"`
+	IsDefaultApotek bool    `json:"is_default_apotek"`
+	Description     string  `json:"description"`
+	AdminFee        float64 `json:"admin_fee"`
+	IsActive        *bool   `json:"is_active"`
+	Color           string  `json:"color"`
+	Icon            string  `json:"icon"`
+	SortOrder       int     `json:"sort_order"`
+	BpjsPoliCode    string  `json:"bpjs_poli_code"`
 }
 
 func generatePolyclinicCode() string {
@@ -181,16 +191,31 @@ func CreatePolyclinic(c *gin.Context) {
 		isActive = *req.IsActive
 	}
 
+	roomType := req.RoomType
+	if roomType == "" {
+		roomType = "poliklinik"
+	}
+
 	polyclinic := models.Polyclinic{
-		Name:         req.Name,
-		Code:         generatePolyclinicCode(),
-		Description:  req.Description,
-		AdminFee:     req.AdminFee,
-		IsActive:     isActive,
-		Color:        req.Color,
-		Icon:         req.Icon,
-		SortOrder:    req.SortOrder,
-		BpjsPoliCode: req.BpjsPoliCode,
+		Name:            req.Name,
+		Code:            generatePolyclinicCode(),
+		RoomType:        roomType,
+		IsDefaultDepo:   req.IsDefaultDepo,
+		IsDefaultApotek: req.IsDefaultApotek,
+		Description:     req.Description,
+		AdminFee:        req.AdminFee,
+		IsActive:        isActive,
+		Color:           req.Color,
+		Icon:            req.Icon,
+		SortOrder:       req.SortOrder,
+		BpjsPoliCode:    req.BpjsPoliCode,
+	}
+
+	if polyclinic.IsDefaultDepo {
+		database.DB.Model(&models.Polyclinic{}).Where("is_default_depo = ?", true).Update("is_default_depo", false)
+	}
+	if polyclinic.IsDefaultApotek {
+		database.DB.Model(&models.Polyclinic{}).Where("is_default_apotek = ?", true).Update("is_default_apotek", false)
 	}
 
 	if err := database.DB.Create(&polyclinic).Error; err != nil {
@@ -221,6 +246,17 @@ func UpdatePolyclinic(c *gin.Context) {
 	}
 
 	polyclinic.Name = req.Name
+	if req.RoomType != "" {
+		polyclinic.RoomType = req.RoomType
+	}
+	if req.IsDefaultDepo {
+		database.DB.Model(&models.Polyclinic{}).Where("id <> ? AND is_default_depo = ?", polyclinic.ID, true).Update("is_default_depo", false)
+	}
+	if req.IsDefaultApotek {
+		database.DB.Model(&models.Polyclinic{}).Where("id <> ? AND is_default_apotek = ?", polyclinic.ID, true).Update("is_default_apotek", false)
+	}
+	polyclinic.IsDefaultDepo = req.IsDefaultDepo
+	polyclinic.IsDefaultApotek = req.IsDefaultApotek
 	polyclinic.Description = req.Description
 	polyclinic.AdminFee = req.AdminFee
 	polyclinic.Color = req.Color

@@ -157,7 +157,6 @@ export default function MedicalServiceShow() {
               <MasterDataDetailItem label="Domain Layanan" value={SERVICE_DOMAIN_LABELS[data.service_domain || 'general'] || data.service_domain || '-'} />
               <MasterDataDetailItem label="Target Anatomi" value={TARGET_SCOPE_LABELS[data.target_scope || 'none'] || data.target_scope || '-'} />
               <MasterDataDetailItem label="Tarif" value={formatCurrency(data.price)} />
-              <MasterDataDetailItem label="Butuh Consent" value={data.requires_consent ? 'Ya' : 'Tidak'} />
               <MasterDataDetailItem label="Sinkron Odontogram" value={data.supports_odontogram_sync ? 'Ya' : 'Tidak'} />
               <MasterDataDetailItem label="Status" value={data.is_active ? 'Aktif' : 'Tidak aktif'} />
               <MasterDataDetailItem label="Waktu Dibuat" value={formatMasterDataDateTime(data.created_at)} />

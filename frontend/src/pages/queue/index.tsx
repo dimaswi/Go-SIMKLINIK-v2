@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import {
   ArrowUpRight,
   Building2,
+  Check,
   Clock3,
   Edit,
   ExternalLink,
@@ -37,8 +38,10 @@ import {
   Trash2,
   User,
   Users,
+  Volume2,
 } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
+import { announceQueueCall } from '@/lib/queue-caller';
 import { cn, generateDummyNik, getLocalISODate } from '@/lib/utils';
 import { openPdfDocumentInNewWindow } from '../emr/print-document';
 
@@ -170,7 +173,9 @@ export default function QueueDashboard() {
   const [deletingRegistrationTicketId, setDeletingRegistrationTicketId] = useState<number | null>(null);
   const [registrationDeleteTarget, setRegistrationDeleteTarget] = useState<RegistrationQueueItem | null>(null);
   const [displayPickerOpen, setDisplayPickerOpen] = useState(false);
-  const [displayTargetPoli, setDisplayTargetPoli] = useState('');
+  const [displayModeChoice, setDisplayModeChoice] = useState<'pendaftaran' | 'kasir' | 'ruangan'>('pendaftaran');
+  const [displaySelectedRooms, setDisplaySelectedRooms] = useState<string[]>([]);
+  const [displayColsChoice, setDisplayColsChoice] = useState<'auto' | '1' | '2' | '3' | '4'>('auto');
   const [activeTab, setActiveTab] = useState<'pendaftaran' | 'poli' | 'all'>('pendaftaran');
   const [takeTicketDialogOpen, setTakeTicketDialogOpen] = useState(false);
   const [allDoctors, setAllDoctors] = useState<Doctor[]>([]);
@@ -273,6 +278,13 @@ export default function QueueDashboard() {
     try {
       const response = await queueApi.callNext(Number(selectedPoli));
       const visit: Visit = response.data.data;
+      const currentPoliName = polyclinics.find((item) => String(item.id) === selectedPoli)?.name || visit.polyclinic?.name || 'Poliklinik';
+      void announceQueueCall({
+        queueNumber: visit.queue_number,
+        patientName: visit.patient?.full_name || undefined,
+        unitType: 'poliklinik',
+        destinationName: currentPoliName,
+      });
       toast({
         title: `Memanggil No. ${String(visit.queue_number).padStart(3, '0')}`,
         description: visit.patient?.full_name || 'Pasien berikutnya dipanggil.',
@@ -292,6 +304,29 @@ export default function QueueDashboard() {
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Gagal!', description: error.response?.data?.error || 'Gagal update status.' });
     }
+  };
+
+  const callVisit = async (visit: Visit) => {
+    const poliName = polyclinics.find((item) => String(item.id) === selectedPoli)?.name || visit.polyclinic?.name || 'Poliklinik';
+    if (visit.queue_status === 'waiting') {
+      try {
+        await visitsApi.updateStatus(visit.id, { queue_status: 'in_consultation', status: 'in_progress' });
+        void fetchQueue();
+      } catch (error: any) {
+        toast({ variant: 'destructive', title: 'Gagal!', description: error.response?.data?.error || 'Gagal memperbarui status antrian.' });
+        return;
+      }
+    }
+    void announceQueueCall({
+      queueNumber: visit.queue_number,
+      patientName: visit.patient?.full_name || undefined,
+      unitType: 'poliklinik',
+      destinationName: poliName,
+    });
+    toast({
+      title: `Memanggil No. ${String(visit.queue_number).padStart(3, '0')}`,
+      description: `${visit.patient?.full_name || 'Pasien'} dipanggil ke ${poliName}.`,
+    });
   };
 
   const printRegistrationTicket = useCallback(async (item: RegistrationQueueItem) => {
@@ -398,6 +433,12 @@ export default function QueueDashboard() {
         payload.visit_id = item.visit_id;
       }
       await registrationQueueApi.updateStatus(item.id, payload);
+      void announceQueueCall({
+        queueNumber: item.ticket_number,
+        patientName: item.patient_name || item.patient?.full_name || undefined,
+        unitType: 'pendaftaran',
+        destinationName: 'Loket Pendaftaran',
+      });
       toast({
         variant: 'success',
         title: `Tiket ${String(item.ticket_number).padStart(3, '0')} Dipanggil`,
@@ -665,7 +706,6 @@ export default function QueueDashboard() {
         header: 'Aksi',
         cell: ({ row }) => {
           const item = row.original;
-          const isInService = item.status === 'called' || item.status === 'processing';
           const isCompleted = item.status === 'completed';
           const isProcessingThis = processingRegistrationTicketId === item.id;
           const isPrintingThis = printingRegistrationTicketId === item.id;
@@ -687,7 +727,7 @@ export default function QueueDashboard() {
                 </Button>
               )}
 
-              {isInService && (
+              {!isCompleted && item.status !== 'cancelled' && (
                 <>
                   {item.is_new_patient && (item.patient_id || item.patient?.id) ? (
                     <Button
@@ -787,12 +827,29 @@ export default function QueueDashboard() {
   const nextWaiting = queueData.waiting[0] || null;
   const hasQueuePolyclinicAccess = polyclinics.length > 0;
 
-  const displayAllPath = '/queue/display?poli=all';
+  const displayRoomOptions = useMemo(() => {
+    return [
+      ...polyclinics.map((p) => ({ value: `poli:${p.id}`, label: p.name, category: 'Poliklinik' })),
+      { value: 'farmasi', label: 'Instalasi Farmasi / Apotek', category: 'Penunjang' },
+      { value: 'laboratorium', label: 'Instalasi Laboratorium', category: 'Penunjang' },
+      { value: 'radiologi', label: 'Instalasi Radiologi', category: 'Penunjang' },
+    ];
+  }, [polyclinics]);
 
-  const openDisplayWindow = (targetPoli: string) => {
-    const target = targetPoli || 'all';
-    const path = target === 'all' ? displayAllPath : `/queue/display?poli=${target}`;
-    window.open(path, '_blank', 'popup=yes,width=1600,height=900,noopener,noreferrer');
+  const openDisplayWindow = (
+    targetMode: 'pendaftaran' | 'kasir' | 'ruangan',
+    rooms: string[],
+    cols: 'auto' | '1' | '2' | '3' | '4'
+  ) => {
+    const params = new URLSearchParams();
+    params.set('mode', targetMode);
+    if (targetMode === 'ruangan') {
+      if (rooms.length > 0 && rooms.length < displayRoomOptions.length) {
+        params.set('rooms', rooms.join(','));
+      }
+      params.set('cols', cols);
+    }
+    window.open(`/queue/display?${params.toString()}`, '_blank', 'popup=yes,width=1600,height=900,noopener,noreferrer');
   };
 
   return (
@@ -865,8 +922,11 @@ export default function QueueDashboard() {
                 size="sm"
                 className="h-8 rounded-none shadow-none"
                 onClick={() => {
-                  const defaultPoli = selectedPoli || (polyclinics[0] ? String(polyclinics[0].id) : 'all');
-                  setDisplayTargetPoli(defaultPoli);
+                  const defaultRooms = selectedPoli
+                    ? [`poli:${selectedPoli}`]
+                    : polyclinics.map((p) => `poli:${p.id}`);
+                  setDisplayModeChoice(activeTab === 'pendaftaran' ? 'pendaftaran' : 'ruangan');
+                  setDisplaySelectedRooms(defaultRooms);
                   setDisplayPickerOpen(true);
                 }}
               >
@@ -1083,7 +1143,22 @@ export default function QueueDashboard() {
                   ) : queueData.waiting.length === 0 ? (
                     <p className="py-6 text-center text-sm text-muted-foreground">Belum ada pasien yang menunggu.</p>
                   ) : queueData.waiting.map((visit) => (
-                    <QueueTicket key={visit.id} visit={visit} />
+                    <QueueTicket
+                      key={visit.id}
+                      visit={visit}
+                      actions={
+                        <>
+                          <Button type="button" size="sm" className="rounded-none shadow-none" onClick={() => void callVisit(visit)}>
+                            <Volume2 className="mr-1.5 h-3.5 w-3.5" />
+                            Panggil
+                          </Button>
+                          <Button type="button" size="sm" variant="outline" className="rounded-none shadow-none" onClick={() => navigate(`/emr/${visit.id}`)}>
+                            <FileText className="mr-1.5 h-3.5 w-3.5" />
+                            Buka EMR
+                          </Button>
+                        </>
+                      }
+                    />
                   ))}
                 </Lane>
 
@@ -1098,6 +1173,10 @@ export default function QueueDashboard() {
                       visit={visit}
                       actions={
                         <>
+                          <Button type="button" size="sm" variant="outline" className="rounded-none shadow-none" onClick={() => void callVisit(visit)}>
+                            <Volume2 className="mr-1.5 h-3.5 w-3.5" />
+                            Panggil Ulang
+                          </Button>
                           <Button type="button" size="sm" className="rounded-none shadow-none" onClick={() => navigate(`/emr/${visit.id}`)}>
                             <FileText className="mr-1.5 h-3.5 w-3.5" />
                             Buka EMR
@@ -1152,28 +1231,137 @@ export default function QueueDashboard() {
       </div>
 
       <Dialog open={displayPickerOpen} onOpenChange={setDisplayPickerOpen}>
-        <DialogContent className="max-w-xl rounded-none border-border/70">
+        <DialogContent className="max-w-2xl rounded-none border-border/70">
           <DialogHeader>
-            <DialogTitle className="text-base">Pilih Display Antrian</DialogTitle>
+            <DialogTitle className="text-base">Pilih Layar Display Antrian TV (Standar RS)</DialogTitle>
             <DialogDescription className="text-xs">
-              Pilih poli yang ingin ditampilkan, atau pilih Semua Poliklinik.
+              Pilih mode layar TV: Display Pendaftaran, Display Kasir, atau Display Ruangan Dinamis (bisa pilih berapa pun ruangan yang ingin dimunculkan).
             </DialogDescription>
           </DialogHeader>
 
-          <LabelledControl label="Poli Display">
-            <SearchableSelect
-              options={[
-                { value: 'all', label: 'Semua Poliklinik' },
-                ...polyclinics.map((polyclinic) => ({ value: String(polyclinic.id), label: polyclinic.name })),
-              ]}
-              value={displayTargetPoli}
-              onValueChange={setDisplayTargetPoli}
-              placeholder="Pilih poli display..."
-              searchPlaceholder="Cari poli..."
-              square
-              disabled={!hasQueuePolyclinicAccess}
-            />
-          </LabelledControl>
+          <div className="space-y-4 py-1">
+            <div>
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Jenis Display Layar
+              </p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {[
+                  { value: 'pendaftaran' as const, title: 'Display Pendaftaran', desc: 'Fokus Loket Pendaftaran' },
+                  { value: 'kasir' as const, title: 'Display Kasir', desc: 'Fokus Loket Pembayaran' },
+                  { value: 'ruangan' as const, title: 'Display Ruangan', desc: 'Poli, Farmasi, Lab & Rad Dinamis' },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setDisplayModeChoice(opt.value)}
+                    className={cn(
+                      'border p-3 text-left transition-colors',
+                      displayModeChoice === opt.value
+                        ? 'border-primary bg-primary/10'
+                        : 'border-border/70 bg-background hover:bg-muted/40'
+                    )}
+                  >
+                    <p className="text-xs font-bold text-foreground">{opt.title}</p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">{opt.desc}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {displayModeChoice === 'ruangan' ? (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    Pilih Ruangan Yang Dimunculkan ({displaySelectedRooms.length || 'Semua'})
+                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-6 rounded-none px-2 text-[11px] shadow-none"
+                      onClick={() => setDisplaySelectedRooms(displayRoomOptions.map((r) => r.value))}
+                    >
+                      Pilih Semua
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-6 rounded-none px-2 text-[11px] shadow-none"
+                      onClick={() => setDisplaySelectedRooms(polyclinics.map((p) => `poli:${p.id}`))}
+                    >
+                      Semua Poli
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 rounded-none px-2 text-[11px]"
+                      onClick={() => setDisplaySelectedRooms([])}
+                    >
+                      Reset
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid max-h-[220px] grid-cols-1 gap-1.5 overflow-y-auto border border-border/70 bg-muted/20 p-2.5 sm:grid-cols-2">
+                  {displayRoomOptions.map((room) => {
+                    const checked = displaySelectedRooms.includes(room.value);
+                    return (
+                      <button
+                        key={room.value}
+                        type="button"
+                        onClick={() =>
+                          setDisplaySelectedRooms((prev) =>
+                            prev.includes(room.value) ? prev.filter((k) => k !== room.value) : [...prev, room.value]
+                          )
+                        }
+                        className={cn(
+                          'flex items-center gap-2 border px-2.5 py-2 text-left text-xs transition-colors',
+                          checked ? 'border-primary bg-primary/10' : 'border-border/70 bg-background hover:bg-muted/30'
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'flex h-4 w-4 shrink-0 items-center justify-center border',
+                            checked ? 'border-primary bg-primary text-primary-foreground' : 'border-border'
+                          )}
+                        >
+                          {checked ? <Check className="h-3 w-3" /> : null}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate font-medium">{room.label}</span>
+                        <span className="text-[10px] text-muted-foreground shrink-0">{room.category}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div>
+                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    Jumlah Kolom Grid
+                  </p>
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {(['auto', '1', '2', '3', '4'] as const).map((col) => (
+                      <button
+                        key={col}
+                        type="button"
+                        onClick={() => setDisplayColsChoice(col)}
+                        className={cn(
+                          'border py-1 text-xs font-medium',
+                          displayColsChoice === col
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-border/70 bg-background hover:bg-muted/40'
+                        )}
+                      >
+                        {col === 'auto' ? 'Otomatis' : `${col} Kolom`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
 
           <DialogFooter className="gap-2 sm:justify-end">
             <Button type="button" variant="outline" className="rounded-none shadow-none" onClick={() => setDisplayPickerOpen(false)}>
@@ -1183,13 +1371,12 @@ export default function QueueDashboard() {
               type="button"
               className="rounded-none shadow-none"
               onClick={() => {
-                openDisplayWindow(displayTargetPoli || 'all');
+                openDisplayWindow(displayModeChoice, displaySelectedRooms, displayColsChoice);
                 setDisplayPickerOpen(false);
               }}
-              disabled={!hasQueuePolyclinicAccess}
             >
               <Monitor className="mr-2 h-4 w-4" />
-              Buka Display
+              Buka Layar Display
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1369,15 +1556,6 @@ export default function QueueDashboard() {
         </DialogContent>
       </Dialog>
 
-    </div>
-  );
-}
-
-function LabelledControl({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
-      {children}
     </div>
   );
 }

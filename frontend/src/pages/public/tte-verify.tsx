@@ -1,35 +1,41 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, BadgeCheck, Loader2, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, ShieldCheck, XCircle } from 'lucide-react';
 
-import { Card, CardContent } from '@/components/ui/card';
 import { publicTteApi, resolveAssetUrl, type TteVerificationResult } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
 import { cn } from '@/lib/utils';
 
 function getTokenFromHash() {
-  return decodeURIComponent(window.location.hash.replace(/^#/, '').trim());
+  const hashToken = decodeURIComponent(window.location.hash.replace(/^#/, '').trim());
+  if (hashToken) return hashToken;
+  const params = new URLSearchParams(window.location.search);
+  return (params.get('token') || '').trim();
 }
 
 function buildFallbackResult(reason: string): TteVerificationResult {
   return {
     is_valid: false,
-    status_label: 'TTE tidak valid',
+    status_label: 'TIDAK VALID',
     status_tone: 'invalid',
-    title: 'Validasi dokumen gagal',
-    description: 'Hash verifikasi tidak tersedia atau formatnya tidak dikenali.',
+    title: 'Validasi Dokumen Gagal',
+    description: 'Kode QR verifikasi tidak tersedia atau formatnya tidak dikenali.',
     hospital_name: 'SIMKLINIK',
+    hospital_address: '',
+    hospital_contact: '',
     hospital_logo_url: '',
     hospital_website: '',
-    document_label: '',
-    document_key: '',
-    signer_name: '',
-    signed_at_label: '',
-    visit_number: '',
-    patient_name: '',
-    document_reference: '',
-    checked_at_label: '',
-    verification_hash: '',
-    guidance: 'Pastikan QR dipindai dari dokumen terbaru.',
+    document_label: '-',
+    document_key: '-',
+    signer_name: '-',
+    signed_at_label: '-',
+    visit_number: '-',
+    patient_name: '-',
+    medical_record_number: '-',
+    polyclinic_name: '-',
+    document_reference: '-',
+    checked_at_label: '-',
+    verification_hash: '-',
+    guidance: 'Pastikan kode QR dipindai dari dokumen cetak terbaru.',
     reason,
   };
 }
@@ -41,13 +47,13 @@ export default function PublicTteVerifyPage() {
   const token = useMemo(() => getTokenFromHash(), []);
 
   useEffect(() => {
-    setPageTitle('Validasi TTE');
+    setPageTitle('Verifikasi Tanda Tangan Elektronik (TTE)');
 
     let cancelled = false;
 
     const load = async () => {
       if (!token) {
-        setResult(buildFallbackResult('Hash token verifikasi tidak ditemukan pada URL.'));
+        setResult(buildFallbackResult('Token verifikasi tidak ditemukan pada tautan QR.'));
         setLoading(false);
         return;
       }
@@ -77,104 +83,200 @@ export default function PublicTteVerifyPage() {
 
   const hospitalLogo = resolveAssetUrl(result?.hospital_logo_url);
   const isValid = Boolean(result?.is_valid);
-  const statusMeaning = isValid
-    ? 'Dokumen ini cocok dengan data tanda tangan elektronik yang tersimpan di sistem klinik.'
-    : 'Dokumen ini belum dapat dipastikan cocok dengan data tanda tangan elektronik yang tersimpan di sistem klinik.';
-  const nextStep = isValid
-    ? 'Bila data pasien, penandatangan, dan waktu tanda tangan sesuai, dokumen ini dapat digunakan sebagai dokumen yang telah tervalidasi.'
-    : 'Bila Anda menerima dokumen ini dari klinik, silakan hubungi petugas untuk meminta pengecekan atau pencetakan ulang dokumen.';
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.18),_transparent_26%),linear-gradient(180deg,_#f8fafc_0%,_#eef6f2_100%)] px-4 py-10 text-slate-900">
-        <div className="mx-auto flex min-h-[80vh] max-w-5xl items-center justify-center">
-          <div className="flex items-center gap-3 rounded-full border border-slate-200 bg-white/90 px-5 py-3 shadow-sm">
-            <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
-            <span className="text-sm font-medium">Memverifikasi dokumen TTE...</span>
-          </div>
+      <div className="flex min-h-[100dvh] w-full items-center justify-center bg-slate-100 p-4 text-slate-950">
+        <div className="flex items-center gap-3 border border-slate-400 bg-white px-5 py-3.5 shadow-sm">
+          <Loader2 className="h-5 w-5 animate-spin text-slate-900" />
+          <span className="text-sm font-semibold">Memverifikasi tanda tangan elektronik...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.18),_transparent_26%),linear-gradient(180deg,_#f8fafc_0%,_#eef6f2_100%)] px-4 py-6 text-slate-950 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl">
-        <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
-          <Card className="overflow-hidden border-slate-200/80 shadow-xl shadow-slate-200/70">
-            <div className="border-b border-slate-200 bg-[linear-gradient(135deg,_rgba(255,255,255,0.96),_rgba(231,245,236,0.92))] px-6 py-6 sm:px-8">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-[1.25rem] border border-slate-200 bg-white shadow-sm">
-                    {hospitalLogo ? <img src={hospitalLogo} alt={result?.hospital_name || 'SIMKLINIK'} className="h-10 w-10 object-contain" /> : <ShieldCheck className="h-8 w-8 text-emerald-600" />}
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Validasi TTE</p>
-                    <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{result?.hospital_name || 'SIMKLINIK'}</h1>
-                    <p className="mt-1 text-sm text-slate-600">Halaman ini membantu memastikan dokumen medis yang Anda pegang sudah tervalidasi oleh klinik.</p>
-                  </div>
+    <div className="min-h-[100dvh] w-full bg-slate-100 text-slate-950 sm:px-4 sm:py-6">
+      <div className="mx-auto w-full max-w-2xl bg-white sm:shadow-sm">
+        {/* Bingkai Dokumen Resmi Menyatu (Gaya Cetakan PDF SIMKLINIK) */}
+        <div className="border-y border-slate-900 sm:border">
+          {/* 1. KOP KLINIK */}
+          <div className="border-b-2 border-slate-900 px-4 py-3.5 sm:px-5">
+            <div className="flex items-center gap-3.5">
+              {hospitalLogo ? (
+                <img
+                  src={hospitalLogo}
+                  alt={result?.hospital_name || 'SIMKLINIK'}
+                  className="h-12 w-12 shrink-0 object-contain sm:h-14 sm:w-14"
+                />
+              ) : (
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center border border-slate-900 bg-white">
+                  <ShieldCheck className="h-6 w-6 text-slate-900" />
                 </div>
-                <div className={cn('inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold', isValid ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-rose-50 text-rose-700 ring-1 ring-rose-200')}>
-                  {isValid ? <BadgeCheck className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-                  {result?.status_label}
-                </div>
-              </div>
-              <div className="mt-5">
-                <h2 className="text-2xl font-semibold tracking-tight">{result?.title}</h2>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{result?.description}</p>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                  Sertifikat Verifikasi Tanda Tangan Elektronik (TTE)
+                </p>
+                <h1 className="truncate text-base font-extrabold uppercase tracking-tight text-slate-950 sm:text-lg">
+                  {result?.hospital_name || 'SIMKLINIK'}
+                </h1>
+                {result?.hospital_address ? (
+                  <p className="mt-0.5 text-[11px] leading-snug text-slate-700">{result.hospital_address}</p>
+                ) : null}
+                {result?.hospital_contact || result?.hospital_website ? (
+                  <p className="text-[11px] leading-snug text-slate-600">
+                    {[result?.hospital_contact, result?.hospital_website].filter(Boolean).join(' · ')}
+                  </p>
+                ) : null}
               </div>
             </div>
-            <CardContent className="space-y-5 px-6 py-6 sm:px-8">
-              {result?.reason ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700">{result.reason}</div> : null}
-              {result?.guidance ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-800">{result.guidance}</div> : null}
+          </div>
 
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {[
-                  ['Dokumen', result?.document_label],
-                  ['Penandatangan', result?.signer_name],
-                  ['Waktu Tanda Tangan', result?.signed_at_label],
-                  ['Pasien', result?.patient_name],
-                  ['Nomor Kunjungan', result?.visit_number],
-                  ['Referensi Dokumen', result?.document_reference],
-                ].filter(([, value]) => value).map(([label, value]) => (
-                  <div key={label} className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm shadow-slate-100">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</p>
-                    <p className="mt-2 break-words text-base font-semibold text-slate-900">{value}</p>
-                  </div>
-                ))}
+          {/* 2. BANNER STATUS VERIFIKASI */}
+          <div
+            className={cn(
+              'flex items-center justify-between gap-3 border-b border-slate-900 px-4 py-3 sm:px-5',
+              isValid ? 'bg-emerald-50/90' : 'bg-rose-50/90'
+            )}
+          >
+            <div className="flex items-center gap-2.5">
+              {isValid ? (
+                <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-700" />
+              ) : (
+                <XCircle className="h-6 w-6 shrink-0 text-rose-700" />
+              )}
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={cn(
+                      'text-xs font-extrabold uppercase tracking-wider',
+                      isValid ? 'text-emerald-800' : 'text-rose-800'
+                    )}
+                  >
+                    {result?.status_label || (isValid ? 'TERVERIFIKASI SAH' : 'TIDAK VALID')}
+                  </span>
+                </div>
+                <p className="text-xs font-medium text-slate-800">{result?.title}</p>
               </div>
-              <div className="text-xs text-slate-500">Diverifikasi pada {result?.checked_at_label || '-'}</div>
-            </CardContent>
-          </Card>
+            </div>
+            <span
+              className={cn(
+                'shrink-0 border px-2.5 py-1 font-mono text-[11px] font-bold uppercase',
+                isValid
+                  ? 'border-emerald-700 bg-emerald-700 text-white'
+                  : 'border-rose-700 bg-rose-700 text-white'
+              )}
+            >
+              {isValid ? 'SAH / VALID' : 'INVALID'}
+            </span>
+          </div>
 
-          <div className="space-y-4">
-            <Card className="border-slate-200/80 shadow-lg shadow-slate-200/60">
-              <CardContent className="space-y-4 px-6 py-6">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Ringkasan Verifikasi</p>
-                <div>
-                  <p className="text-sm text-slate-500">Hash Verifikasi</p>
-                  <p className="mt-1 break-all text-lg font-semibold text-slate-950">{result?.verification_hash || '-'}</p>
+          {/* Pesan Gagal bila Tidak Valid */}
+          {!isValid && result?.reason ? (
+            <div className="flex items-start gap-2.5 border-b border-slate-900 bg-rose-50/40 px-4 py-3 text-xs text-rose-900 sm:px-5">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-700" />
+              <div>
+                <p className="font-bold">Alasan Penolakan Verifikasi:</p>
+                <p className="mt-0.5">{result.reason}</p>
+              </div>
+            </div>
+          ) : null}
+
+          {/* 3. SEKSI: DATA PENGESAHAN & PENANDATANGAN */}
+          <div className="border-b border-slate-900 bg-slate-100 px-4 py-1.5 text-center text-[11px] font-extrabold uppercase tracking-wider text-slate-950">
+            Data Pengesahan & Penandatangan
+          </div>
+          <div className="divide-y divide-slate-300 border-b border-slate-900 text-xs">
+            <div className="grid grid-cols-[135px_1fr] sm:grid-cols-[175px_1fr]">
+              <div className="border-r border-slate-300 bg-slate-50/70 px-3 py-2.5 font-semibold text-slate-700">
+                Nama Penandatangan
+              </div>
+              <div className="px-3 py-2.5 font-bold text-slate-950">{result?.signer_name || '-'}</div>
+            </div>
+            <div className="grid grid-cols-[135px_1fr] sm:grid-cols-[175px_1fr]">
+              <div className="border-r border-slate-300 bg-slate-50/70 px-3 py-2.5 font-semibold text-slate-700">
+                Nama Dokumen
+              </div>
+              <div className="px-3 py-2.5 font-bold text-slate-950">{result?.document_label || '-'}</div>
+            </div>
+            <div className="grid grid-cols-[135px_1fr] sm:grid-cols-[175px_1fr]">
+              <div className="border-r border-slate-300 bg-slate-50/70 px-3 py-2.5 font-semibold text-slate-700">
+                Jenis Dokumen
+              </div>
+              <div className="px-3 py-2.5 text-slate-900">{result?.document_reference || '-'}</div>
+            </div>
+            <div className="grid grid-cols-[135px_1fr] sm:grid-cols-[175px_1fr]">
+              <div className="border-r border-slate-300 bg-slate-50/70 px-3 py-2.5 font-semibold text-slate-700">
+                Waktu TTD Elektronik
+              </div>
+              <div className="px-3 py-2.5 font-semibold text-slate-900">{result?.signed_at_label || '-'}</div>
+            </div>
+          </div>
+
+          {/* 4. SEKSI: IDENTITAS PASIEN & KUNJUNGAN */}
+          <div className="border-b border-slate-900 bg-slate-100 px-4 py-1.5 text-center text-[11px] font-extrabold uppercase tracking-wider text-slate-950">
+            Identitas Pasien & Kunjungan
+          </div>
+          <div className="divide-y divide-slate-300 border-b border-slate-900 text-xs">
+            <div className="grid grid-cols-[135px_1fr] sm:grid-cols-[175px_1fr]">
+              <div className="border-r border-slate-300 bg-slate-50/70 px-3 py-2.5 font-semibold text-slate-700">
+                Nama Pasien
+              </div>
+              <div className="px-3 py-2.5 font-bold text-slate-950">{result?.patient_name || '-'}</div>
+            </div>
+            {result?.medical_record_number ? (
+              <div className="grid grid-cols-[135px_1fr] sm:grid-cols-[175px_1fr]">
+                <div className="border-r border-slate-300 bg-slate-50/70 px-3 py-2.5 font-semibold text-slate-700">
+                  No. Rekam Medis
                 </div>
-                <div>
-                  <p className="text-sm text-slate-500">Status</p>
-                  <p className={cn('mt-1 text-lg font-semibold', isValid ? 'text-emerald-700' : 'text-rose-700')}>{result?.status_label || '-'}</p>
+                <div className="px-3 py-2.5 font-mono font-semibold text-slate-900">
+                  {result.medical_record_number}
                 </div>
-                <div>
-                  <p className="text-sm text-slate-500">Arti Hasil Ini</p>
-                  <p className="mt-1 text-sm leading-6 text-slate-700">{statusMeaning}</p>
+              </div>
+            ) : null}
+            <div className="grid grid-cols-[135px_1fr] sm:grid-cols-[175px_1fr]">
+              <div className="border-r border-slate-300 bg-slate-50/70 px-3 py-2.5 font-semibold text-slate-700">
+                No. Kunjungan
+              </div>
+              <div className="px-3 py-2.5 font-mono font-semibold text-slate-900">
+                {result?.visit_number || '-'}
+              </div>
+            </div>
+            {result?.polyclinic_name ? (
+              <div className="grid grid-cols-[135px_1fr] sm:grid-cols-[175px_1fr]">
+                <div className="border-r border-slate-300 bg-slate-50/70 px-3 py-2.5 font-semibold text-slate-700">
+                  Poliklinik / Unit
                 </div>
-              </CardContent>
-            </Card>
-            <Card className="border-slate-200/80 shadow-lg shadow-slate-200/60">
-              <CardContent className="space-y-3 px-6 py-6">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Langkah Selanjutnya</p>
-                <p className="text-sm leading-6 text-slate-700">{nextStep}</p>
-                <div className="rounded-2xl bg-slate-50 px-4 py-4">
-                  <p className="text-sm font-semibold text-slate-900">Yang perlu Anda cocokkan</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-700">Periksa nama pasien, nama penandatangan, jenis dokumen, dan waktu tanda tangan pada halaman ini dengan dokumen cetak yang Anda bawa.</p>
-                </div>
-              </CardContent>
-            </Card>
+                <div className="px-3 py-2.5 text-slate-900">{result.polyclinic_name}</div>
+              </div>
+            ) : null}
+          </div>
+
+          {/* 5. SEKSI: JEJAK KRIPTOGRAFI & AUDIT */}
+          <div className="border-b border-slate-900 bg-slate-100 px-4 py-1.5 text-center text-[11px] font-extrabold uppercase tracking-wider text-slate-950">
+            Jejak Audit & Hash Verifikasi
+          </div>
+          <div className="divide-y divide-slate-300 text-xs">
+            <div className="grid grid-cols-[135px_1fr] sm:grid-cols-[175px_1fr]">
+              <div className="border-r border-slate-300 bg-slate-50/70 px-3 py-2.5 font-semibold text-slate-700">
+                Hash Verifikasi
+              </div>
+              <div className="px-3 py-2.5 font-mono font-bold tracking-wide text-slate-950">
+                {result?.verification_hash || '-'}
+              </div>
+            </div>
+            <div className="grid grid-cols-[135px_1fr] sm:grid-cols-[175px_1fr]">
+              <div className="border-r border-slate-300 bg-slate-50/70 px-3 py-2.5 font-semibold text-slate-700">
+                Waktu Pengecekan
+              </div>
+              <div className="px-3 py-2.5 text-slate-800">{result?.checked_at_label || '-'}</div>
+            </div>
+            <div className="bg-slate-50 px-4 py-3 text-[11px] leading-relaxed text-slate-700">
+              <strong className="font-bold text-slate-900">Keterangan Resmi: </strong>
+              {result?.description}{' '}
+              {result?.guidance}
+            </div>
           </div>
         </div>
       </div>

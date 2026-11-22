@@ -34,10 +34,13 @@ import {
   ScanLine,
   Banknote,
   PlugZap,
+  Warehouse,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { usePermission } from '@/hooks/usePermission';
 import { getAppName, getAppSubtitle } from '@/lib/page-title';
+import { getStoredAppLogo, resolveBrandingAssetUrl } from '@/lib/branding';
 import {
   Sidebar,
   SidebarContent,
@@ -59,11 +62,9 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
-import { tteApi } from '@/lib/api';
-import { TTE_BADGE_REFRESH_EVENT } from '@/lib/tte-badge-events';
 import { cn } from '@/lib/utils';
 
-type BadgeCountKey = 'doctor_tte_pending';
+type BadgeCountKey = string;
 
 interface SubMenuItem {
   path: string;
@@ -99,27 +100,14 @@ const menuItems: MenuItem[] = [
       { path: '/patients', label: 'Data Pasien', icon: Users2, permission: 'patients.view' },
     ]
   },
-  {
-    path: '/doctors',
-    label: 'Dokter',
-    icon: Stethoscope,
-    permission: ['doctors.view', 'document_signatures.approve'],
-    badgeKey: 'doctor_tte_pending',
-    submenu: [
-      { path: '/doctors', label: 'Data Dokter', icon: Stethoscope, permission: 'doctors.view' },
-      { path: '/tte-requests', label: 'Permintaan TTE', icon: FileText, permission: 'document_signatures.approve', badgeKey: 'doctor_tte_pending' },
-    ]
-  },
+  { path: '/doctors', label: 'Dokter', icon: Stethoscope, permission: 'doctors.view' },
   {
     path: '/polyclinics',
     label: 'Master Data',
     icon: Hospital,
     submenu: [
-      { path: '/polyclinics', label: 'Poliklinik', icon: Hospital, permission: 'polyclinics.view' },
+      { path: '/polyclinics', label: 'Ruangan', icon: Warehouse, permission: 'polyclinics.view' },
       { path: '/employees', label: 'Pegawai', icon: Users, permission: 'employees.view' },
-      { path: '/medicine-categories', label: 'Kategori Obat', icon: FolderTree, permission: 'medicine_categories.view' },
-      { path: '/units', label: 'Satuan', icon: Ruler, permission: 'units.view' },
-      { path: '/medicines', label: 'Obat', icon: Pill, permission: 'medicines.view' },
       { path: '/service-categories', label: 'Kategori Layanan', icon: Layers, permission: 'service_categories.view' },
       { path: '/medical-services', label: 'Layanan Medis', icon: HeartPulse, permission: 'medical_services.view' },
       { path: '/specimen-templates', label: 'Template Specimen', icon: FlaskConical, permission: 'medical_services.view' },
@@ -129,12 +117,16 @@ const menuItems: MenuItem[] = [
     ]
   },
   {
-    path: '/purchasing',
-    label: 'Pembelian',
+    path: '/medicines',
+    label: 'Inventory',
     icon: ShoppingCart,
-    permission: 'purchase_orders.view',
+    permission: ['medicines.view', 'stock_requests.view', 'purchase_orders.view', 'medicine_categories.view', 'units.view'],
     submenu: [
-      { path: '/purchasing', label: 'Purchase Order', icon: PackageSearch, permission: 'purchase_orders.view' },
+      { path: '/medicines', label: 'Master Obat', icon: Pill, permission: 'medicines.view' },
+      { path: '/stock-requests', label: 'Permintaan Stok', icon: ArrowRightLeft, permission: 'stock_requests.view' },
+      { path: '/purchasing', label: 'Pembelian Obat', icon: PackageSearch, permission: 'purchase_orders.view' },
+      { path: '/medicine-categories', label: 'Kategori Obat', icon: FolderTree, permission: 'medicine_categories.view' },
+      { path: '/units', label: 'Satuan Obat', icon: Ruler, permission: 'units.view' },
     ]
   },
   {
@@ -199,9 +191,9 @@ export function AppSidebar() {
   const { hasAnyPermission, hasPermission } = usePermission();
   const [appName, setAppName] = useState(getAppName());
   const [appSubtitle, setAppSubtitle] = useState(getAppSubtitle());
-  const [badgeCounts, setBadgeCounts] = useState<Record<BadgeCountKey, number>>({ doctor_tte_pending: 0 });
+  const [appLogo, setAppLogo] = useState(getStoredAppLogo());
+  const [logoLoadFailed, setLogoLoadFailed] = useState(false);
   const isCollapsed = state === 'collapsed';
-  const canAccessDoctorTTEInbox = hasPermission('document_signatures.approve');
 
   const canAccess = (permission?: string | string[]) => {
     if (!permission) return true;
@@ -212,65 +204,14 @@ export function AppSidebar() {
     const handleStorageChange = () => {
       setAppName(getAppName());
       setAppSubtitle(getAppSubtitle());
+      setAppLogo(getStoredAppLogo());
+      setLogoLoadFailed(false);
     };
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  useEffect(() => {
-    if (!canAccessDoctorTTEInbox) {
-      setBadgeCounts({ doctor_tte_pending: 0 });
-      return;
-    }
-
-    let cancelled = false;
-
-    const loadDoctorPendingTTECount = async () => {
-      try {
-        const response = await tteApi.getInbox();
-        if (cancelled) {
-          return;
-        }
-
-        const pendingCount = (response.data.data || []).filter((request) => request.status === 'pending').length;
-        setBadgeCounts({ doctor_tte_pending: pendingCount });
-      } catch {
-        if (!cancelled) {
-          setBadgeCounts({ doctor_tte_pending: 0 });
-        }
-      }
-    };
-
-    void loadDoctorPendingTTECount();
-
-    const intervalId = window.setInterval(() => {
-      void loadDoctorPendingTTECount();
-    }, 30000);
-
-    const handleFocus = () => {
-      void loadDoctorPendingTTECount();
-    };
-    const handleTTEBadgeRefresh = () => {
-      void loadDoctorPendingTTECount();
-    };
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener(TTE_BADGE_REFRESH_EVENT, handleTTEBadgeRefresh);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener(TTE_BADGE_REFRESH_EVENT, handleTTEBadgeRefresh);
-    };
-  }, [canAccessDoctorTTEInbox, user?.id]);
-
-  const getBadgeCount = (badgeKey?: BadgeCountKey) => {
-    if (!badgeKey) {
-      return 0;
-    }
-
-    return badgeCounts[badgeKey] || 0;
-  };
+  const getBadgeCount = (_badgeKey?: BadgeCountKey) => 0;
 
   const handleLogout = () => {
     logout();
@@ -297,6 +238,8 @@ export function AppSidebar() {
     return item;
   });
 
+  const logoUrl = !logoLoadFailed ? resolveBrandingAssetUrl(appLogo) : '';
+
   return (
     <Sidebar collapsible="icon" className="border-r-0" variant="inset">
       {/* Header - Logo & App Name */}
@@ -305,8 +248,20 @@ export function AppSidebar() {
           "flex items-center gap-3 transition-all",
           isCollapsed && "justify-center"
         )}>
-          <div className="flex items-center justify-center size-8 rounded-lg bg-foreground text-background shrink-0">
-            <Building2 className="size-4" />
+          <div className={cn(
+            "flex items-center justify-center size-8 rounded-lg shrink-0 overflow-hidden",
+            logoUrl ? "bg-transparent" : "bg-foreground text-background"
+          )}>
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt={appName}
+                className="size-8 object-contain"
+                onError={() => setLogoLoadFailed(true)}
+              />
+            ) : (
+              <Building2 className="size-4" />
+            )}
           </div>
           {!isCollapsed && (
             <div className="flex flex-col leading-tight">

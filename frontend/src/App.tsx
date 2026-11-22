@@ -17,6 +17,7 @@ import KasirDetail from './pages/kasir/detail';
 // Lazy load pages
 const LoginPage = lazy(() => import('./pages/auth/login'));
 const PublicTteVerifyPage = lazy(() => import('./pages/public/tte-verify'));
+const PublicInformedConsentSignPage = lazy(() => import('./pages/public/informed-consent-sign'));
 const DashboardPage = lazy(() => import('./pages/dashboard/index'));
 const ReportsPage = lazy(() => import('./pages/reports/index'));
 const AccountPage = lazy(() => import('./pages/account/index'));
@@ -78,6 +79,7 @@ const MedicinesIndex = lazy(() => import('./pages/medicines/index'));
 const MedicinesCreate = lazy(() => import('./pages/medicines/create'));
 const MedicinesEdit = lazy(() => import('./pages/medicines/edit'));
 const MedicinesShow = lazy(() => import('./pages/medicines/show'));
+const MedicineRoomsShow = lazy(() => import('./pages/medicine-rooms/show'));
 
 // Service Categories
 const ServiceCategoriesIndex = lazy(() => import('./pages/service-categories/index'));
@@ -117,6 +119,11 @@ const PurchasingIndex = lazy(() => import('./pages/purchasing/index'));
 const PurchasingCreate = lazy(() => import('./pages/purchasing/create'));
 const PurchasingEdit = lazy(() => import('./pages/purchasing/edit'));
 const PurchasingShow = lazy(() => import('./pages/purchasing/show'));
+const PurchasingReceive = lazy(() => import('./pages/purchasing/receive'));
+const PurchasingPayment = lazy(() => import('./pages/purchasing/payment'));
+const StockRequestsIndex = lazy(() => import('./pages/stock-requests/index'));
+const StockRequestsCreate = lazy(() => import('./pages/stock-requests/create'));
+const StockRequestsShow = lazy(() => import('./pages/stock-requests/show'));
 
 // Patients
 const PatientsIndex = lazy(() => import('./pages/patients/index'));
@@ -159,16 +166,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <AppLayout>{children}</AppLayout>;
 }
 
-function FullscreenProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuthStore();
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return <div className="min-h-screen bg-background">{children}</div>;
-}
-
 function App() {
   // Load theme on app start
   useEffect(() => {
@@ -186,7 +183,10 @@ function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/antrian" element={<PublicQueuePage />} />
+          <Route path="/queue/display" element={<QueueDisplay />} />
+          <Route path="/queue-display" element={<QueueDisplay />} />
           <Route path="/tte/verify" element={<PublicTteVerifyPage />} />
+          <Route path="/informed-consent/sign" element={<PublicInformedConsentSignPage />} />
           <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/reports" element={<ProtectedRoute><PermissionGuard permission="reports.view"><ReportsPage /></PermissionGuard></ProtectedRoute>} />
           <Route path="/tte-requests" element={<ProtectedRoute><PermissionGuard permission="document_signatures.approve"><TTERequestsPage /></PermissionGuard></ProtectedRoute>} />
@@ -252,10 +252,11 @@ function App() {
           } />
 
           {/* Polyclinics */}
-          <Route path="/polyclinics" element={<ProtectedRoute><PolyclinicsIndex /></ProtectedRoute>} />
+          <Route path="/polyclinics" element={<ProtectedRoute><PermissionGuard permission="polyclinics.view"><PolyclinicsIndex /></PermissionGuard></ProtectedRoute>} />
           <Route path="/polyclinics/create" element={<ProtectedRoute><PermissionGuard permission="polyclinics.create"><PolyclinicsCreate /></PermissionGuard></ProtectedRoute>} />
-          <Route path="/polyclinics/:id" element={<ProtectedRoute><PolyclinicsShow /></ProtectedRoute>} />
+          <Route path="/polyclinics/:id" element={<ProtectedRoute><PermissionGuard permission="polyclinics.view"><PolyclinicsShow /></PermissionGuard></ProtectedRoute>} />
           <Route path="/polyclinics/:id/edit" element={<ProtectedRoute><PermissionGuard permission="polyclinics.update"><PolyclinicsEdit /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/polyclinics/:id/stock" element={<ProtectedRoute><PermissionGuard permission="medicine_rooms.view"><MedicineRoomsShow /></PermissionGuard></ProtectedRoute>} />
 
           {/* Employees */}
           <Route path="/employees" element={<ProtectedRoute><PermissionGuard permission="employees.view"><EmployeesIndex /></PermissionGuard></ProtectedRoute>} />
@@ -270,20 +271,20 @@ function App() {
           <Route path="/doctors/:id/edit" element={<ProtectedRoute><PermissionGuard permission="doctors.update"><DoctorsEdit /></PermissionGuard></ProtectedRoute>} />
 
           {/* Medicine Categories */}
-          <Route path="/medicine-categories" element={<ProtectedRoute><MedicineCategoriesIndex /></ProtectedRoute>} />
+          <Route path="/medicine-categories" element={<ProtectedRoute><PermissionGuard permission="medicine_categories.view"><MedicineCategoriesIndex /></PermissionGuard></ProtectedRoute>} />
           <Route path="/medicine-categories/create" element={<ProtectedRoute><PermissionGuard permission="medicine_categories.create"><MedicineCategoriesCreate /></PermissionGuard></ProtectedRoute>} />
-          <Route path="/medicine-categories/:id" element={<ProtectedRoute><MedicineCategoriesShow /></ProtectedRoute>} />
+          <Route path="/medicine-categories/:id" element={<ProtectedRoute><PermissionGuard permission="medicine_categories.view"><MedicineCategoriesShow /></PermissionGuard></ProtectedRoute>} />
           <Route path="/medicine-categories/:id/edit" element={<ProtectedRoute><PermissionGuard permission="medicine_categories.update"><MedicineCategoriesEdit /></PermissionGuard></ProtectedRoute>} />
           {/* Units */}
-          <Route path="/units" element={<ProtectedRoute><UnitsIndex /></ProtectedRoute>} />
+          <Route path="/units" element={<ProtectedRoute><PermissionGuard permission="units.view"><UnitsIndex /></PermissionGuard></ProtectedRoute>} />
           <Route path="/units/create" element={<ProtectedRoute><PermissionGuard permission="units.create"><UnitsCreate /></PermissionGuard></ProtectedRoute>} />
-          <Route path="/units/:id" element={<ProtectedRoute><UnitsShow /></ProtectedRoute>} />
+          <Route path="/units/:id" element={<ProtectedRoute><PermissionGuard permission="units.view"><UnitsShow /></PermissionGuard></ProtectedRoute>} />
           <Route path="/units/:id/edit" element={<ProtectedRoute><PermissionGuard permission="units.update"><UnitsEdit /></PermissionGuard></ProtectedRoute>} />
 
           {/* Medicines */}
-          <Route path="/medicines" element={<ProtectedRoute><MedicinesIndex /></ProtectedRoute>} />
+          <Route path="/medicines" element={<ProtectedRoute><PermissionGuard permission="medicines.view"><MedicinesIndex /></PermissionGuard></ProtectedRoute>} />
           <Route path="/medicines/create" element={<ProtectedRoute><PermissionGuard permission="medicines.create"><MedicinesCreate /></PermissionGuard></ProtectedRoute>} />
-          <Route path="/medicines/:id" element={<ProtectedRoute><MedicinesShow /></ProtectedRoute>} />
+          <Route path="/medicines/:id" element={<ProtectedRoute><PermissionGuard permission="medicines.view"><MedicinesShow /></PermissionGuard></ProtectedRoute>} />
           <Route path="/medicines/:id/edit" element={<ProtectedRoute><PermissionGuard permission="medicines.update"><MedicinesEdit /></PermissionGuard></ProtectedRoute>} />
 
           {/* Service Categories */}
@@ -320,10 +321,15 @@ function App() {
           <Route path="/physical-exam-images/:id/edit" element={<ProtectedRoute><PermissionGuard permission="physical_exam_images.update"><PhysicalExamImagesEdit /></PermissionGuard></ProtectedRoute>} />
 
           {/* Purchasing */}
-          <Route path="/purchasing" element={<ProtectedRoute><PurchasingIndex /></ProtectedRoute>} />
+          <Route path="/purchasing" element={<ProtectedRoute><PermissionGuard permission="purchase_orders.view"><PurchasingIndex /></PermissionGuard></ProtectedRoute>} />
           <Route path="/purchasing/create" element={<ProtectedRoute><PermissionGuard permission="purchase_orders.create"><PurchasingCreate /></PermissionGuard></ProtectedRoute>} />
-          <Route path="/purchasing/:id" element={<ProtectedRoute><PurchasingShow /></ProtectedRoute>} />
+          <Route path="/purchasing/:id" element={<ProtectedRoute><PermissionGuard permission="purchase_orders.view"><PurchasingShow /></PermissionGuard></ProtectedRoute>} />
           <Route path="/purchasing/:id/edit" element={<ProtectedRoute><PermissionGuard permission="purchase_orders.update"><PurchasingEdit /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/purchasing/:id/receive" element={<ProtectedRoute><PermissionGuard permission="purchase_orders.receive"><PurchasingReceive /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/purchasing/:id/payment" element={<ProtectedRoute><PermissionGuard permission="purchase_orders.pay"><PurchasingPayment /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/stock-requests" element={<ProtectedRoute><PermissionGuard permission="stock_requests.view"><StockRequestsIndex /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/stock-requests/create" element={<ProtectedRoute><PermissionGuard permission="stock_requests.create"><StockRequestsCreate /></PermissionGuard></ProtectedRoute>} />
+          <Route path="/stock-requests/:id" element={<ProtectedRoute><PermissionGuard permission="stock_requests.view"><StockRequestsShow /></PermissionGuard></ProtectedRoute>} />
 
           {/* Patients */}
           <Route path="/patients" element={<ProtectedRoute><PatientsIndex /></ProtectedRoute>} />
@@ -341,7 +347,6 @@ function App() {
 
           {/* Queue Dashboard */}
           <Route path="/queue" element={<ProtectedRoute><PermissionGuard permission="queue.view"><QueueDashboard /></PermissionGuard></ProtectedRoute>} />
-          <Route path="/queue/display" element={<FullscreenProtectedRoute><PermissionGuard permission="queue.view"><QueueDisplay /></PermissionGuard></FullscreenProtectedRoute>} />
 
           {/* EMR */}
           <Route path="/emr" element={<ProtectedRoute><EMRIndex /></ProtectedRoute>} />

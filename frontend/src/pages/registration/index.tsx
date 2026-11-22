@@ -9,6 +9,7 @@ import { registrationQueueApi, type RegistrationQueueItem } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { CalendarDays, Loader2, RefreshCw } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
+import { announceQueueCall } from '@/lib/queue-caller';
 import { cn, getLocalISODate } from '@/lib/utils';
 import { createColumns } from './columns';
 
@@ -70,6 +71,35 @@ export default function RegistrationIndex() {
     navigate(`/registration/create?ticket_id=${item.id}&mode=${mode}`);
   }, [navigate]);
 
+  const callTicket = useCallback(async (item: RegistrationQueueItem) => {
+    try {
+      const targetStatus = item.status === 'processing' ? 'processing' : item.status === 'completed' ? 'completed' : 'called';
+      const payload: { status: RegistrationQueueItem['status']; visit_id?: number } = { status: targetStatus };
+      if (item.status === 'completed' && item.visit_id) {
+        payload.visit_id = item.visit_id;
+      }
+      await registrationQueueApi.updateStatus(item.id, payload);
+      void announceQueueCall({
+        queueNumber: item.ticket_number,
+        patientName: item.patient_name || item.patient?.full_name || undefined,
+        unitType: 'pendaftaran',
+        destinationName: 'Loket Pendaftaran',
+      });
+      toast({
+        variant: 'success',
+        title: `Tiket ${String(item.ticket_number).padStart(3, '0')} Dipanggil`,
+        description: 'Panggilan tiket dikirim ke layar display pendaftaran.',
+      });
+      void loadData(true);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Gagal memanggil antrian',
+        description: error.response?.data?.error || 'Tidak dapat memanggil tiket pendaftaran.',
+      });
+    }
+  }, [loadData, toast]);
+
   const confirmCancel = useCallback(async () => {
     if (!cancelId) {
       return;
@@ -107,11 +137,12 @@ export default function RegistrationIndex() {
 
   const columns = useMemo(() => createColumns({
     onProcess: startProcessing,
+    onCall: callTicket,
     onCancel: (item) => {
       setCancelId(item.id);
       setDeleteDialogOpen(true);
     },
-  }), [startProcessing]);
+  }), [callTicket, startProcessing]);
 
   if (loading) {
     return (

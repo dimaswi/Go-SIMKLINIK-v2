@@ -490,23 +490,25 @@ func addOdontogramPDFSummaryTable(pdf *gofpdf.Fpdf, teeth []models.OdontogramToo
 	colToothW := 16.0
 	colCondW := 34.0
 	colSurfaceW := contentWidth - colNoW - colToothW - colCondW
-	rowH := 6.0
+	headerH := 5.2
+	rowH := 5.0
 
 	drawHeader := func() {
-		pdf.SetFont("Arial", "B", 8)
-		pdf.SetFillColor(235, 235, 235)
-		pdf.SetDrawColor(150, 150, 150)
-		pdf.CellFormat(colNoW, rowH, " No", "1", 0, "C", true, 0, "")
-		pdf.CellFormat(colToothW, rowH, " Gigi", "1", 0, "C", true, 0, "")
-		pdf.CellFormat(colCondW, rowH, " Kondisi", "1", 0, "L", true, 0, "")
-		pdf.CellFormat(colSurfaceW, rowH, " Temuan / Catatan", "1", 1, "L", true, 0, "")
+		pdf.SetFont("Arial", "B", 7.6)
+		pdf.SetDrawColor(0, 0, 0)
+		pdf.SetTextColor(0, 0, 0)
+		pdf.SetLineWidth(0.25)
+		pdf.CellFormat(colNoW, headerH, "NO", "1", 0, "C", false, 0, "")
+		pdf.CellFormat(colToothW, headerH, "GIGI", "1", 0, "C", false, 0, "")
+		pdf.CellFormat(colCondW, headerH, "KONDISI", "1", 0, "C", false, 0, "")
+		pdf.CellFormat(colSurfaceW, headerH, "TEMUAN / CATATAN", "1", 1, "C", false, 0, "")
+		pdf.SetLineWidth(0.2)
 	}
 
 	drawHeader()
 
 	// Table rows
-	pdf.SetFont("Arial", "", 8)
-	pdf.SetFillColor(255, 255, 255)
+	pdf.SetFont("Arial", "", 7.8)
 
 	for idx, summary := range summaries {
 		surfaceText := buildOdontogramSurfaceText(summary.surfaces)
@@ -518,12 +520,12 @@ func addOdontogramPDFSummaryTable(pdf *gofpdf.Fpdf, teeth []models.OdontogramToo
 		}
 
 		condLabel := odontogramToothConditionLabel(summary.toothCondition)
-		surfaceLines := pdf.SplitLines([]byte(sanitizePDFText(surfaceText)), colSurfaceW-2)
+		surfaceLines := pdf.SplitLines([]byte(sanitizePDFText(surfaceText)), colSurfaceW-2.4)
 		lineCount := len(surfaceLines)
 		if lineCount < 1 {
 			lineCount = 1
 		}
-		cellH := float64(lineCount) * 4.0
+		cellH := float64(lineCount)*3.6 + 1.2
 		if cellH < rowH {
 			cellH = rowH
 		}
@@ -533,31 +535,24 @@ func addOdontogramPDFSummaryTable(pdf *gofpdf.Fpdf, teeth []models.OdontogramToo
 			pdf.AddPage()
 			pdf.SetY(initialAssessmentPDFPageContentStartForPDF(pdf, pdf.PageNo()))
 			drawHeader()
-			pdf.SetFont("Arial", "", 8)
-		}
-
-		fillRow := idx%2 == 1
-		if fillRow {
-			pdf.SetFillColor(248, 250, 252)
-		} else {
-			pdf.SetFillColor(255, 255, 255)
+			pdf.SetFont("Arial", "", 7.8)
 		}
 
 		xStart := pdf.GetX()
 		yStart := pdf.GetY()
-		pdf.CellFormat(colNoW, cellH, fmt.Sprintf(" %d", idx+1), "1", 0, "C", fillRow, 0, "")
-		pdf.CellFormat(colToothW, cellH, " "+summary.toothNumber, "1", 0, "C", fillRow, 0, "")
-		pdf.CellFormat(colCondW, cellH, " "+sanitizePDFText(condLabel), "1", 0, "L", fillRow, 0, "")
+		pdf.SetDrawColor(0, 0, 0)
+		pdf.SetTextColor(0, 0, 0)
+		pdf.CellFormat(colNoW, cellH, fmt.Sprintf("%d", idx+1), "1", 0, "C", false, 0, "")
+		pdf.SetFont("Arial", "B", 7.8)
+		pdf.CellFormat(colToothW, cellH, summary.toothNumber, "1", 0, "C", false, 0, "")
+		pdf.SetFont("Arial", "", 7.8)
+		pdf.CellFormat(colCondW, cellH, " "+sanitizePDFText(condLabel), "1", 0, "L", false, 0, "")
 
 		// Multi-line surface cell
 		surfaceX := xStart + colNoW + colToothW + colCondW
-		surfaceRectStyle := "D"
-		if fillRow {
-			surfaceRectStyle = "FD"
-		}
-		pdf.Rect(surfaceX, yStart, colSurfaceW, cellH, surfaceRectStyle)
-		pdf.SetXY(surfaceX+1, yStart+0.5)
-		pdf.MultiCell(colSurfaceW-2, 4.0, sanitizePDFText(surfaceText), "", "L", false)
+		pdf.Rect(surfaceX, yStart, colSurfaceW, cellH, "D")
+		pdf.SetXY(surfaceX+1.2, yStart+0.6)
+		pdf.MultiCell(colSurfaceW-2.4, 3.6, sanitizePDFText(surfaceText), "", "L", false)
 
 		pdf.SetXY(left, yStart+cellH)
 	}
@@ -639,23 +634,20 @@ func addOdontogramPDFStatistics(pdf *gofpdf.Fpdf, teeth []models.OdontogramTooth
 		}
 	}
 
-	addInitialAssessmentSectionTitle(pdf, "RINGKASAN ODONTOGRAM")
-	addInitialAssessmentKeyValueRow(
-		pdf,
-		"Total temuan",
-		fmt.Sprintf("%d gigi bertanda, %d permukaan dengan temuan.", totalMarked, totalSurfaceFindings),
-	)
-	addInitialAssessmentKeyValueRow(
-		pdf,
-		"Kondisi gigi",
-		buildOdontogramPDFCountSummary(conditionCounts, odontogramToothConditionOrder, odontogramToothConditionLabel, "gigi", "Tidak ada kondisi gigi khusus."),
-	)
-	addInitialAssessmentKeyValueRow(
-		pdf,
-		"Temuan permukaan",
-		buildOdontogramPDFCountSummary(surfaceCounts, odontogramSurfaceConditionOrder, odontogramSurfaceConditionLabel, "permukaan", "Tidak ada temuan permukaan khusus."),
-	)
-	addInitialAssessmentSectionSpacing(pdf)
+	addInitialAssessmentCompactFieldSection(pdf, "RINGKASAN ODONTOGRAM", []initialAssessmentPrintField{
+		{
+			Label: "Total Temuan",
+			Value: fmt.Sprintf("%d gigi bertanda, %d permukaan dengan temuan.", totalMarked, totalSurfaceFindings),
+		},
+		{
+			Label: "Kondisi Gigi",
+			Value: buildOdontogramPDFCountSummary(conditionCounts, odontogramToothConditionOrder, odontogramToothConditionLabel, "gigi", "Tidak ada kondisi gigi khusus."),
+		},
+		{
+			Label: "Temuan Permukaan",
+			Value: buildOdontogramPDFCountSummary(surfaceCounts, odontogramSurfaceConditionOrder, odontogramSurfaceConditionLabel, "permukaan", "Tidak ada temuan permukaan khusus."),
+		},
+	}, "Tidak ada data ringkasan.")
 }
 
 // ---------------------------------------------------------------------------
@@ -777,14 +769,14 @@ func PrintOdontogramEntry(c *gin.Context) {
 		if pdf.PageNo() != 1 {
 			return
 		}
-		addInitialAssessmentPDFHeader(pdf, hospitalInfo, "ODONTOGRAM", fallbackText(entry.Visit.VisitNumber))
+		addInitialAssessmentPDFHeader(pdf, hospitalInfo, "ODONTOGRAM", "No. Kunjungan : "+fallbackText(entry.Visit.VisitNumber))
 	}, true)
 
 	pdf.SetFooterFunc(func() {
-		pdf.SetY(-8)
-		pdf.SetFont("Arial", "", 8)
-		pdf.SetTextColor(90, 90, 90)
-		pdf.CellFormat(90, 4, "Dicetak: "+formatDateTimeIndonesian(generatedAt), "", 0, "L", false, 0, "")
+		pdf.SetY(-7.5)
+		pdf.SetFont("Arial", "", 7.5)
+		pdf.SetTextColor(70, 70, 70)
+		pdf.CellFormat(110, 4, "Dicetak: "+formatDateTimeIndonesian(generatedAt), "", 0, "L", false, 0, "")
 		pdf.CellFormat(0, 4, fmt.Sprintf("Halaman %d/{nb}", pdf.PageNo()), "", 0, "R", false, 0, "")
 		pdf.SetTextColor(0, 0, 0)
 	})
@@ -792,18 +784,18 @@ func PrintOdontogramEntry(c *gin.Context) {
 	pdf.AddPage()
 	pdf.SetY(initialAssessmentPDFPageContentStartForPDF(pdf, pdf.PageNo()))
 
-	// ---- Data Pasien & Data Kunjungan ----
-	patientFields := buildInitialAssessmentPatientFields(entry.Patient)
-	visitFields := []initialAssessmentPrintField{
-		{Label: "No. Kunjungan", Value: fallbackText(entry.Visit.VisitNumber)},
-		{Label: "Tanggal Kunjungan", Value: formatDatePointer(&entry.Visit.VisitDate)},
-		{Label: "Poliklinik", Value: fallbackText(entry.Polyclinic.Name)},
-		{Label: "Dokter", Value: fallbackText(entry.Doctor.FullName)},
-		{Label: "Status Entri", Value: odontogramStatusLabel(entry.Status)},
+	// ---- Identitas Pasien & Kunjungan Terpadu ----
+	visitForHeader := entry.Visit
+	if visitForHeader.Polyclinic.Name == "" {
+		visitForHeader.Polyclinic = entry.Polyclinic
 	}
-
-	addInitialAssessmentCompactFieldSection(pdf, "DATA PASIEN", patientFields, "Data pasien tidak tersedia.")
-	addInitialAssessmentCompactFieldSection(pdf, "DATA KUNJUNGAN", visitFields, "Data kunjungan tidak tersedia.")
+	if visitForHeader.Doctor.FullName == "" {
+		visitForHeader.Doctor = entry.Doctor
+	}
+	identityFields := mergePatientVisitPrintFields(entry.Patient, visitForHeader,
+		initialAssessmentPrintField{Label: "Status Entri", Value: odontogramStatusLabel(entry.Status)},
+	)
+	addInitialAssessmentCompactFieldSection(pdf, "IDENTITAS PASIEN & KUNJUNGAN", identityFields, "Data pasien tidak tersedia.")
 
 	// ---- Odontogram Chart ----
 	addInitialAssessmentSectionTitle(pdf, "ODONTOGRAM CHART")
@@ -827,10 +819,14 @@ func PrintOdontogramEntry(c *gin.Context) {
 
 	chartTopPadding := 3.0
 	rowAdvance := odontogramPDFToothSize + odontogramPDFConditionBadgeGap + odontogramPDFConditionBadgeHeight + odontogramPDFToothLabelGap + odontogramPDFToothLabelHeight + odontogramPDFRowGap
-	chartNeededHeight := chartTopPadding + odontogramPDFToothLabelHeight + odontogramPDFToothLabelGap + (3 * rowAdvance) + odontogramPDFToothSize + odontogramPDFConditionBadgeGap + odontogramPDFConditionBadgeHeight + odontogramPDFToothLabelGap + odontogramPDFToothLabelHeight + 2
+	chartNeededHeight := chartTopPadding + odontogramPDFToothLabelHeight + odontogramPDFToothLabelGap + (3 * rowAdvance) + odontogramPDFToothSize + odontogramPDFConditionBadgeGap + odontogramPDFConditionBadgeHeight + odontogramPDFToothLabelGap + odontogramPDFToothLabelHeight + 34
 	ensureInitialAssessmentPDFSpace(pdf, chartNeededHeight)
 
-	currentY := pdf.GetY() + chartTopPadding + odontogramPDFToothLabelHeight + odontogramPDFToothLabelGap
+	left, _, right, _ := pdf.GetMargins()
+	pageWidth, _ := pdf.GetPageSize()
+	contentWidth := pageWidth - left - right
+	chartBoxStartY := pdf.GetY()
+	currentY := chartBoxStartY + chartTopPadding + odontogramPDFToothLabelHeight + odontogramPDFToothLabelGap
 
 	// Row 1: permanent upper (16 teeth) — label above
 	startX := odontogramPDFRowStartX(pdf, 16)
@@ -854,22 +850,23 @@ func PrintOdontogramEntry(c *gin.Context) {
 
 	pdf.SetY(currentY)
 
-	// ---- Legend ----
+	// ---- Legend (menyatu di dalam kotak Odontogram Chart) ----
 	addOdontogramPDFLegend(pdf)
+	chartBoxEndY := pdf.GetY() + 1.5
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.25)
+	pdf.Rect(left, chartBoxStartY, contentWidth, chartBoxEndY-chartBoxStartY, "D")
+	pdf.SetLineWidth(0.2)
+	pdf.SetY(chartBoxEndY)
 
 	// ---- Statistics ----
 	addOdontogramPDFStatistics(pdf, entry.Teeth)
 
 	// ---- Notes section ----
 	if trimmedNotes := strings.TrimSpace(entry.Notes); trimmedNotes != "" {
-		addInitialAssessmentSectionTitle(pdf, "CATATAN ENTRI")
-		ensureInitialAssessmentPDFSpace(pdf, 8)
-		left, _, right, _ := pdf.GetMargins()
-		pageWidth, _ := pdf.GetPageSize()
-		contentWidth := pageWidth - left - right
-		pdf.SetFont("Arial", "", 9)
-		pdf.MultiCell(contentWidth, 4.5, sanitizePDFText(trimmedNotes), "", "L", false)
-		addInitialAssessmentSectionSpacing(pdf)
+		addInitialAssessmentCompactFieldSection(pdf, "CATATAN ENTRI", []initialAssessmentPrintField{
+			{Label: "Catatan", Value: trimmedNotes},
+		}, "")
 	}
 
 	// ---- Detail findings table ----

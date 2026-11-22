@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
-import type { MedicalRecord, Medicine, Prescription, PrescriptionCompound } from '@/lib/api';
+import type { MedicalRecord, Medicine, Polyclinic, Prescription, PrescriptionCompound } from '@/lib/api';
 import {
   PRESCRIPTION_COMPOUND_PREPARATION_OPTIONS,
   PRESCRIPTION_FULFILLMENT_OPTIONS,
@@ -49,6 +49,7 @@ type PrescriptionEditorProps = {
   prescriptions: Prescription[];
   compounds: PrescriptionCompound[];
   medicines: Medicine[];
+  apotekRooms?: Polyclinic[];
   onAdd: (payload: { medicine_id: number; quantity: number; dosage: string; frequency: string; duration: string; route: string; instructions: string; notes: string }) => void;
   onDelete: (prescriptionId: number) => void;
   onAddCompound?: (payload: {
@@ -187,6 +188,7 @@ export function PrescriptionEditor({
   prescriptions,
   compounds,
   medicines,
+  apotekRooms = [],
   onAdd,
   onDelete,
   onAddCompound,
@@ -260,6 +262,45 @@ export function PrescriptionEditor({
     [medicineId, medicines]
   );
 
+  const availableApotekRooms = useMemo(
+    () => apotekRooms.filter((room) => room.room_type === 'apotek' && room.is_active !== false),
+    [apotekRooms]
+  );
+
+  const apotekRoomOptions = useMemo(
+    () => availableApotekRooms.map((room) => ({
+      value: String(room.id),
+      label: room.is_default_apotek ? `${room.name} (Utama)` : room.name,
+    })),
+    [availableApotekRooms]
+  );
+
+  const selectedApotekRoom = useMemo(
+    () => availableApotekRooms.find((room) => room.id === draft.prescription_room_id)
+      || record?.prescription_room
+      || null,
+    [availableApotekRooms, draft.prescription_room_id, record?.prescription_room]
+  );
+
+  const isInternalMode = draft.prescription_fulfillment_mode === 'internal';
+  const defaultApotekRoom = useMemo(
+    () => availableApotekRooms.find((room) => room.is_default_apotek) || availableApotekRooms[0] || null,
+    [availableApotekRooms]
+  );
+  const activeApotekRoomId = isInternalMode
+    ? (draft.prescription_room_id || record?.prescription_room_id || defaultApotekRoom?.id || null)
+    : null;
+  const activeApotekRoomName = selectedApotekRoom?.name || (isInternalMode ? defaultApotekRoom?.name : undefined);
+
+  const getMedicineStock = (medicine?: Medicine | null) => {
+    if (!medicine) return 0;
+    if (activeApotekRoomId && Array.isArray(medicine.room_stocks)) {
+      const matched = medicine.room_stocks.find((entry) => entry.room_id === activeApotekRoomId);
+      return matched ? matched.quantity : 0;
+    }
+    return medicine.current_stock ?? 0;
+  };
+
   const formatMedicineName = (name: string, strength?: string) => {
     const trimmedName = name.trim();
     const trimmedStrength = strength?.trim();
@@ -269,10 +310,26 @@ export function PrescriptionEditor({
     return trimmedName;
   };
 
-  const medicineOptions = medicines.map((medicine) => ({
-    value: String(medicine.id),
-    label: `${formatMedicineName(medicine.name, medicine.strength)} · stok ${medicine.current_stock}`,
-  }));
+  const medicineOptions = medicines.map((medicine) => {
+    const roomStock = getMedicineStock(medicine);
+    const unitName = medicine.unit?.name || '';
+    const descParts = [
+      medicine.code || `OBT${String(medicine.id).padStart(7, '0')}`,
+      medicine.form || null,
+      isInternalMode && activeApotekRoomName ? activeApotekRoomName : null,
+    ].filter(Boolean);
+
+    return {
+      value: String(medicine.id),
+      label: formatMedicineName(medicine.name, medicine.strength),
+      description: descParts.join(' • '),
+      badge: `Stok ${roomStock}${unitName ? ` ${unitName}` : ''}`,
+      badgeClassName: roomStock > 0
+        ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+        : 'border-rose-300 bg-rose-50 text-rose-700',
+      searchText: [medicine.code, medicine.generic_name, medicine.strength, medicine.form].filter(Boolean).join(' '),
+    };
+  });
 
   const preparationLabel = (value?: string) => PRESCRIPTION_COMPOUND_PREPARATION_OPTIONS.find((option) => option.value === value)?.label || value || 'Racikan';
 
@@ -516,13 +573,50 @@ export function PrescriptionEditor({
             <SearchableSelect
               options={PRESCRIPTION_FULFILLMENT_OPTIONS}
               value={draft.prescription_fulfillment_mode}
-              onValueChange={(value) => setDraft((prev) => ({ ...prev, prescription_fulfillment_mode: (value as '' | 'internal' | 'print') || '' }))}
+              onValueChange={(value) => {
+                const nextMode = (value as '' | 'internal' | 'print') || '';
+                setDraft((prev) => {
+                  if (nextMode !== 'internal') {
+                    return { ...prev, prescription_fulfillment_mode: nextMode, prescription_room_id: null };
+                  }
+                  const defaultRoom = availableApotekRooms.find((room) => room.is_default_apotek) || availableApotekRooms[0] || null;
+                  return {
+                    ...prev,
+                    prescription_fulfillment_mode: nextMode,
+                    prescription_room_id: prev.prescription_room_id || defaultRoom?.id || null,
+                  };
+                });
+              }}
               placeholder="Pilih mode pemenuhan"
               disabled={!canEditItems}
               square
               className={PAPER_SELECT_TRIGGER_CLASSNAME}
             />
           </PaperTableCell>
+          {isInternalMode ? (
+            <PaperTableCell label="Ruangan Permintaan (Apotek)">
+              <SearchableSelect
+                options={apotekRoomOptions}
+                value={draft.prescription_room_id ? String(draft.prescription_room_id) : ''}
+                onValueChange={(value) =>
+                  setDraft((prev) => ({
+                    ...prev,
+                    prescription_room_id: value ? Number(value) : null,
+                  }))
+                }
+                placeholder={apotekRoomOptions.length > 0 ? 'Pilih ruangan apotek' : 'Belum ada ruangan apotek'}
+                searchPlaceholder="Cari ruangan apotek..."
+                disabled={!canEditItems || apotekRoomOptions.length === 0}
+                square
+                className={PAPER_SELECT_TRIGGER_CLASSNAME}
+              />
+              {apotekRoomOptions.length === 0 ? (
+                <p className="mt-1 text-[11px] text-destructive">
+                  Belum ada ruangan aktif berjenis Apotek. Permintaan obat tidak dapat dikirim ke Depo.
+                </p>
+              ) : null}
+            </PaperTableCell>
+          ) : null}
           <PaperTableCell label="Status Order">
             <div className="flex min-h-[28px] items-center">
               <Badge
@@ -538,13 +632,16 @@ export function PrescriptionEditor({
           </PaperTableCell>
           <PaperTableCell label="Ringkasan">
             <div className="space-y-1 text-xs text-muted-foreground">
-              <p>{getPrescriptionFulfillmentLabel(draft.prescription_fulfillment_mode)}</p>
+              <p>
+                {getPrescriptionFulfillmentLabel(draft.prescription_fulfillment_mode)}
+                {isInternalMode && selectedApotekRoom ? ` · ${selectedApotekRoom.name}` : ''}
+              </p>
               <p>{hasItems ? `${orderItems.length} item obat · ${formatCurrency(totalPrice)}` : 'Belum ada item obat'}</p>
             </div>
           </PaperTableCell>
         </PaperTableRow>
         <PaperTableRow>
-          <PaperTableCell label="Catatan Resep" colSpan={3}>
+          <PaperTableCell label="Catatan Resep" colSpan={isInternalMode ? 4 : 3}>
             <TextEditor label="Catatan Resep" hideLabel value={draft.notes} onChange={(value) => setDraft((prev) => ({ ...prev, notes: value }))} disabled={!canEditItems} rows={2} />
           </PaperTableCell>
         </PaperTableRow>
@@ -778,8 +875,20 @@ export function PrescriptionEditor({
                         value={formatCurrency(selectedMedicine.selling_price || 0)}
                       />
                       <ModalStatCard
-                        label="Stok Tersedia"
-                        value={`${selectedMedicine.current_stock ?? '-'} ${selectedMedicine.unit?.name || ''}`}
+                        label={isInternalMode && activeApotekRoomName ? `Stok ${activeApotekRoomName}` : 'Stok Tersedia'}
+                        value={(
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              'rounded-none px-2 py-0.5 text-xs font-mono',
+                              getMedicineStock(selectedMedicine) >= payload.quantity && getMedicineStock(selectedMedicine) > 0
+                                ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                                : 'border-rose-300 bg-rose-50 text-rose-700',
+                            )}
+                          >
+                            Stok {getMedicineStock(selectedMedicine)} {selectedMedicine.unit?.name || ''}
+                          </Badge>
+                        )}
                       />
                       <ModalStatCard
                         label="Estimasi Total"
@@ -803,15 +912,47 @@ export function PrescriptionEditor({
                       </PaperTableCell>
                     </PaperTableRow>
                     <PaperTableRow>
-                      <PaperTableCell label="Jumlah" colSpan={2}>
-                        <NumberInput
-                          label="Jumlah"
-                          hideLabel
-                          value={payload.quantity}
-                          onChange={(value) => setPayload((prev) => ({ ...prev, quantity: value || 1 }))}
-                          disabled={false}
-                          min={1}
-                        />
+                      <PaperTableCell
+                        label={selectedMedicine?.unit?.name ? `Jumlah (${selectedMedicine.unit.name} · Satuan Kecil)` : 'Jumlah (Satuan Kecil)'}
+                        colSpan={2}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1">
+                            <NumberInput
+                              label="Jumlah"
+                              hideLabel
+                              value={payload.quantity}
+                              onChange={(value) => setPayload((prev) => ({ ...prev, quantity: value || 1 }))}
+                              disabled={false}
+                              min={1}
+                            />
+                          </div>
+                          {selectedMedicine?.unit?.name ? (
+                            <Badge variant="outline" className="h-9 rounded-none px-2.5 text-xs font-medium bg-muted/30 shrink-0">
+                              {selectedMedicine.unit.name}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        {selectedMedicine ? (
+                          <p className={cn(
+                            'mt-1 text-[11px]',
+                            isInternalMode && payload.quantity > getMedicineStock(selectedMedicine)
+                              ? 'text-destructive font-medium'
+                              : 'text-muted-foreground',
+                          )}>
+                            Satuan kecil: {selectedMedicine.unit?.name || 'unit'}
+                            {selectedMedicine.large_unit?.name && (selectedMedicine.conversion_factor || 1) > 1
+                              ? ` (1 ${selectedMedicine.large_unit.name} = ${selectedMedicine.conversion_factor} ${selectedMedicine.unit?.name || 'unit'})`
+                              : ''}
+                            {isInternalMode && payload.quantity > getMedicineStock(selectedMedicine)
+                              ? ` · Melebihi stok ${activeApotekRoomName || 'Apotek'}`
+                              : ''}
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            Jumlah obat menggunakan satuan kecil.
+                          </p>
+                        )}
                       </PaperTableCell>
                       <PaperTableCell label="Dosis" colSpan={2}>
                         <Input
@@ -963,7 +1104,10 @@ export function PrescriptionEditor({
                       <div className="flex items-start justify-between border-b border-border/60 pb-3">
                         <div>
                           <h4 className="text-sm font-bold text-foreground">Pilih Bahan Obat</h4>
-                          <p className="text-xs text-muted-foreground mt-0.5">Klik obat untuk menambah dan mengisi dosis bahan.</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Klik obat untuk menambah dan mengisi dosis bahan.
+                            {isInternalMode && activeApotekRoomName ? ` Stok dibaca dari ${activeApotekRoomName}.` : ''}
+                          </p>
                         </div>
                         <Badge variant="outline" className="rounded-full px-2.5 py-0.5 text-xs font-medium border-border/80 bg-background text-foreground/80">
                           {compoundPayload.items.length} dipilih
@@ -992,15 +1136,24 @@ export function PrescriptionEditor({
                             {compoundPayload.items.map((item, idx) => {
                               const med = medicines.find((m) => m.id === item.medicine_id);
                               const code = med?.code || `OBT${String(item.medicine_id).padStart(7, '0')}`;
+                              const roomStock = getMedicineStock(med);
+                              const unitName = med?.unit?.name || 'tab';
+                              const isShortage = isInternalMode && item.quantity > roomStock;
                               return (
                                 <div key={`${item.medicine_id}-${idx}`} className="flex items-center justify-between p-3 gap-3">
                                   <div className="min-w-0 flex-1">
                                     <p className="text-sm font-semibold text-foreground/95 truncate">
                                       {med?.name || `Obat #${item.medicine_id}`}
                                     </p>
-                                    <p className="text-xs text-muted-foreground mt-0.5">
-                                      {code}
-                                    </p>
+                                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
+                                      <span>{code}</span>
+                                      <span>•</span>
+                                      <span className={cn(isShortage ? 'text-destructive font-semibold' : 'text-emerald-700 font-medium')}>
+                                        Stok {activeApotekRoomName || 'Apotek'}: {roomStock} {unitName}
+                                      </span>
+                                      <span>•</span>
+                                      <span>Potong: {item.quantity} {unitName}</span>
+                                    </div>
                                   </div>
                                   <div className="flex items-center gap-2 shrink-0">
                                     <span className="text-xs text-muted-foreground font-medium">Dosis:</span>
@@ -1039,28 +1192,45 @@ export function PrescriptionEditor({
                                 : `Tidak ada obat yang cocok dengan pencarian "${medicineSearchQuery}"`}
                             </div>
                           ) : (
-                            unselectedMedicines.map((med) => (
-                              <div
-                                key={med.id}
-                                className="flex items-center justify-between p-3 hover:bg-muted/30 transition gap-2"
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-sm font-semibold text-foreground/95 truncate">{med.name}</p>
-                                  <p className="text-xs text-muted-foreground mt-0.5">
-                                    {med.code || `OBT${String(med.id).padStart(7, '0')}`} • {med.form || '-'} • {med.strength || '-'}
-                                  </p>
-                                </div>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleAddMedicineToCompound(med)}
-                                  className="h-7 px-3 text-xs font-medium shrink-0 rounded-md hover:bg-muted"
+                            unselectedMedicines.map((med) => {
+                              const roomStock = getMedicineStock(med);
+                              return (
+                                <div
+                                  key={med.id}
+                                  className="flex items-center justify-between p-3 hover:bg-muted/30 transition gap-2"
                                 >
-                                  + Pilih
-                                </Button>
-                              </div>
-                            ))
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <p className="text-sm font-semibold text-foreground/95 truncate">{med.name}</p>
+                                      <Badge
+                                        variant="outline"
+                                        className={cn(
+                                          'rounded-none px-1.5 py-0 text-[10px] font-mono',
+                                          roomStock > 0
+                                            ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                                            : 'border-rose-300 bg-rose-50 text-rose-700',
+                                        )}
+                                      >
+                                        Stok {roomStock} {med.unit?.name || ''}
+                                      </Badge>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                      {med.code || `OBT${String(med.id).padStart(7, '0')}`} • {med.form || '-'} • {med.strength || '-'}
+                                      {isInternalMode && activeApotekRoomName ? ` • ${activeApotekRoomName}` : ''}
+                                    </p>
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleAddMedicineToCompound(med)}
+                                    className="h-7 px-3 text-xs font-medium shrink-0 rounded-md hover:bg-muted"
+                                  >
+                                    + Pilih
+                                  </Button>
+                                </div>
+                              );
+                            })
                           )}
                         </div>
                       </div>
@@ -1152,8 +1322,8 @@ export function PrescriptionEditor({
                     value={detailItem.item.medicine?.strength || '-'}
                   />
                   <ModalStatCard
-                    label="Stok Saat Ini"
-                    value={`${detailItem.item.medicine?.current_stock ?? 0} ${detailItem.item.medicine?.unit?.name || ''}`}
+                    label={isInternalMode && selectedApotekRoom ? `Stok ${selectedApotekRoom.name}` : 'Stok Saat Ini'}
+                    value={`${getMedicineStock(detailItem.item.medicine)} ${detailItem.item.medicine?.unit?.name || ''}`}
                   />
                   <ModalStatCard
                     label="Harga Satuan"
@@ -1194,8 +1364,8 @@ export function PrescriptionEditor({
                     <PaperTableCell label="Pabrikan">
                       <div className="text-sm">{detailItem.item.medicine?.manufacturer || '-'}</div>
                     </PaperTableCell>
-                    <PaperTableCell label="Stok Saat Ini">
-                      <div className="text-sm">{detailItem.item.medicine?.current_stock ?? 0}</div>
+                    <PaperTableCell label={isInternalMode && selectedApotekRoom ? `Stok ${selectedApotekRoom.name}` : 'Stok Saat Ini'}>
+                      <div className="text-sm">{getMedicineStock(detailItem.item.medicine)}</div>
                     </PaperTableCell>
                     <PaperTableCell label="Harga Satuan">
                       <div className="text-sm">{formatCurrency(detailItem.item.medicine?.selling_price || 0)}</div>
@@ -1256,6 +1426,9 @@ export function PrescriptionEditor({
                         <tr className="border-b border-border/70 text-left">
                           <th className="px-3 py-2.5 font-semibold text-foreground/90">Bahan</th>
                           <th className="px-3 py-2.5 font-semibold text-foreground/90">Dosis / Takaran</th>
+                          <th className="px-3 py-2.5 font-semibold text-foreground/90">
+                            {isInternalMode && activeApotekRoomName ? `Stok ${activeApotekRoomName}` : 'Stok'}
+                          </th>
                           <th className="w-[140px] px-3 py-2.5 text-right font-semibold text-foreground/90">Harga Satuan</th>
                           <th className="px-3 py-2.5 font-semibold text-foreground/90">Catatan</th>
                         </tr>
@@ -1264,6 +1437,8 @@ export function PrescriptionEditor({
                         {(detailItem.item.items || []).map((ingredient) => {
                           const doseMatch = ingredient.notes?.match(/Dosis:\s*([^·]+)/i)?.[1]?.trim();
                           const extraNote = ingredient.notes?.replace(/Dosis:\s*[^·]+(·\s*)?/i, '').trim();
+                          const ingredientStock = getMedicineStock(ingredient.medicine);
+                          const isShortage = isInternalMode && ingredientStock < ingredient.quantity;
 
                           return (
                             <tr key={ingredient.id} className="border-b border-border/60 align-top last:border-b-0">
@@ -1281,6 +1456,22 @@ export function PrescriptionEditor({
                                 ) : (
                                   <span className="text-xs text-muted-foreground">-</span>
                                 )}
+                              </td>
+                              <td className="px-3 py-2.5">
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    'rounded-none px-1.5 py-0.5 text-[10px] font-mono',
+                                    isShortage
+                                      ? 'border-rose-300 bg-rose-50 text-rose-700'
+                                      : 'border-emerald-300 bg-emerald-50 text-emerald-700',
+                                  )}
+                                >
+                                  {ingredientStock} {ingredient.medicine?.unit?.name || ''}
+                                </Badge>
+                                <p className="mt-0.5 text-[10px] text-muted-foreground">
+                                  Potong: {ingredient.quantity} {ingredient.medicine?.unit?.name || ''}
+                                </p>
                               </td>
                               <td className="px-3 py-2.5 text-right">{formatCurrency(ingredient.medicine?.selling_price || 0)}</td>
                               <td className="px-3 py-2.5 text-xs text-foreground/90">{extraNote || (!doseMatch && ingredient.notes) || '-'}</td>

@@ -8,7 +8,7 @@ import { usePermission } from '@/hooks/usePermission';
 import { useToast } from '@/hooks/use-toast';
 import { polyclinicsApi, satusehatApi, type Polyclinic } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
-import { Building2, Edit, Loader2, MapPin, RefreshCw, Trash2 } from 'lucide-react';
+import { Building2, Edit, Loader2, MapPin, Package, RefreshCw, Trash2 } from 'lucide-react';
 import {
   HeaderActionButton,
   MasterDataDetailItem,
@@ -165,16 +165,23 @@ export default function PolyclinicShow() {
         }
         actions={
           <>
+            {hasPermission('medicine_rooms.view') && (
+              <HeaderActionButton
+                label="Cek Stok"
+                icon={<Package className="h-4 w-4" />}
+                onClick={() => navigate(`/polyclinics/${id}/stock`)}
+              />
+            )}
             {hasPermission('polyclinics.update') && (
               <HeaderActionButton
-                label="Edit Poliklinik"
+                label="Edit Ruangan"
                 icon={<Edit className="h-4 w-4" />}
                 onClick={() => navigate(`/polyclinics/${id}/edit`)}
               />
             )}
             {hasPermission('polyclinics.delete') && (
               <HeaderActionButton
-                label="Hapus Poliklinik"
+                label="Hapus Ruangan"
                 icon={deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                 variant="destructive"
                 onClick={() => setDeleteDialogOpen(true)}
