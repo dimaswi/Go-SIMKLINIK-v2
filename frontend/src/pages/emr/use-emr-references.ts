@@ -5,6 +5,7 @@ import {
   type MedicalService,
   type Medicine,
   type PhysicalExamImageMaster,
+  type Polyclinic,
 } from '@/lib/api';
 
 export function useEmrReferences(visitId: number) {
@@ -12,6 +13,7 @@ export function useEmrReferences(visitId: number) {
   const [medicineList, setMedicineList] = useState<Medicine[]>([]);
   const [serviceList, setServiceList] = useState<MedicalService[]>([]);
   const [physicalExamImageList, setPhysicalExamImageList] = useState<PhysicalExamImageMaster[]>([]);
+  const [apotekRoomList, setApotekRoomList] = useState<Polyclinic[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,6 +24,7 @@ export function useEmrReferences(visitId: number) {
         setMedicineList([]);
         setServiceList([]);
         setPhysicalExamImageList([]);
+        setApotekRoomList([]);
         setError(null);
         setLoading(false);
         return;
@@ -37,6 +40,7 @@ export function useEmrReferences(visitId: number) {
         setMedicineList(references.medicines || []);
         setServiceList(references.medical_services || []);
         setPhysicalExamImageList(references.physical_exam_images || []);
+        setApotekRoomList((references.apotek_rooms || []).filter((room) => room.room_type === 'apotek'));
       } catch (err: any) {
         setError(err?.response?.data?.error || 'Gagal memuat referensi EMR');
       } finally {
@@ -52,6 +56,7 @@ export function useEmrReferences(visitId: number) {
     medicineList,
     serviceList,
     physicalExamImageList,
+    apotekRoomList,
     loading,
     error,
   };

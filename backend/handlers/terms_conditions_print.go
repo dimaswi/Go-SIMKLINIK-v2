@@ -100,13 +100,16 @@ func renderTermsAndConditionsPDF(hospitalInfo initialAssessmentHospitalInfo) ([]
 	pdf.SetTitle("Terms & Conditions", false)
 	pdf.SetCreator("SIMKLINIK", false)
 	pdf.SetHeaderFuncMode(func() {
+		if pdf.PageNo() != 1 {
+			return
+		}
 		addInitialAssessmentPDFHeader(pdf, hospitalInfo, "TERMS & CONDITIONS", "Policy V1")
 	}, true)
 	pdf.SetFooterFunc(func() {
-		pdf.SetY(-8)
-		pdf.SetFont("Arial", "", 8)
-		pdf.SetTextColor(90, 90, 90)
-		pdf.CellFormat(95, 4, "Dokumen ketentuan penggunaan internal SIMKLINIK", "", 0, "L", false, 0, "")
+		pdf.SetY(-7.5)
+		pdf.SetFont("Arial", "", 7.5)
+		pdf.SetTextColor(70, 70, 70)
+		pdf.CellFormat(110, 4, "Dokumen ketentuan penggunaan internal SIMKLINIK", "", 0, "L", false, 0, "")
 		pdf.CellFormat(0, 4, fmt.Sprintf("Halaman %d/{nb}", pdf.PageNo()), "", 0, "R", false, 0, "")
 		pdf.SetTextColor(0, 0, 0)
 	})
@@ -131,45 +134,89 @@ func renderTermsAndConditionsPDF(hospitalInfo initialAssessmentHospitalInfo) ([]
 }
 
 func addTermsDocumentIntro(pdf *gofpdf.Fpdf) {
-	addInitialAssessmentSectionTitle(pdf, "PERNYATAAN UMUM")
-	addInitialAssessmentFullWidthRow(pdf, "Dokumen ini merupakan ketentuan penggunaan resmi untuk seluruh user internal yang mengakses dan mengoperasikan SIMKLINIK dalam kegiatan pelayanan, administrasi, penunjang medis, dan pengelolaan sistem.", false)
-	addInitialAssessmentFullWidthRow(pdf, "Dengan menggunakan aplikasi, setiap pengguna dianggap memahami bahwa seluruh input data, perubahan status layanan, penggunaan fitur cetak, proses sinkronisasi, dan aktivitas administrasi digital wajib mengikuti SOP internal klinik, kewenangan jabatan, serta prinsip kerahasiaan data pasien.", false)
-	pdf.SetY(pdf.GetY() + 2)
-	addInitialAssessmentFieldSection(pdf, "IDENTITAS DOKUMEN", []initialAssessmentPrintField{
+	addInitialAssessmentCompactFieldSection(pdf, "IDENTITAS DOKUMEN", []initialAssessmentPrintField{
 		{Label: "Nama Dokumen", Value: "Terms & Conditions"},
 		{Label: "Versi", Value: "Policy V1"},
 		{Label: "Tanggal Berlaku", Value: "12 Apr 2026"},
 		{Label: "Status", Value: "Aktif"},
 	}, "-")
+	left, _, right, _ := pdf.GetMargins()
+	pageWidth, _ := pdf.GetPageSize()
+	contentWidth := pageWidth - left - right
+	addInitialAssessmentSectionTitle(pdf, "PERNYATAAN UMUM")
+	boxStartY := pdf.GetY()
+	pdf.SetY(boxStartY + 1.2)
+	addInitialAssessmentFullWidthRow(pdf, "Dokumen ini merupakan ketentuan penggunaan resmi untuk seluruh user internal yang mengakses dan mengoperasikan SIMKLINIK dalam kegiatan pelayanan, administrasi, penunjang medis, dan pengelolaan sistem. Dengan menggunakan aplikasi, setiap pengguna dianggap memahami bahwa seluruh input data, perubahan status layanan, penggunaan fitur cetak, proses sinkronisasi, dan aktivitas administrasi digital wajib mengikuti SOP internal klinik, kewenangan jabatan, serta prinsip kerahasiaan data pasien.", false)
+	boxEndY := pdf.GetY() + 1.2
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.25)
+	pdf.Rect(left, boxStartY, contentWidth, boxEndY-boxStartY, "D")
+	pdf.SetLineWidth(0.2)
+	pdf.SetY(boxEndY)
+	addInitialAssessmentSectionSpacing(pdf)
 }
 
 func addTermsArticle(pdf *gofpdf.Fpdf, articleNumber int, article termsConditionArticle) {
-	ensureInitialAssessmentPDFSpace(pdf, 26)
+	ensureInitialAssessmentPDFSpace(pdf, 24)
 	addInitialAssessmentSectionTitle(pdf, fmt.Sprintf("PASAL %d - %s", articleNumber, strings.ToUpper(article.Title)))
-	addInitialAssessmentFullWidthRow(pdf, article.Summary, false)
 
 	left, _, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
 	contentWidth := pageWidth - left - right
-	lineHeight := 5.2
-	textWidth := contentWidth - 8
+	_, pageHeight := pdf.GetPageSize()
+	lineHeight := 4.2
+	textWidth := contentWidth - 4
+
+	boxStartY := pdf.GetY()
+	pdf.SetY(boxStartY + 1.2)
+	addInitialAssessmentFullWidthRow(pdf, article.Summary, false)
+	pdf.SetY(pdf.GetY() + 0.8)
 
 	for index, clause := range article.Clauses {
 		clauseText := fmt.Sprintf("(%d) %s", index+1, sanitizePDFText(clause))
+		pdf.SetFont("Arial", "", 8.4)
 		lines := pdf.SplitLines([]byte(clauseText), textWidth)
-		neededHeight := maxFloat64(6, float64(len(lines))*lineHeight+1)
-		ensureInitialAssessmentPDFSpace(pdf, neededHeight)
-		pdf.SetX(left)
-		pdf.SetFont("Arial", "", 10)
-		pdf.MultiCell(contentWidth, lineHeight, clauseText, "", "J", false)
-		pdf.SetY(pdf.GetY() + 0.8)
+		neededHeight := maxFloat64(4.6, float64(len(lines))*lineHeight+0.8)
+		if pdf.GetY()+neededHeight+1.2 > pageHeight-initialAssessmentPDFMarginBottom {
+			boxEndY := pdf.GetY() + 1.0
+			pdf.SetDrawColor(0, 0, 0)
+			pdf.SetLineWidth(0.25)
+			pdf.Rect(left, boxStartY, contentWidth, boxEndY-boxStartY, "D")
+			pdf.AddPage()
+			pdf.SetY(initialAssessmentPDFPageContentStartForPDF(pdf, pdf.PageNo()))
+			boxStartY = pdf.GetY()
+			pdf.SetY(boxStartY + 1.2)
+		}
+		pdf.SetX(left + 2.5)
+		pdf.SetFont("Arial", "", 8.4)
+		pdf.SetTextColor(0, 0, 0)
+		pdf.MultiCell(contentWidth-5.0, lineHeight, clauseText, "", "J", false)
+		pdf.SetY(pdf.GetY() + 0.4)
 	}
 
-	pdf.SetY(pdf.GetY() + 1.5)
+	boxEndY := pdf.GetY() + 1.0
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.25)
+	pdf.Rect(left, boxStartY, contentWidth, boxEndY-boxStartY, "D")
+	pdf.SetLineWidth(0.2)
+	pdf.SetY(boxEndY)
+	addInitialAssessmentSectionSpacing(pdf)
 }
 
 func addTermsClosing(pdf *gofpdf.Fpdf) {
+	left, _, right, _ := pdf.GetMargins()
+	pageWidth, _ := pdf.GetPageSize()
+	contentWidth := pageWidth - left - right
+	ensureInitialAssessmentPDFSpace(pdf, 20)
 	addInitialAssessmentSectionTitle(pdf, "PENUTUP")
+	boxStartY := pdf.GetY()
+	pdf.SetY(boxStartY + 1.2)
 	addInitialAssessmentFullWidthRow(pdf, "Dokumen ini menjadi acuan minimum penggunaan sistem pada versi aktif dan tetap dapat ditinjau ulang oleh pengelola aplikasi apabila terjadi perubahan regulasi, penyesuaian proses bisnis, pengembangan modul, atau kebutuhan penguatan keamanan informasi.", false)
 	addInitialAssessmentFullWidthRow(pdf, "Setiap pengguna wajib mematuhi ketentuan ini selama tetap menggunakan SIMKLINIK sebagai sistem operasional klinik.", false)
+	boxEndY := pdf.GetY() + 1.2
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.25)
+	pdf.Rect(left, boxStartY, contentWidth, boxEndY-boxStartY, "D")
+	pdf.SetLineWidth(0.2)
+	pdf.SetY(boxEndY)
 }

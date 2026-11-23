@@ -82,9 +82,19 @@ type tteInboxItem struct {
 	VisitStatus     string     `json:"visit_status"`
 }
 
+type tteEmployeeOption struct {
+	ID            uint   `json:"id"`
+	FullName      string `json:"full_name"`
+	EmployeeCode  string `json:"employee_code,omitempty"`
+	Profession    string `json:"profession,omitempty"`
+	LicenseNumber string `json:"license_number,omitempty"`
+	UserID        *uint  `json:"user_id,omitempty"`
+}
+
 type upsertTTERequestInput struct {
 	VisitID           uint   `json:"visit_id"`
 	DocumentKey       string `json:"document_key"`
+	EmployeeID        uint   `json:"employee_id"`
 	RequestedToUserID uint   `json:"requested_to_user_id"`
 	Notes             string `json:"notes"`
 }
@@ -117,6 +127,35 @@ func GetTTESigners(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": directory.All})
 }
 
+func GetTTEEmployees(c *gin.Context) {
+	var employees []models.Employee
+	if err := database.DB.
+		Where("is_active = ?", true).
+		Order("full_name ASC").
+		Find(&employees).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	options := make([]tteEmployeeOption, 0, len(employees))
+	for _, emp := range employees {
+		name := strings.TrimSpace(emp.FullName)
+		if name == "" {
+			continue
+		}
+		options = append(options, tteEmployeeOption{
+			ID:            emp.ID,
+			FullName:      name,
+			EmployeeCode:  strings.TrimSpace(emp.EmployeeCode),
+			Profession:    strings.TrimSpace(emp.Profession),
+			LicenseNumber: strings.TrimSpace(emp.LicenseNumber),
+			UserID:        emp.UserID,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": options})
+}
+
 func GetVisitTTEDocuments(c *gin.Context) {
 	visitID, err := strconv.ParseUint(c.Param("visitId"), 10, 64)
 	if err != nil || visitID == 0 {
@@ -146,7 +185,15 @@ func GetVisitTTEDocuments(c *gin.Context) {
 	})
 }
 
+func SignTTEDocument(c *gin.Context) {
+	signTTEDocumentDirectly(c)
+}
+
 func UpsertTTEDocumentRequest(c *gin.Context) {
+	signTTEDocumentDirectly(c)
+}
+
+func signTTEDocumentDirectly(c *gin.Context) {
 	actor := resolveVisitFinalizationActor(c)
 	if actor.UserID == nil || *actor.UserID == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "User tidak dikenali"})
@@ -158,8 +205,8 @@ func UpsertTTEDocumentRequest(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if input.VisitID == 0 || strings.TrimSpace(input.DocumentKey) == "" || input.RequestedToUserID == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Payload request TTE tidak lengkap"})
+	if input.VisitID == 0 || strings.TrimSpace(input.DocumentKey) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Payload TTE tidak lengkap"})
 		return
 	}
 
@@ -172,8 +219,13 @@ func UpsertTTEDocumentRequest(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if !strings.EqualFold(strings.TrimSpace(visit.Status), "completed") {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Kunjungan harus final sebelum pengajuan TTE"})
+	isDirectInformedConsentDoc := strings.HasPrefix(input.DocumentKey, "informed_consent:") || strings.HasPrefix(input.DocumentKey, "informed_consent_nurse:")
+	if strings.EqualFold(strings.TrimSpace(visit.Status), "cancelled") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Kunjungan sudah dibatalkan"})
+		return
+	}
+	if !isDirectInformedConsentDoc && !strings.EqualFold(strings.TrimSpace(visit.Status), "completed") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Kunjungan harus final sebelum melakukan TTE dokumen"})
 		return
 	}
 
@@ -183,39 +235,50 @@ func UpsertTTEDocumentRequest(c *gin.Context) {
 		return
 	}
 
-	actorCanBypassSignerScope := false
-	var actorUser models.User
-	if err := database.DB.Preload("Role").Select("id", "role_id").First(&actorUser, *actor.UserID).Error; err == nil {
-		actorCanBypassSignerScope = tteUserHasSignerBypassRole(actorUser)
+	// Tentukan penandatangan berdasarkan pegawai yang dipilih (validasi QR akan menampilkan nama pegawai tersebut)
+	signerUserID := *actor.UserID
+	signatureName := ""
+
+	if input.EmployeeID != 0 {
+		var employee models.Employee
+		if err := database.DB.First(&employee, input.EmployeeID).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Pegawai penandatangan tidak ditemukan"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if !employee.IsActive {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Pegawai penandatangan sedang nonaktif"})
+			return
+		}
+		signatureName = strings.TrimSpace(employee.FullName)
+		if employee.UserID != nil && *employee.UserID != 0 {
+			signerUserID = *employee.UserID
+		}
+	} else if input.RequestedToUserID != 0 {
+		var explicitSigner models.User
+		if err := database.DB.Select("id", "full_name", "username", "email", "is_active").First(&explicitSigner, input.RequestedToUserID).Error; err == nil && explicitSigner.IsActive {
+			signerUserID = explicitSigner.ID
+			signatureName = tteResolveUserDisplayName(explicitSigner)
+		}
+	} else if requestedDocument.PreferredSignerUserID != nil && *requestedDocument.PreferredSignerUserID != 0 {
+		signerUserID = *requestedDocument.PreferredSignerUserID
 	}
 
-	var signer models.User
-	if err := database.DB.Preload("Role.Permissions").First(&signer, input.RequestedToUserID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User penandatangan tidak ditemukan"})
-		return
-	}
-	if !signer.IsActive {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "User penandatangan sedang nonaktif"})
-		return
-	}
-	if !tteUserHasPermission(signer, "document_signatures.approve") {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "User yang dipilih belum memiliki akses ACC TTE"})
-		return
-	}
-	if !tteDocumentAllowsSigner(requestedDocument, signer.ID, actorCanBypassSignerScope || tteUserHasSignerBypassRole(signer)) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "User yang dipilih tidak sesuai dengan target TTD dokumen ini"})
-		return
-	}
+	signatureName = firstNonEmpty(
+		signatureName,
+		strings.TrimSpace(requestedDocument.PreferredSignerName),
+		strings.TrimSpace(actor.Name),
+		strings.TrimSpace(actor.Email),
+		"Signer Internal",
+	)
 
 	now := time.Now()
 	var request models.DocumentSignatureRequest
 	result := database.DB.Where("document_key = ?", requestedDocument.DocumentKey).First(&request)
 	if result.Error == nil {
-		if request.Status == tteStatusSigned {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Dokumen ini sudah ditandatangani secara internal"})
-			return
-		}
-
 		updates := map[string]any{
 			"visit_id":                input.VisitID,
 			"document_type":           requestedDocument.DocumentType,
@@ -223,14 +286,14 @@ func UpsertTTEDocumentRequest(c *gin.Context) {
 			"source_id":               requestedDocument.SourceID,
 			"medical_record_id":       requestedDocument.MedicalRecordID,
 			"requested_by_user_id":    *actor.UserID,
-			"requested_to_user_id":    input.RequestedToUserID,
-			"status":                  tteStatusPending,
+			"requested_to_user_id":    signerUserID,
+			"status":                  tteStatusSigned,
 			"requested_at":            now,
-			"responded_at":            nil,
-			"signed_at":               nil,
+			"responded_at":            &now,
+			"signed_at":               &now,
 			"notes":                   strings.TrimSpace(input.Notes),
 			"rejection_reason":        "",
-			"signature_name_snapshot": "",
+			"signature_name_snapshot": signatureName,
 		}
 		if err := database.DB.Model(&request).Updates(updates).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -238,17 +301,20 @@ func UpsertTTEDocumentRequest(c *gin.Context) {
 		}
 	} else if result.Error == gorm.ErrRecordNotFound {
 		request = models.DocumentSignatureRequest{
-			VisitID:           input.VisitID,
-			DocumentKey:       requestedDocument.DocumentKey,
-			DocumentType:      requestedDocument.DocumentType,
-			DocumentLabel:     requestedDocument.DocumentLabel,
-			SourceID:          requestedDocument.SourceID,
-			MedicalRecordID:   requestedDocument.MedicalRecordID,
-			RequestedByUserID: *actor.UserID,
-			RequestedToUserID: input.RequestedToUserID,
-			Status:            tteStatusPending,
-			RequestedAt:       now,
-			Notes:             strings.TrimSpace(input.Notes),
+			VisitID:               input.VisitID,
+			DocumentKey:           requestedDocument.DocumentKey,
+			DocumentType:          requestedDocument.DocumentType,
+			DocumentLabel:         requestedDocument.DocumentLabel,
+			SourceID:              requestedDocument.SourceID,
+			MedicalRecordID:       requestedDocument.MedicalRecordID,
+			RequestedByUserID:     *actor.UserID,
+			RequestedToUserID:     signerUserID,
+			Status:                tteStatusSigned,
+			RequestedAt:           now,
+			RespondedAt:           &now,
+			SignedAt:              &now,
+			Notes:                 strings.TrimSpace(input.Notes),
+			SignatureNameSnapshot: signatureName,
 		}
 		if err := database.DB.Create(&request).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -269,7 +335,7 @@ func UpsertTTEDocumentRequest(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"data":    updatedDocument,
-		"message": "Request TTE berhasil dikirim",
+		"message": "Dokumen berhasil ditandatangani (TTE)",
 	})
 }
 
@@ -643,15 +709,26 @@ func buildTTEDocumentsForVisit(visitID uint) (models.Visit, []tteVisitDocumentIt
 		for _, consent := range record.InformedConsents {
 			consentID := consent.ID
 			label := firstNonEmpty(strings.TrimSpace(consent.ActionName), "Informed Consent")
+			printPath := "/api/informed-consents/" + strconv.FormatUint(uint64(consentID), 10) + "/print"
 			documents = append(documents, tteDecorateVisitDocument(tteVisitDocumentItem{
 				DocumentKey:     "informed_consent:" + strconv.FormatUint(uint64(consentID), 10),
 				DocumentType:    "informed_consent",
-				DocumentLabel:   label,
-				Description:     "Dokumen informed consent yang disimpan dari tindakan medis.",
+				DocumentLabel:   label + " · TTD Dokter",
+				Description:     "Dokumen persetujuan / penolakan tindakan kedokteran (Informed Consent).",
 				SourceID:        &consentID,
 				MedicalRecordID: &recordID,
-				PrintPath:       "/api/informed-consents/" + strconv.FormatUint(uint64(consentID), 10) + "/print",
+				PrintPath:       printPath,
 			}, tteBuildDoctorSignerSelection("TTD Dokter Tindakan", consent.DoctorID, &consent.Doctor, signerDirectory), requestByKey))
+
+			documents = append(documents, tteDecorateVisitDocument(tteVisitDocumentItem{
+				DocumentKey:     "informed_consent_nurse:" + strconv.FormatUint(uint64(consentID), 10),
+				DocumentType:    "informed_consent_nurse",
+				DocumentLabel:   label + " · TTD Perawat",
+				Description:     "TTE perawat pendamping pada dokumen Informed Consent.",
+				SourceID:        &consentID,
+				MedicalRecordID: &recordID,
+				PrintPath:       printPath,
+			}, tteBuildOperationalSignerSelection("TTD Perawat", nil, signerDirectory, "Pilih pegawai/perawat untuk menandatangani kolom Perawat."), requestByKey))
 		}
 	}
 
@@ -815,7 +892,7 @@ func tteDecorateVisitDocument(document tteVisitDocumentItem, signerSelection tte
 	document.StatusLabel = tteDocumentStatusLabel(request.Status)
 	document.RequestID = &request.ID
 	document.SignerUserID = &request.RequestedToUserID
-	document.SignerName = tteResolveUserDisplayName(request.RequestedToUser)
+	document.SignerName = tteResolveRequestSignerName(request)
 	document.RequestedByName = tteResolveUserDisplayName(request.RequestedByUser)
 	document.RequestedAt = &request.RequestedAt
 	document.RespondedAt = request.RespondedAt
@@ -903,25 +980,17 @@ func tteBuildDoctorSignerSelection(targetLabel string, doctorID uint, preloadedD
 
 	selection.PreferredSignerName = doctorName
 	if linkedUserID == 0 {
-		selection.ResolutionNote = firstNonEmpty(
-			buildTTEDoctorSignerResolutionNote(doctorName, false),
-			"Dokter pada dokumen ini belum terhubung ke akun aplikasi melalui master pegawai atau profil dokter.",
-		)
 		return selection
 	}
 
 	option, exists := signerDirectory.ByUserID[linkedUserID]
 	if !exists {
-		selection.ResolutionNote = firstNonEmpty(
-			buildTTEDoctorSignerResolutionNote(doctorName, true),
-			"Akun dokter pada dokumen ini belum aktif atau belum memiliki akses ACC TTE.",
-		)
 		return selection
 	}
 
 	preferredSignerID := option.ID
 	selection.PreferredSignerID = &preferredSignerID
-	selection.PreferredSignerName = option.FullName
+	selection.PreferredSignerName = firstNonEmpty(doctorName, option.FullName)
 	selection.Candidates = []tteSignerOption{option}
 	return selection
 }
@@ -954,9 +1023,6 @@ func tteBuildOperationalSignerSelection(targetLabel string, preferredUserIDs []u
 		selection.PreferredSignerID = &preferredSignerID
 		selection.PreferredSignerName = matched[0].FullName
 		selection.Candidates = matched
-		if len(matched) > 1 {
-			selection.ResolutionNote = "Terdapat lebih dari satu petugas hasil untuk dokumen ini. Pilih user yang akan menandatangani secara internal."
-		}
 		return selection
 	}
 
@@ -968,11 +1034,6 @@ func tteBuildOperationalSignerSelection(targetLabel string, preferredUserIDs []u
 		fallbackCandidates = append(fallbackCandidates, option)
 	}
 	selection.Candidates = fallbackCandidates
-	if len(fallbackCandidates) == 0 {
-		selection.ResolutionNote = firstNonEmpty(strings.TrimSpace(unresolvedNote), "Belum ada user petugas aktif dengan akses ACC TTE.")
-		return selection
-	}
-	selection.ResolutionNote = firstNonEmpty(strings.TrimSpace(unresolvedNote), "Signer petugas belum terhubung otomatis, silakan pilih manual dari daftar user petugas.")
 	return selection
 }
 
@@ -1157,15 +1218,15 @@ func tteUserHasPermission(user models.User, permissionName string) bool {
 func tteDocumentStatusLabel(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case tteStatusPending:
-		return "Menunggu ACC"
+		return "Menunggu TTE"
 	case tteStatusSigned:
-		return "Sudah ditandatangani"
+		return "Sudah TTE"
 	case tteStatusRejected:
 		return "Ditolak"
 	case tteStatusRevoked:
 		return "Tidak berlaku"
 	default:
-		return "Belum diajukan"
+		return "Belum TTE"
 	}
 }
 
@@ -1246,7 +1307,7 @@ func tteBuildPrintPath(documentType string, documentKey string, visitID uint, so
 		if medicalRecordID != nil {
 			return "/api/medical-records/visit/" + strconv.FormatUint(uint64(visitID), 10) + "/print/surat?record_ids=" + strconv.FormatUint(uint64(*medicalRecordID), 10)
 		}
-	case "informed_consent":
+	case "informed_consent", "informed_consent_nurse":
 		if sourceID != nil {
 			return "/api/informed-consents/" + strconv.FormatUint(uint64(*sourceID), 10) + "/print"
 		}

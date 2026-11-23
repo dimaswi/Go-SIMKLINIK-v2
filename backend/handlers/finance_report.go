@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"starter/backend/database"
@@ -282,13 +283,16 @@ func renderFinanceReportPDF(hospitalInfo initialAssessmentHospitalInfo, report f
 	pdf.SetTitle(documentTitle, false)
 	pdf.SetCreator("SIMKLINIK", false)
 	pdf.SetHeaderFuncMode(func() {
+		if pdf.PageNo() != 1 {
+			return
+		}
 		addInitialAssessmentPDFHeader(pdf, hospitalInfo, documentTitle, report.Summary.PeriodLabel)
 	}, true)
 	pdf.SetFooterFunc(func() {
-		pdf.SetY(-8)
-		pdf.SetFont("Arial", "", 8)
-		pdf.SetTextColor(90, 90, 90)
-		pdf.CellFormat(90, 4, "Dicetak: "+formatDateTimeIndonesian(report.GeneratedAt), "", 0, "L", false, 0, "")
+		pdf.SetY(-7.5)
+		pdf.SetFont("Arial", "", 7.5)
+		pdf.SetTextColor(70, 70, 70)
+		pdf.CellFormat(110, 4, "Dicetak: "+formatDateTimeIndonesian(report.GeneratedAt), "", 0, "L", false, 0, "")
 		pdf.CellFormat(0, 4, fmt.Sprintf("Halaman %d/{nb}", pdf.PageNo()), "", 0, "R", false, 0, "")
 		pdf.SetTextColor(0, 0, 0)
 	})
@@ -467,26 +471,35 @@ func buildFinanceReportTopItemRows(items []financeReportTopItemRow) [][]string {
 
 func addFinanceReportInvoicesTable(pdf *gofpdf.Fpdf, rows []financeReportInvoiceRow) {
 	addInitialAssessmentSectionTitle(pdf, "DETAIL INVOICE")
+	pageWidth, _ := pdf.GetPageSize()
+	left, _, right, _ := pdf.GetMargins()
+	contentWidth := pageWidth - left - right
 	headers := []string{"Tanggal", "Invoice", "Visit", "Pasien", "Status", "Total", "Terbayar", "Piutang"}
-	widths := []float64{24, 31, 24, 56, 25, 28, 28, 28}
+	widths := normalizeReportCenterWidths(contentWidth, []float64{26, 35, 28, 66, 26, 32, 32, 32})
+	headerH := 5.6
+	rowH := 5.4
+
 	drawHeader := func() {
-		pdf.SetFont("Arial", "B", 8)
-		pdf.SetFillColor(20, 83, 45)
-		pdf.SetTextColor(255, 255, 255)
+		pdf.SetFont("Arial", "B", 7.6)
+		pdf.SetDrawColor(0, 0, 0)
+		pdf.SetTextColor(0, 0, 0)
+		pdf.SetLineWidth(0.25)
 		for index, header := range headers {
-			pdf.CellFormat(widths[index], 7, sanitizePDFSingleLineText(header), "1", 0, "C", true, 0, "")
+			pdf.CellFormat(widths[index], headerH, strings.ToUpper(sanitizePDFSingleLineText(header)), "1", 0, "C", false, 0, "")
 		}
 		pdf.Ln(-1)
-		pdf.SetTextColor(0, 0, 0)
+		pdf.SetLineWidth(0.2)
 	}
 
 	drawHeader()
-	pdf.SetFont("Arial", "", 7.8)
+	pdf.SetFont("Arial", "", 7.6)
 	for _, row := range rows {
-		dashboardEnsureTableRowSpace(pdf, 6.2, func() {
+		dashboardEnsureTableRowSpace(pdf, rowH, func() {
 			addInitialAssessmentSectionTitle(pdf, "DETAIL INVOICE")
 			drawHeader()
 		})
+		pdf.SetDrawColor(0, 0, 0)
+		pdf.SetTextColor(0, 0, 0)
 		cells := []string{
 			dashboardReportShortDate(row.InvoiceDate),
 			row.InvoiceNumber,
@@ -502,7 +515,7 @@ func addFinanceReportInvoicesTable(pdf *gofpdf.Fpdf, rows []financeReportInvoice
 			if index >= 5 {
 				align = "R"
 			}
-			pdf.CellFormat(widths[index], 6.2, sanitizePDFSingleLineText(dashboardReportEllipsis(cell, 30)), "1", 0, align, false, 0, "")
+			pdf.CellFormat(widths[index], rowH, sanitizePDFSingleLineText(dashboardReportEllipsis(cell, 34)), "1", 0, align, false, 0, "")
 		}
 		pdf.Ln(-1)
 	}

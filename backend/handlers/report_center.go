@@ -777,13 +777,16 @@ func renderReportCenterPDF(hospitalInfo initialAssessmentHospitalInfo, dataset r
 	pdf.SetTitle(strings.ToUpper(dataset.Title), false)
 	pdf.SetCreator("SIMKLINIK", false)
 	pdf.SetHeaderFuncMode(func() {
+		if pdf.PageNo() != 1 {
+			return
+		}
 		addInitialAssessmentPDFHeader(pdf, hospitalInfo, strings.ToUpper(dataset.Title), dataset.PeriodText)
 	}, true)
 	pdf.SetFooterFunc(func() {
-		pdf.SetY(-8)
-		pdf.SetFont("Arial", "", 8)
-		pdf.SetTextColor(90, 90, 90)
-		pdf.CellFormat(90, 4, "Dicetak: "+formatDateTimeIndonesian(dataset.GeneratedAt), "", 0, "L", false, 0, "")
+		pdf.SetY(-7.5)
+		pdf.SetFont("Arial", "", 7.5)
+		pdf.SetTextColor(70, 70, 70)
+		pdf.CellFormat(110, 4, "Dicetak: "+formatDateTimeIndonesian(dataset.GeneratedAt), "", 0, "L", false, 0, "")
 		pdf.CellFormat(0, 4, fmt.Sprintf("Halaman %d/{nb}", pdf.PageNo()), "", 0, "R", false, 0, "")
 		pdf.SetTextColor(0, 0, 0)
 	})
@@ -877,9 +880,9 @@ func renderReportCenterExcel(dataset reportCenterDataset) ([]byte, string, error
 }
 
 func addReportCenterTableToPDF(pdf *gofpdf.Fpdf, dataset reportCenterDataset) {
-	rowHeight := 6.4
-	headerHeight := 7.0
-	ensureReportCenterSectionSpace(pdf, rowHeight+headerHeight+10)
+	rowHeight := 5.4
+	headerHeight := 5.6
+	ensureReportCenterSectionSpace(pdf, rowHeight+headerHeight+8)
 	addInitialAssessmentSectionTitle(pdf, "DATA LAPORAN")
 
 	pageWidth, _ := pdf.GetPageSize()
@@ -905,29 +908,33 @@ func addReportCenterTableToPDF(pdf *gofpdf.Fpdf, dataset reportCenterDataset) {
 	widths := normalizeReportCenterWidths(contentWidth, weights)
 
 	drawHeader := func() {
-		pdf.SetFont("Arial", "B", 8)
-		pdf.SetFillColor(30, 41, 59)
-		pdf.SetTextColor(255, 255, 255)
+		pdf.SetFont("Arial", "B", 7.6)
+		pdf.SetDrawColor(0, 0, 0)
+		pdf.SetTextColor(0, 0, 0)
+		pdf.SetLineWidth(0.25)
 		for index, column := range dataset.Columns {
-			pdf.CellFormat(widths[index], headerHeight, sanitizePDFSingleLineText(column.Label), "1", 0, "C", true, 0, "")
+			pdf.CellFormat(widths[index], headerHeight, strings.ToUpper(sanitizePDFSingleLineText(column.Label)), "1", 0, "C", false, 0, "")
 		}
 		pdf.Ln(-1)
-		pdf.SetTextColor(0, 0, 0)
+		pdf.SetLineWidth(0.2)
 	}
 
 	drawHeader()
 	pdf.SetFont("Arial", "", 7.6)
 	if len(dataset.Rows) == 0 {
+		pdf.SetDrawColor(0, 0, 0)
 		pdf.CellFormat(contentWidth, rowHeight+1, "Tidak ada data pada periode ini.", "1", 1, "C", false, 0, "")
 		addInitialAssessmentSectionSpacing(pdf)
 		return
 	}
 	for _, row := range dataset.Rows {
 		dashboardEnsureTableRowSpace(pdf, rowHeight, func() {
-			ensureReportCenterSectionSpace(pdf, rowHeight+headerHeight+8)
+			ensureReportCenterSectionSpace(pdf, rowHeight+headerHeight+6)
 			addInitialAssessmentSectionTitle(pdf, "DATA LAPORAN")
 			drawHeader()
 		})
+		pdf.SetDrawColor(0, 0, 0)
+		pdf.SetTextColor(0, 0, 0)
 		for index, column := range dataset.Columns {
 			align := reportCenterPDFAlign(column.Kind)
 			value := reportCenterCellString(row[column.Key], column.Kind)

@@ -99,7 +99,7 @@ export function MasterDataPageShell({
           </div>
 
           <div className="p-0">
-            <div className="min-w-0 bg-card p-3 sm:p-4">
+            <div className="min-w-0 bg-card p-3">
               {children}
             </div>
           </div>
@@ -194,18 +194,18 @@ export function MasterDataAsideSection({ title, children }: { title: string; hel
 
 export function MasterDataSection({ title, children }: { title: string; helper?: string; children: ReactNode }) {
   return (
-    <section className="px-4 py-4 lg:px-5 lg:py-5">
+    <section className="py-2 first:pt-0 last:pb-0">
       <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
-      <div className="mt-4">{children}</div>
+      <div className="mt-2">{children}</div>
     </section>
   );
 }
 
 export function MasterDataDetailItem({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="space-y-1">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
-      <div className="text-sm leading-6 text-foreground/95">{value}</div>
+    <div className="space-y-0.5">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+      <div className="text-xs leading-5 text-foreground/95">{value}</div>
     </div>
   );
 }

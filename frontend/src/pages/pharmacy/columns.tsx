@@ -48,6 +48,18 @@ export function createColumns({
 }: CreateColumnsOptions): ColumnDef<MedicalRecord>[] {
   return [
     {
+      id: 'queue_number',
+      header: 'Antrian',
+      cell: ({ row }) => {
+        const q = row.original.visit?.queue_number;
+        return (
+          <Badge variant="outline" className="rounded-none font-mono text-xs font-semibold shadow-none">
+            {q ? String(q).padStart(3, '0') : '-'}
+          </Badge>
+        );
+      },
+    },
+    {
       id: 'ordered_at',
       header: 'Waktu Order',
       cell: ({ row }) => (

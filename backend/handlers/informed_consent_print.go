@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -32,8 +34,10 @@ type informedConsentPrintViewData struct {
 	SignaturePatientIDNumber string
 	SignatureDoctor          string
 	SignatureDoctorNIP       string
+	SignatureNurse           string
 	SignatureWitness         string
 	DoctorTTESignature       *ttePrintSignatureInfo
+	NurseTTESignature        *ttePrintSignatureInfo
 }
 
 func PrintInformedConsent(c *gin.Context) {
@@ -93,6 +97,7 @@ func buildInformedConsentPrintViewData(c *gin.Context, record models.MedicalReco
 	consentGiverIDNumber := fallbackText(resolveInformedConsentConsentGiverIDNumber(consent, &patient))
 	printedBy := resolvePrintedByLabel(c)
 
+	baseURL := resolveTTEVerificationBaseURLForRequest(c)
 	return informedConsentPrintViewData{
 		GeneratedAt:              time.Now(),
 		PrintedByLabel:           printedBy,
@@ -101,7 +106,7 @@ func buildInformedConsentPrintViewData(c *gin.Context, record models.MedicalReco
 		DocumentFields:           buildInformedConsentDocumentFields(record, consent, printedBy),
 		PatientFields:            buildInformedConsentPatientFields(patient),
 		VisitFields:              buildInformedConsentVisitFields(record, doctor),
-		ConsentGiverFields:       buildInformedConsentConsentGiverFields(consent, patient),
+		ConsentGiverFields:       buildInformedConsentConsentGiverFields(consent, patient, doctor),
 		ConsentFields:            buildInformedConsentNarrativeFields(consent),
 		DecisionFields:           buildInformedConsentDecisionFields(consent),
 		SignatureDate:            signatureDate,
@@ -110,8 +115,10 @@ func buildInformedConsentPrintViewData(c *gin.Context, record models.MedicalReco
 		SignaturePatientIDNumber: consentGiverIDNumber,
 		SignatureDoctor:          fallbackText(doctor.FullName),
 		SignatureDoctorNIP:       fallbackText(doctor.NIPNumber),
+		SignatureNurse:           fallbackText(consent.NurseName),
 		SignatureWitness:         fallbackText(consent.WitnessName),
-		DoctorTTESignature:       loadTTESignedSignatureByDocumentKeyWithBaseURL(fmt.Sprintf("informed_consent:%d", consent.ID), resolveTTEVerificationBaseURLForRequest(c)),
+		DoctorTTESignature:       loadTTESignedSignatureByDocumentKeyWithBaseURL(fmt.Sprintf("informed_consent:%d", consent.ID), baseURL),
+		NurseTTESignature:        loadTTESignedSignatureByDocumentKeyWithBaseURL(fmt.Sprintf("informed_consent_nurse:%d", consent.ID), baseURL),
 	}
 }
 
@@ -141,46 +148,48 @@ func buildInformedConsentPatientFields(patient models.Patient) []initialAssessme
 func buildInformedConsentVisitFields(record models.MedicalRecord, doctor models.Doctor) []initialAssessmentPrintField {
 	return []initialAssessmentPrintField{
 		{Label: "No. Kunjungan", Value: fallbackText(record.Visit.VisitNumber)},
-		{Label: "Tanggal Kunjungan", Value: formatInformedConsentDateTime(record.Visit.VisitDate)},
+		{Label: "Tanggal Kunjungan", Value: formatVisitDateForPrint(record.Visit.VisitDate)},
 		{Label: "Poliklinik", Value: fallbackText(record.Polyclinic.Name)},
 		{Label: "DPJP", Value: fallbackText(doctor.FullName)},
-		{Label: "Jenis Kunjungan", Value: fallbackText(record.Visit.VisitType)},
+		{Label: "Jenis Kunjungan", Value: formatVisitTypeForPrint(record.Visit.VisitType)},
 		{Label: "Pembiayaan", Value: buildInformedConsentPaymentLabel(record.Visit)},
 	}
 }
 
-func buildInformedConsentConsentGiverFields(consent models.InformedConsent, patient models.Patient) []initialAssessmentPrintField {
+func buildInformedConsentConsentGiverFields(consent models.InformedConsent, patient models.Patient, doctor models.Doctor) []initialAssessmentPrintField {
 	return []initialAssessmentPrintField{
-		{Label: "Nama Pemberi Persetujuan", Value: fallbackText(resolveInformedConsentConsentGiverName(consent, &patient))},
-		{Label: "Hubungan dengan Pasien", Value: fallbackText(resolveInformedConsentConsentGiverRelation(consent, &patient))},
-		{Label: "No. Identitas", Value: fallbackText(resolveInformedConsentConsentGiverIDNumber(consent, &patient))},
+		{Label: "Pemberi Persetujuan", Value: fallbackText(resolveInformedConsentConsentGiverName(consent, &patient))},
+		{Label: "Hubungan dgn Pasien", Value: fallbackText(resolveInformedConsentConsentGiverRelation(consent, &patient))},
+		{Label: "No. Identitas (NIK)", Value: fallbackText(resolveInformedConsentConsentGiverIDNumber(consent, &patient))},
+		{Label: "Dokter Pelaksana", Value: fallbackText(doctor.FullName)},
+		{Label: "Perawat Pendamping", Value: fallbackText(consent.NurseName)},
+		{Label: "Saksi", Value: fallbackText(consent.WitnessName)},
 	}
 }
 
 func buildInformedConsentNarrativeFields(consent models.InformedConsent) []initialAssessmentPrintField {
 	return []initialAssessmentPrintField{
-		{Label: "Nama Tindakan", Value: fallbackText(consent.ActionName)},
-		{Label: "Deskripsi Tindakan", Value: fallbackText(consent.ActionDescription)},
-		{Label: "Manfaat", Value: fallbackText(consent.Benefits)},
-		{Label: "Risiko", Value: fallbackText(consent.Risks)},
+		{Label: "Tindakan Kedokteran", Value: fallbackText(consent.ActionName)},
+		{Label: "Diagnosis / Indikasi", Value: fallbackText(consent.Diagnosis)},
+		{Label: "Tata Cara / Deskripsi", Value: fallbackText(consent.ActionDescription)},
+		{Label: "Tujuan & Manfaat", Value: fallbackText(consent.Benefits)},
+		{Label: "Risiko & Komplikasi", Value: fallbackText(consent.Risks)},
+		{Label: "Alternatif Tindakan", Value: fallbackText(consent.Alternatives)},
+		{Label: "Prognosis", Value: fallbackText(consent.Prognosis)},
 		{Label: "Catatan Tambahan", Value: fallbackText(consent.Notes)},
 	}
 }
 
 func buildInformedConsentDecisionFields(consent models.InformedConsent) []initialAssessmentPrintField {
-	fields := []initialAssessmentPrintField{
-		{Label: "Keputusan Pasien", Value: informedConsentDecisionStatement(consent.PatientDecision)},
-		{Label: "Tanggal Persetujuan", Value: formatInformedConsentDateTime(consent.ConsentDate)},
+	return []initialAssessmentPrintField{
+		{Label: "Pernyataan Keputusan", Value: informedConsentDecisionStatement(consent.PatientDecision, consent.ActionName)},
+		{Label: "Waktu Persetujuan", Value: formatInformedConsentDateTime(consent.ConsentDate)},
 	}
-	if strings.TrimSpace(consent.WitnessName) != "" {
-		fields = append(fields, initialAssessmentPrintField{Label: "Saksi", Value: consent.WitnessName})
-	}
-	return fields
 }
 
 func buildInformedConsentPaymentLabel(visit models.Visit) string {
 	parts := make([]string, 0, 2)
-	if paymentType := strings.TrimSpace(visit.PaymentType); paymentType != "" {
+	if paymentType := formatPaymentTypeForPrint(visit.PaymentType); paymentType != "" && paymentType != "-" {
 		parts = append(parts, paymentType)
 	}
 	if insuranceNumber := strings.TrimSpace(visit.InsuranceNumber); insuranceNumber != "" {
@@ -195,36 +204,53 @@ func buildInformedConsentPaymentLabel(visit models.Visit) string {
 func renderInformedConsentPDF(hospitalInfo initialAssessmentHospitalInfo, data informedConsentPrintViewData) ([]byte, string, error) {
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	defer clearInitialAssessmentPDFPageContentStartOverrides(pdf)
-	documentTitle := "INFORMED CONSENT"
+	documentTitle := "PERSETUJUAN TINDAKAN KEDOKTERAN (INFORMED CONSENT)"
+	if normalizeInformedConsentDecision(data.Consent.PatientDecision) == "declined" {
+		documentTitle = "PENOLAKAN TINDAKAN KEDOKTERAN (INFORMED CONSENT)"
+	}
 	pdf.SetMargins(initialAssessmentPDFMarginLeft, initialAssessmentPDFMarginTop, initialAssessmentPDFMarginRight)
 	pdf.SetAutoPageBreak(true, initialAssessmentPDFMarginBottom)
 	pdf.AliasNbPages("")
-	pdf.SetTitle(documentTitle, false)
+	pdf.SetTitle("Informed Consent", false)
 	pdf.SetAuthor(data.PrintedByLabel, false)
 	pdf.SetCreator("SIMKLINIK", false)
 	pdf.SetHeaderFuncMode(func() {
 		if pdf.PageNo() != 1 {
 			return
 		}
-		addInitialAssessmentPDFHeader(pdf, hospitalInfo, documentTitle, fallbackText(data.Record.Visit.VisitNumber))
+		addInitialAssessmentPDFHeader(pdf, hospitalInfo, documentTitle, "No. Kunjungan : "+fallbackText(data.Record.Visit.VisitNumber))
 	}, true)
 	pdf.SetFooterFunc(func() {
-		pdf.SetY(-8)
-		pdf.SetFont("Arial", "", 8)
-		pdf.SetTextColor(90, 90, 90)
-		pdf.CellFormat(90, 4, "Dicetak: "+formatDateTimeIndonesian(data.GeneratedAt), "", 0, "L", false, 0, "")
+		pdf.SetY(-7.5)
+		pdf.SetFont("Arial", "", 7.5)
+		pdf.SetTextColor(70, 70, 70)
+		pdf.CellFormat(110, 4, "Dicetak: "+formatDateTimeIndonesian(data.GeneratedAt)+" | Petugas: "+fallbackText(data.PrintedByLabel), "", 0, "L", false, 0, "")
 		pdf.CellFormat(0, 4, fmt.Sprintf("Halaman %d/{nb}", pdf.PageNo()), "", 0, "R", false, 0, "")
 		pdf.SetTextColor(0, 0, 0)
 	})
 	pdf.AddPage()
 	pdf.SetY(initialAssessmentPDFPageContentStartForPDF(pdf, pdf.PageNo()))
 
-	addInitialAssessmentCompactFieldSection(pdf, "INFORMASI DOKUMEN", data.DocumentFields, "Informasi dokumen tidak tersedia.")
-	addInitialAssessmentCompactFieldSection(pdf, "DATA PASIEN", data.PatientFields, "Data pasien tidak tersedia.")
-	addInitialAssessmentCompactFieldSection(pdf, "DATA KUNJUNGAN", data.VisitFields, "Data kunjungan tidak tersedia.")
-	addInformedConsentConsentGiverSection(pdf, data.ConsentGiverFields, "Data pemberi persetujuan belum dilengkapi.")
-	addInitialAssessmentFieldSection(pdf, "TINDAKAN DAN PENJELASAN", data.ConsentFields, "Belum ada isi informed consent.")
-	addInitialAssessmentFieldSection(pdf, "KEPUTUSAN PASIEN", data.DecisionFields, "Belum ada keputusan pasien.")
+	patient := data.Record.Patient
+	if patient.ID == 0 {
+		patient = data.Consent.Patient
+	}
+	visit := data.Record.Visit
+	if visit.Polyclinic.Name == "" {
+		visit.Polyclinic = data.Record.Polyclinic
+	}
+	if visit.Doctor.FullName == "" {
+		visit.Doctor = data.Record.Doctor
+	}
+
+	identityFields := mergePatientVisitPrintFields(patient, visit,
+		initialAssessmentPrintField{Label: "Tgl. Consent", Value: formatInformedConsentDateTime(data.Consent.ConsentDate)},
+		initialAssessmentPrintField{Label: "Status Keputusan", Value: informedConsentDecisionLabel(data.Consent.PatientDecision)},
+	)
+	addInitialAssessmentCompactFieldSection(pdf, "IDENTITAS PASIEN & KUNJUNGAN", identityFields, "Data pasien tidak tersedia.")
+	addInitialAssessmentCompactFieldSection(pdf, "PENERIMA INFORMASI / PEMBERI PERSETUJUAN", data.ConsentGiverFields, "Data pemberi persetujuan belum dilengkapi.")
+	addInitialAssessmentCompactFieldSection(pdf, "PEMBERIAN INFORMASI TINDAKAN KEDOKTERAN", filterNonEmptyPrintFields(data.ConsentFields), "Belum ada isi informed consent.")
+	addInitialAssessmentCompactFieldSection(pdf, "PERNYATAAN KEPUTUSAN", data.DecisionFields, "Belum ada keputusan pasien.")
 	addInformedConsentSignatureSection(pdf, hospitalInfo, data)
 
 	var output bytes.Buffer
@@ -236,66 +262,41 @@ func renderInformedConsentPDF(hospitalInfo initialAssessmentHospitalInfo, data i
 	return output.Bytes(), fileName, nil
 }
 
-func addInformedConsentConsentGiverSection(pdf *gofpdf.Fpdf, fields []initialAssessmentPrintField, emptyMessage string) {
-	addInitialAssessmentSectionTitle(pdf, "PEMBERI PERSETUJUAN")
-	if len(fields) == 0 {
-		addInitialAssessmentFullWidthRow(pdf, firstNonEmpty(emptyMessage, "Tidak ada data."), false)
-		return
-	}
-
-	for _, field := range fields {
-		addInformedConsentWideKeyValueRow(pdf, field.Label, field.Value)
-	}
-	addInitialAssessmentSectionSpacing(pdf)
-}
-
-func addInformedConsentWideKeyValueRow(pdf *gofpdf.Fpdf, label string, value string) {
-	left, _, right, _ := pdf.GetMargins()
-	pageWidth, _ := pdf.GetPageSize()
-	contentWidth := pageWidth - left - right
-	labelWidth := 58.0
-	valueWidth := contentWidth - labelWidth
-
-	trimmedLabel := firstNonEmpty(strings.TrimSpace(sanitizePDFText(label)), "-")
-	trimmedValue := firstNonEmpty(strings.TrimSpace(sanitizePDFText(value)), "-")
-	labelLines := pdf.SplitLines([]byte(trimmedLabel), labelWidth-4)
-	valueLines := pdf.SplitLines([]byte(trimmedValue), valueWidth-4)
-	lineCount := maxInt(len(labelLines), len(valueLines))
-	if lineCount == 0 {
-		lineCount = 1
-	}
-	rowHeight := float64(lineCount)*4.5 + 2
-	ensureInitialAssessmentPDFSpace(pdf, rowHeight)
-
-	x := left
-	y := pdf.GetY()
-	pdf.SetDrawColor(120, 120, 120)
-	pdf.SetFillColor(245, 245, 245)
-	pdf.Rect(x, y, labelWidth, rowHeight, "DF")
-	pdf.Rect(x+labelWidth, y, valueWidth, rowHeight, "D")
-
-	pdf.SetXY(x+2, y+1.5)
-	pdf.SetFont("Arial", "", 9)
-	pdf.MultiCell(labelWidth-4, 4.5, trimmedLabel, "", "L", false)
-	pdf.SetXY(x+labelWidth+2, y+1.5)
-	pdf.SetFont("Arial", "", 9)
-	pdf.MultiCell(valueWidth-4, 4.5, trimmedValue, "", "L", false)
-	pdf.SetXY(left, y+rowHeight)
-}
-
 func addInformedConsentSignatureSection(pdf *gofpdf.Fpdf, hospitalInfo initialAssessmentHospitalInfo, data informedConsentPrintViewData) {
 	left, _, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
 	contentWidth := pageWidth - left - right
-	columnGap := 8.0
-	columnWidth := (contentWidth - (2 * columnGap)) / 3
-	signatureLineOffset := 42.0
-	if hasTTEQRCode(data.DoctorTTESignature) {
-		signatureLineOffset = 6.2 + resolveTTESignatureAnnotationReservedHeight(columnWidth, data.DoctorTTESignature) + 0.55
+	columnWidth := contentWidth / 4.0
+
+	hasDoctorQR := hasTTEQRCode(data.DoctorTTESignature)
+	hasNurseQR := hasTTEQRCode(data.NurseTTESignature)
+	hasPatientWetSig := strings.HasPrefix(strings.TrimSpace(data.Consent.PatientSignature), "data:image/png;base64,")
+	hasWitnessWetSig := strings.HasPrefix(strings.TrimSpace(data.Consent.WitnessSignature), "data:image/png;base64,")
+	requiresTallBox := hasDoctorQR || hasNurseQR || hasPatientWetSig || hasWitnessWetSig
+	reservedQRHeight := maxFloat64(
+		resolveTTESignatureAnnotationReservedHeight(columnWidth, data.DoctorTTESignature),
+		resolveTTESignatureAnnotationReservedHeight(columnWidth, data.NurseTTESignature),
+	)
+
+	signatureLineOffset := 19.0
+	if requiresTallBox {
+		signatureLineOffset = maxFloat64(23.0, 5.2+reservedQRHeight+3.8)
 	}
-	signatureBlockHeight := signatureLineOffset + 10.5
-	ensureInitialAssessmentPDFSpace(pdf, signatureBlockHeight+16)
-	currentY := pdf.GetY() + 4
+	signatureBlockHeight := signatureLineOffset + 9.2
+	dateBarH := 5.0
+	boxH := dateBarH + signatureBlockHeight + 2.4
+	ensureInitialAssessmentPDFSpace(pdf, boxH+4.0)
+	boxStartY := pdf.GetY()
+	sigGridTopY := boxStartY + dateBarH
+
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.25)
+	pdf.Rect(left, boxStartY, contentWidth, boxH, "D")
+	pdf.Line(left, sigGridTopY, left+contentWidth, sigGridTopY)
+	pdf.Line(left+columnWidth, sigGridTopY, left+columnWidth, boxStartY+boxH)
+	pdf.Line(left+(2*columnWidth), sigGridTopY, left+(2*columnWidth), boxStartY+boxH)
+	pdf.Line(left+(3*columnWidth), sigGridTopY, left+(3*columnWidth), boxStartY+boxH)
+	pdf.SetLineWidth(0.2)
 
 	signatureLocation := strings.TrimSpace(hospitalInfo.City)
 	signatureDate := formatDateIndonesian(data.SignatureDate)
@@ -304,24 +305,32 @@ func addInformedConsentSignatureSection(pdf *gofpdf.Fpdf, hospitalInfo initialAs
 		locationDateLabel = signatureLocation + ", " + signatureDate
 	}
 
-	pdf.SetFont("Arial", "", 10)
-	pdf.SetXY(left, currentY)
-	pdf.CellFormat(contentWidth, 5, locationDateLabel, "", 1, "R", false, 0, "")
+	col1X := left
+	col2X := left + columnWidth
+	col3X := left + (2 * columnWidth)
+	col4X := left + (3 * columnWidth)
 
-	currentY = pdf.GetY() + 3
+	pdf.SetFont("Arial", "", 7.8)
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetXY(left+2.5, boxStartY+0.7)
+	pdf.CellFormat(contentWidth-5.0, 3.6, locationDateLabel, "", 1, "R", false, 0, "")
+
+	currentY := sigGridTopY + 1.4
+	// 1. TTD Pasien / Wali
 	drawInformedConsentSignatureBlock(
 		pdf,
-		left,
+		col1X,
 		currentY,
 		columnWidth,
 		signatureLineOffset,
-		"Pemberi Persetujuan / Wali",
+		"Pasien / Wali",
 		data.SignaturePatient,
 		"",
 	)
+	// 2. TTD Saksi
 	drawInformedConsentSignatureBlock(
 		pdf,
-		left+columnWidth+columnGap,
+		col2X,
 		currentY,
 		columnWidth,
 		signatureLineOffset,
@@ -329,45 +338,109 @@ func addInformedConsentSignatureSection(pdf *gofpdf.Fpdf, hospitalInfo initialAs
 		data.SignatureWitness,
 		"",
 	)
+	// 3. TTD Dokter
 	drawInformedConsentSignatureBlock(
 		pdf,
-		left+(2*(columnWidth+columnGap)),
+		col3X,
 		currentY,
 		columnWidth,
 		signatureLineOffset,
-		"Dokter Pemberi Penjelasan",
+		"Dokter",
 		resolveTTEPrintSignatureName(data.DoctorTTESignature, data.SignatureDoctor),
-		buildInformedConsentDoctorSignatureIdentity(data.SignatureDoctorNIP),
+		"",
 	)
-	drawTTESignatureAnnotation(pdf, left+(2*(columnWidth+columnGap)), currentY+6.2, columnWidth, data.DoctorTTESignature)
+	// 4. TTD Perawat
+	drawInformedConsentSignatureBlock(
+		pdf,
+		col4X,
+		currentY,
+		columnWidth,
+		signatureLineOffset,
+		"Perawat",
+		resolveTTEPrintSignatureName(data.NurseTTESignature, data.SignatureNurse),
+		"",
+	)
 
-	pdf.SetFont("Arial", "", 9)
-	pdf.SetY(currentY + signatureBlockHeight + 4)
-	addInitialAssessmentFullWidthRow(pdf, "Tanda tangan pasien/wali dan saksi dibubuhkan pada area yang disediakan. Tanda tangan dokter diverifikasi melalui QR validasi pada dokumen ini.", false)
-	pdf.SetY(pdf.GetY() + 2)
+	if hasPatientWetSig {
+		drawInformedConsentWetSignatureImage(pdf, col1X, currentY+4.4, columnWidth, signatureLineOffset-4.6, data.Consent.PatientSignature)
+	}
+	if hasWitnessWetSig {
+		drawInformedConsentWetSignatureImage(pdf, col2X, currentY+4.4, columnWidth, signatureLineOffset-4.6, data.Consent.WitnessSignature)
+	}
+	if data.DoctorTTESignature != nil {
+		drawTTESignatureAnnotation(pdf, col3X, currentY+4.6, columnWidth, data.DoctorTTESignature)
+	}
+	if data.NurseTTESignature != nil {
+		drawTTESignatureAnnotation(pdf, col4X, currentY+4.6, columnWidth, data.NurseTTESignature)
+	}
+
+	pdf.SetY(boxStartY + boxH)
+}
+
+func drawInformedConsentWetSignatureImage(pdf *gofpdf.Fpdf, x float64, y float64, width float64, availHeight float64, dataURL string) {
+	trimmed := strings.TrimSpace(dataURL)
+	const prefix = "data:image/png;base64,"
+	if !strings.HasPrefix(trimmed, prefix) {
+		return
+	}
+	rawBase64 := strings.TrimPrefix(trimmed, prefix)
+	decoded, err := base64.StdEncoding.DecodeString(rawBase64)
+	if err != nil || len(decoded) == 0 {
+		return
+	}
+
+	tempFile, err := os.CreateTemp("", "ic-wet-sig-*.png")
+	if err != nil {
+		return
+	}
+	tempPath := tempFile.Name()
+	if _, writeErr := tempFile.Write(decoded); writeErr != nil {
+		_ = tempFile.Close()
+		_ = os.Remove(tempPath)
+		return
+	}
+	_ = tempFile.Close()
+	defer os.Remove(tempPath)
+
+	maxW := width - 6.0
+	maxH := maxFloat64(12.0, availHeight-0.8)
+	imgW := maxW
+	imgH := maxH
+
+	if wPx, hPx, dimErr := readLocalImageDimensions(tempPath); dimErr == nil && wPx > 0 && hPx > 0 {
+		imgW, imgH, _, _ = calculateContainedImageBox(float64(wPx), float64(hPx), maxW, maxH)
+	}
+	imgX := x + ((width - imgW) / 2.0)
+	imgY := y + ((availHeight - imgH) / 2.0)
+	pdf.ImageOptions(tempPath, imgX, imgY, imgW, imgH, false, gofpdf.ImageOptions{ImageType: "PNG"}, 0, "")
 }
 
 func drawInformedConsentSignatureBlock(pdf *gofpdf.Fpdf, x float64, y float64, width float64, signatureLineOffset float64, title string, name string, detail string) {
-	totalHeight := signatureLineOffset + 10.5
+	totalHeight := signatureLineOffset + 9.5
 
-	pdf.SetFont("Arial", "B", 8.5)
+	pdf.SetFont("Arial", "B", 8.2)
+	pdf.SetTextColor(0, 0, 0)
 	pdf.SetXY(x, y)
-	pdf.CellFormat(width, 4.5, firstNonEmpty(sanitizePDFSingleLineText(title), "-"), "", 0, "C", false, 0, "")
+	pdf.CellFormat(width, 4.2, firstNonEmpty(sanitizePDFSingleLineText(title), "-"), "", 0, "C", false, 0, "")
 
 	signatureLineY := y + signatureLineOffset
-	lineInset := 14.0
-	pdf.SetDrawColor(80, 80, 80)
-	pdf.Line(x+lineInset, signatureLineY, x+width-lineInset, signatureLineY)
+	cleanName := strings.TrimSpace(sanitizePDFSingleLineText(name))
+	displayName := "( ____________________ )"
+	if cleanName != "" && cleanName != "-" {
+		displayName = "( " + cleanName + " )"
+	}
 
-	pdf.SetFont("Arial", "B", 8.5)
-	pdf.SetXY(x+1, signatureLineY+2.2)
-	pdf.CellFormat(width-2, 4.0, firstNonEmpty(sanitizePDFSingleLineText(name), "-"), "", 0, "C", false, 0, "")
+	pdf.SetFont("Arial", "B", 8.0)
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetXY(x+1, signatureLineY+1.2)
+	pdf.CellFormat(width-2, 3.8, fitTextToWidth(pdf, displayName, width-2), "", 0, "C", false, 0, "")
 
 	trimmedDetail := strings.TrimSpace(sanitizePDFSingleLineText(detail))
-	if trimmedDetail != "" {
-		pdf.SetFont("Arial", "", 7.8)
-		pdf.SetXY(x+1, signatureLineY+6.8)
-		pdf.CellFormat(width-2, 3.6, trimmedDetail, "", 0, "C", false, 0, "")
+	if trimmedDetail != "" && trimmedDetail != "-" {
+		pdf.SetFont("Arial", "", 7.2)
+		pdf.SetTextColor(0, 0, 0)
+		pdf.SetXY(x+1, signatureLineY+5.0)
+		pdf.CellFormat(width-2, 3.4, fitTextToWidth(pdf, trimmedDetail, width-2), "", 0, "C", false, 0, "")
 	}
 
 	pdf.SetY(maxFloat64(pdf.GetY(), y+totalHeight))
@@ -384,22 +457,26 @@ func buildInformedConsentDoctorSignatureIdentity(value string) string {
 func informedConsentDecisionLabel(value string) string {
 	switch normalizeInformedConsentDecision(value) {
 	case "approved":
-		return "Disetujui"
+		return "Disetujui (Setuju)"
 	case "declined":
-		return "Ditolak"
+		return "Ditolak (Menolak)"
 	default:
-		return "Pending / Draft otomatis"
+		return "Draft / Belum Ditetapkan"
 	}
 }
 
-func informedConsentDecisionStatement(value string) string {
+func informedConsentDecisionStatement(value string, actionName string) string {
+	actLabel := strings.TrimSpace(actionName)
+	if actLabel == "" {
+		actLabel = "tindakan kedokteran yang dijelaskan"
+	}
 	switch normalizeInformedConsentDecision(value) {
 	case "approved":
-		return "Pasien menyetujui tindakan setelah menerima penjelasan manfaat, risiko, dan alternatif tindakan."
+		return "Setelah menerima penjelasan secara lengkap mengenai diagnosis, tata cara tindakan, tujuan/manfaat, risiko/komplikasi, alternatif, dan prognosis, maka dengan ini saya menyatakan SETUJU untuk dilakukan tindakan kedokteran berupa: " + actLabel + "."
 	case "declined":
-		return "Pasien menolak tindakan setelah menerima penjelasan manfaat, risiko, dan alternatif tindakan."
+		return "Setelah menerima penjelasan secara lengkap mengenai diagnosis, tata cara tindakan, tujuan/manfaat, risiko/komplikasi, alternatif, dan prognosis, maka dengan ini saya menyatakan MENOLAK untuk dilakukan tindakan kedokteran berupa: " + actLabel + " dan memahami risiko medis atas penolakan tersebut."
 	default:
-		return "Keputusan pasien belum ditetapkan. Draft informed consent masih menunggu konfirmasi akhir."
+		return "Keputusan pasien/wali atas tindakan " + actLabel + " masih dalam tahap konfirmasi."
 	}
 }
 

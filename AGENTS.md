@@ -12,6 +12,9 @@ Dokumen ini berisi kumpulan aturan, standar UI/UX, dan arsitektur teknis yang te
 ## 2. Standar Cetak Dokumen & PDF (Backend Golang)
 File rujukan: [backend/handlers/medical_record_print.go](file:///e:/Golang/Go-SIMKLINIK/backend/handlers/medical_record_print.go)
 
+- **Wajib Hitam Putih Murni (Kecuali Logo KOP)**:
+  - Seluruh dokumen cetakan resmi (rekam medis, resume medis, pengkajian awal, surat dokter, informed consent, tindakan, hasil lab/radiologi, resep, kwitansi, laporan, dll.) **WAJIB murni Hitam Putih (`#000000` di atas `#FFFFFF`)**.
+  - **Dilarang keras** menggunakan blok header gelap/berwarna, warna navy/slate/biru/hijau/merah/amber, background sel berwarna/berarsir, atau pill berwarna. Satu-satunya elemen yang boleh berwarna hanyalah **Logo pada KOP Klinik** (serta penanda klinis pada diagram Odontogram / gambar pemeriksaan fisik).
 - **Posisi Tanda Tangan Dokter (TTD)**:
   - Pada dokumen A4 portrait (seperti Surat Keterangan Sakit / Surat Istirahat Dokter), blok Tanda Tangan Dokter harus diposisikan di area bawah yang presisi (standar koordinat `Y = 232 mm`), sehingga tidak menempel atau berhimpitan dengan teks keterangan di atasnya dan tetap proporsional dengan footer margin.
 - **Karakter & Encoding Simbol**:

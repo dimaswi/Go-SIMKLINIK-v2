@@ -143,35 +143,39 @@ func buildRegistrationQueueTicketContent(pdf *gofpdf.Fpdf, hospitalInfo initialA
 	}
 	pdf.SetY(headerBottom + 1.5)
 
-	// Garis pembatas kop
+	// Garis pembatas kop (1 garis tegas bersih, tidak mepet)
 	pdf.SetDrawColor(0, 0, 0)
 	pdf.SetLineWidth(0.4)
 	pdf.Line(left, pdf.GetY(), pageWidth-right, pdf.GetY())
-	pdf.SetY(pdf.GetY() + 2.0)
+	pdf.SetY(pdf.GetY() + 2.2)
 
 	// Judul Tiket
+	pdf.SetTextColor(0, 0, 0)
 	pdf.SetFont("Arial", "B", 8.5)
-	pdf.CellFormat(contentWidth, 4.0, "TIKET ANTRIAN PENDAFTARAN", "", 1, "C", false, 0, "")
-	pdf.SetY(pdf.GetY() + 1.5)
+	pdf.CellFormat(contentWidth, 3.8, "TIKET ANTRIAN PENDAFTARAN", "", 1, "C", false, 0, "")
+	pdf.SetY(pdf.GetY() + 1.2)
 
-	// Kotak Nomor Antrian (Kompak, rapi, tanpa label status)
+	// Kotak Nomor Antrian (Hitam Putih Murni)
 	bannerTop := pdf.GetY()
-	bannerHeight := 18.0
-	pdf.SetDrawColor(50, 50, 50)
-	pdf.SetFillColor(250, 250, 250)
-	pdf.SetLineWidth(0.4)
-	pdf.Rect(left, bannerTop, contentWidth, bannerHeight, "DF")
+	headerBarH := 4.4
+	bannerHeight := 19.5
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.35)
+	pdf.Rect(left, bannerTop, contentWidth, bannerHeight, "D")
+	pdf.SetLineWidth(0.2)
+	pdf.Line(left, bannerTop+headerBarH, left+contentWidth, bannerTop+headerBarH)
 
-	pdf.SetXY(left, bannerTop+2.0)
-	pdf.SetFont("Arial", "B", 8.0)
-	// pdf.CellFormat(contentWidth, 3.5, "NOMOR ANTRIAN", "", 1, "C", false, 0, "")
+	pdf.SetXY(left, bannerTop+0.4)
+	pdf.SetFont("Arial", "B", 7.0)
+	pdf.SetTextColor(0, 0, 0)
+	pdf.CellFormat(contentWidth, 3.6, "NOMOR ANTRIAN", "", 1, "C", false, 0, "")
 
-	pdf.SetXY(left, bannerTop+4)
-	pdf.SetFont("Arial", "B", 26.0)
-	pdf.CellFormat(contentWidth, 10.5, ticketNumber, "", 1, "C", false, 0, "")
+	pdf.SetXY(left, bannerTop+headerBarH+2.0)
+	pdf.SetFont("Arial", "B", 25.0)
+	pdf.CellFormat(contentWidth, 11.0, ticketNumber, "", 1, "C", false, 0, "")
 
-	// Pastikan Y berada tepat di bawah kotak dengan jarak rapi (tidak menabrak)
-	pdf.SetY(bannerTop + bannerHeight + 3.0)
+	// Pastikan Y berada tepat di bawah kotak dengan jarak rapi
+	pdf.SetY(bannerTop + bannerHeight + 2.6)
 
 	// Detail Informasi Antrian (Rata kiri-kanan presisi dengan kolon sejajar)
 	addThermalTicketField(pdf, "Jam Ambil", formatClockFromTime(queue.CreatedAt), left, contentWidth)

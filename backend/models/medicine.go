@@ -16,9 +16,11 @@ type Medicine struct {
 	KFAName                     string           `gorm:"size:255" json:"kfa_name"`
 	Name                        string           `gorm:"not null;size:200" json:"name"`
 	GenericName                 string           `gorm:"size:200" json:"generic_name"`
-	CategoryID                  uint             `gorm:"not null;index" json:"category_id"`
-	UnitID                      uint             `gorm:"not null;index" json:"unit_id"`
-	Type                        string           `gorm:"size:20" json:"type"`
+	CategoryID                  uint                `gorm:"not null;index" json:"category_id"`
+	UnitID                      uint                `gorm:"not null;index" json:"unit_id"`
+	LargeUnitID                 *uint               `gorm:"index" json:"large_unit_id"`
+	ConversionFactor            int                 `gorm:"default:1" json:"conversion_factor"`
+	Type                        string              `gorm:"size:20" json:"type"`
 	Form                        string           `gorm:"size:50" json:"form"`
 	Strength                    string           `gorm:"size:50" json:"strength"`
 	Manufacturer                string           `gorm:"size:100" json:"manufacturer"`
@@ -29,6 +31,8 @@ type Medicine struct {
 	IsActive                    bool             `gorm:"default:true" json:"is_active"`
 	SatusehatMedicationID       string           `gorm:"size:120;index" json:"satusehat_medication_id"`
 	SatusehatMedicationSyncedAt *time.Time       `json:"satusehat_medication_synced_at"`
-	Category                    MedicineCategory `gorm:"foreignKey:CategoryID" json:"category,omitempty"`
-	Unit                        Unit             `gorm:"foreignKey:UnitID" json:"unit,omitempty"`
+	Category                    MedicineCategory    `gorm:"foreignKey:CategoryID" json:"category,omitempty"`
+	Unit                        Unit                `gorm:"foreignKey:UnitID" json:"unit,omitempty"`
+	LargeUnit                   *Unit               `gorm:"foreignKey:LargeUnitID" json:"large_unit,omitempty"`
+	RoomStocks                  []MedicineRoomStock `gorm:"foreignKey:MedicineID" json:"room_stocks,omitempty"`
 }

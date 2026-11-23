@@ -36,7 +36,7 @@ export function FinalizedVisitActions({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [whatsAppOpen, setWhatsAppOpen] = useState(false);
   const { hasPermission } = usePermission();
-  const canRequestTTE = hasPermission('document_signatures.request');
+  const canRequestTTE = hasPermission('document_signatures.request') || hasPermission('document_signatures.approve');
 
   return (
     <>

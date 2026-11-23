@@ -341,6 +341,7 @@ export default function RegistrationCreate() {
         patient_id: patientId,
         polyclinic_id: Number(visitForm.polyclinic_id),
         doctor_id: Number(visitForm.doctor_id),
+        registration_queue_id: ticketId ? Number(ticketId) : undefined,
         visit_date: visitForm.visit_date,
         payment_type: visitForm.payment_type,
         insurance_number: visitForm.payment_type === 'umum' ? '' : visitForm.insurance_number,

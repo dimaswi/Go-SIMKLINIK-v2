@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useBpjsAntreanEnabled } from "@/hooks/use-bpjs-antrean-enabled";
 import { polyclinicsApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -22,6 +23,9 @@ export default function PolyclinicEdit() {
   const [formData, setFormData] = useState({
     name: "",
     code: "",
+    room_type: "poliklinik",
+    is_default_depo: false,
+    is_default_apotek: false,
     description: "",
     admin_fee: 0,
     is_active: true,
@@ -32,7 +36,7 @@ export default function PolyclinicEdit() {
   });
 
   useEffect(() => {
-    setPageTitle("Edit Poliklinik");
+    setPageTitle("Edit Ruangan");
     if (id) {
       polyclinicsApi.getById(Number(id))
         .then((response) => {
@@ -40,6 +44,9 @@ export default function PolyclinicEdit() {
           setFormData({
             name: data.name || "",
             code: data.code || "",
+            room_type: data.room_type || "poliklinik",
+            is_default_depo: Boolean(data.is_default_depo),
+            is_default_apotek: Boolean(data.is_default_apotek),
             description: data.description || "",
             admin_fee: data.admin_fee || 0,
             is_active: data.is_active ?? true,
@@ -85,24 +92,24 @@ export default function PolyclinicEdit() {
   return (
     <form id="polyclinic-edit-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <MasterDataPageShell
-        title="Edit Poliklinik"
-        subtitle="Perbarui detail poliklinik."
+        title="Edit Ruangan"
+        subtitle="Perbarui detail dan jenis ruangan."
         onBack={() => navigate('/polyclinics')}
         actions={
           <Button type="submit" form="polyclinic-edit-form" disabled={loading} size="sm" className="h-8 px-4 text-xs rounded-none shadow-none">
             {loading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-            Update Poliklinik
+            Update Ruangan
           </Button>
         }
       >
         <div className="space-y-4">
           <div className="space-y-2.5">
             <div className="border-b border-border/60 pb-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Detail Poliklinik</span>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Detail Ruangan</span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs font-medium">Kode Poliklinik</Label>
+                <Label className="text-xs font-medium">Kode Ruangan</Label>
                 <Input
                   value={formData.code}
                   readOnly
@@ -111,12 +118,31 @@ export default function PolyclinicEdit() {
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="name" className="text-xs font-medium">Nama Poliklinik *</Label>
+                <Label htmlFor="name" className="text-xs font-medium">Nama Ruangan *</Label>
                 <Input
                   id="name"
                   required
                   value={formData.name}
                   onChange={e => setFormData({ ...formData, name: e.target.value })}
+                  className="h-9 text-xs rounded-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">Jenis Ruangan *</Label>
+                <SearchableSelect
+                  options={[
+                    { value: "poliklinik", label: "Poliklinik" },
+                    { value: "depo", label: "Depo Farmasi" },
+                    { value: "apotek", label: "Ruangan Apotek" },
+                    { value: "radiologi", label: "Radiologi" },
+                    { value: "laboratorium", label: "Laboratorium" },
+                    { value: "lainnya", label: "Ruang Lainnya" },
+                  ]}
+                  value={formData.room_type}
+                  onValueChange={v => setFormData({ ...formData, room_type: v || "poliklinik" })}
+                  placeholder="Pilih jenis ruangan..."
+                  square
                   className="h-9 text-xs rounded-none"
                 />
               </div>

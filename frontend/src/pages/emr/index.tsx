@@ -10,9 +10,10 @@ import { SearchableSelect } from '@/components/ui/searchable-select';
 import { TableDateFilter } from '@/components/ui/table-date-filter';
 import { useToast } from '@/hooks/use-toast';
 import { setPageTitle } from '@/lib/page-title';
+import { announceQueueCall } from '@/lib/queue-caller';
 import { visitsApi, type Visit } from '@/lib/api';
 import { cn, getLocalISODate } from '@/lib/utils';
-import { Eye, FilePenLine, Loader2, RefreshCw, Stethoscope, XCircle } from 'lucide-react';
+import { Eye, FilePenLine, Loader2, RefreshCw, Stethoscope, Volume2, XCircle } from 'lucide-react';
 
 const VISIT_STATUS_LABEL: Record<Visit['status'], string> = {
   registered: 'Terdaftar',
@@ -31,6 +32,8 @@ const VISIT_STATUS_CLASS: Record<Visit['status'], string> = {
 function createColumns(
   onCancelVisit: (visit: Visit) => void,
   cancelingVisitId: number | null,
+  onCallVisit: (visit: Visit) => void,
+  callingVisitId: number | null,
 ): ColumnDef<Visit>[] {
   return [
     {
@@ -101,9 +104,28 @@ function createColumns(
       cell: ({ row }) => {
         const visit = row.original;
         const isCanceling = cancelingVisitId === visit.id;
+        const isCalling = callingVisitId === visit.id;
 
         return (
           <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+            {visit.status !== 'cancelled' ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs rounded-none shadow-none"
+                title={`Panggil ke ${visit.polyclinic?.name || 'Ruang Pemeriksaan'}`}
+                disabled={isCalling}
+                onClick={() => onCallVisit(visit)}
+              >
+                {isCalling ? (
+                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Volume2 className="mr-1 h-3.5 w-3.5" />
+                )}
+                {isCalling ? 'Memanggil...' : 'Panggil'}
+              </Button>
+            ) : null}
             <Button
               asChild
               type="button"
@@ -161,6 +183,7 @@ export default function MedicalRecordsIndex() {
   const [cancelTarget, setCancelTarget] = useState<Visit | null>(null);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelingVisitId, setCancelingVisitId] = useState<number | null>(null);
+  const [callingVisitId, setCallingVisitId] = useState<number | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -238,13 +261,49 @@ export default function MedicalRecordsIndex() {
     });
   }, [dateFilter, polyclinicFilter, search, statusFilter, visits]);
 
+  const handleCallVisit = useCallback(async (visit: Visit) => {
+    const destName = visit.polyclinic?.name || 'Ruang Pemeriksaan';
+    const numLabel = String(visit.queue_number).padStart(3, '0');
+    setCallingVisitId(visit.id);
+    try {
+      const saved = await announceQueueCall({
+        queueNumber: visit.queue_number,
+        patientName: visit.patient?.full_name,
+        unitType: 'poliklinik',
+        destinationName: destName,
+      });
+      if (saved) {
+        toast({
+          variant: 'success',
+          title: `Memanggil No. ${numLabel}`,
+          description: `Panggilan berhasil dikirim ke display tujuan ${destName}.`,
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: `Gagal memanggil No. ${numLabel}`,
+          description: 'Tidak dapat mengirim panggilan ke server display.',
+        });
+      }
+    } finally {
+      setCallingVisitId(null);
+    }
+  }, [toast]);
+
   const columns = useMemo(
     () =>
-      createColumns((visit) => {
-        setCancelTarget(visit);
-        setCancelDialogOpen(true);
-      }, cancelingVisitId),
-    [cancelingVisitId],
+      createColumns(
+        (visit) => {
+          setCancelTarget(visit);
+          setCancelDialogOpen(true);
+        },
+        cancelingVisitId,
+        (visit) => {
+          void handleCallVisit(visit);
+        },
+        callingVisitId,
+      ),
+    [callingVisitId, cancelingVisitId, handleCallVisit],
   );
 
   const confirmCancelVisit = async () => {

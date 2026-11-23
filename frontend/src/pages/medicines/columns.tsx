@@ -50,16 +50,23 @@ export function createMedicineColumns({ onView, onEdit, onDelete, hasViewPermiss
       },
     },
     {
-      accessorKey: "current_stock",
-      header: ({ column }) => (
-        <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} className="h-8 p-0 hover:bg-transparent">
-          Stok<ArrowUpDown className="ml-2 h-4 w-4" />
-        </Button>
-      ),
+      id: "unit_conversion",
+      header: "Satuan & Konversi",
       cell: ({ row }) => {
-        const stock = row.original.current_stock
-        const min = row.original.min_stock
-        return <span className={stock <= min ? 'text-destructive font-medium' : ''}>{stock} {row.original.unit?.name || ''}</span>
+        const med = row.original
+        const smallUnit = med.unit?.name || '-'
+        const largeUnit = med.large_unit?.name
+        const factor = med.conversion_factor || 1
+        return (
+          <div className="flex flex-col">
+            <span className="text-sm font-medium">{smallUnit}</span>
+            {largeUnit && factor > 1 && (
+              <span className="text-xs text-muted-foreground">
+                1 {largeUnit} = {factor} {smallUnit}
+              </span>
+            )}
+          </div>
+        )
       },
     },
     {

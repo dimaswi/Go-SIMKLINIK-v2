@@ -560,17 +560,18 @@ func renderPharmacyTicketPDF(hospitalInfo initialAssessmentHospitalInfo, data pr
 		pdf.SetLineWidth(0.25)
 		pdf.Line(boxX, line2Y, boxX+boxW, line2Y)
 
-		// 4. Aturan Pakai (Signa)
-		aturanY := line2Y + 1.2
+		// 4. Aturan Pakai (Signa) — mendukung hingga 2 baris agar tidak terpotong
+		aturanY := line2Y + 0.8
 		pdf.SetXY(boxX+1.5, aturanY)
-		pdf.SetFont("Arial", "B", 6.8)
-		pdf.CellFormat(16.0, 3.4, "Aturan Pakai", "", 0, "L", false, 0, "")
-		pdf.CellFormat(2.0, 3.4, ":", "", 0, "C", false, 0, "")
+		pdf.SetFont("Arial", "B", 6.4)
+		pdf.SetTextColor(0, 0, 0)
+		pdf.CellFormat(15.5, 3.2, "Aturan Pakai", "", 0, "L", false, 0, "")
+		pdf.CellFormat(2.0, 3.2, ":", "", 0, "C", false, 0, "")
 
 		cleanSigna := formatEtiketSigna(entry.Instructions)
-		pdf.SetFont("Arial", "B", 7.6)
-		signaW := boxW - 1.5 - 16.0 - 2.0 - 1.5
-		pdf.CellFormat(signaW, 3.4, fitTextToWidth(pdf, sanitizePDFText(cleanSigna), signaW), "", 0, "L", false, 0, "")
+		pdf.SetFont("Arial", "B", 7.2)
+		signaW := boxW - 1.5 - 15.5 - 2.0 - 1.5
+		pdf.MultiCell(signaW, 3.1, sanitizePDFSingleLineText(cleanSigna), "", "L", false)
 	}
 
 	var output bytes.Buffer
@@ -585,22 +586,52 @@ func renderPharmacyTicketPDF(hospitalInfo initialAssessmentHospitalInfo, data pr
 func renderLaboratoryTicketPDF(hospitalInfo initialAssessmentHospitalInfo, data orderPrintBaseViewData) ([]byte, string, error) {
 	visit := resolvePrintVisit(data.Record)
 	pdf := newInitialAssessmentStyledPDF("TIKET LABORATORIUM", data.PrintedBy, data.GeneratedAt)
+	beginInitialAssessmentStyledSection(pdf, hospitalInfo, "PERMINTAAN / TIKET LABORATORIUM", "No. Kunjungan : "+fallbackText(visit.VisitNumber))
 
+	identityFields := mergePatientVisitPrintFields(visit.Patient, visit,
+		initialAssessmentPrintField{Label: "Status Order", Value: supportingOrderWorkflowStatusLabel(data.Record.LaboratoryWorkflowStatus)},
+		initialAssessmentPrintField{Label: "Tgl. Order", Value: resolveOrderDateLabel(data.Record.LaboratoryOrderedAt, data.Record.RecordDate)},
+		initialAssessmentPrintField{Label: "Jumlah Item", Value: fmt.Sprintf("%d pemeriksaan", len(data.Record.LaboratoryOrderItems))},
+	)
+	addInitialAssessmentCompactFieldSection(pdf, "IDENTITAS PASIEN & ORDER LABORATORIUM", identityFields, "Data pasien tidak tersedia.")
+
+	rows := make([]supportingOrderResultTableRow, 0, len(data.Record.LaboratoryOrderItems))
 	for index, item := range data.Record.LaboratoryOrderItems {
-		beginInitialAssessmentStyledSection(pdf, hospitalInfo, "TIKET LABORATORIUM", buildSupportingOrderSectionSubtitle(visit.VisitNumber, resolveLaboratoryItemTitle(item)))
-		addInitialAssessmentCompactFieldSection(pdf, "INFORMASI DOKUMEN", buildLaboratoryTicketDocumentFields(data, visit, item, index+1, len(data.Record.LaboratoryOrderItems)), "")
-		addInitialAssessmentCompactFieldSection(pdf, "DATA PASIEN", buildSupportingOrderPatientFields(visit.Patient), "Data pasien tidak tersedia.")
-		addInitialAssessmentCompactFieldSection(pdf, "DATA KUNJUNGAN", buildInitialAssessmentVisitFields(visit), "Data kunjungan tidak tersedia.")
-		addLaboratoryTicketItemSection(pdf, item)
-
-		if strings.TrimSpace(data.Record.Notes) != "" {
-			addInitialAssessmentSectionTitle(pdf, "CATATAN ORDER")
-			addInitialAssessmentFullWidthRow(pdf, data.Record.Notes, false)
-			addInitialAssessmentSectionSpacing(pdf)
+		paramInfo := "-"
+		if len(item.ParameterResults) > 0 {
+			paramInfo = fmt.Sprintf("%d parameter", len(item.ParameterResults))
+		} else if strings.TrimSpace(item.NormalValueSnapshot) != "" {
+			paramInfo = "Rujukan: " + strings.TrimSpace(item.NormalValueSnapshot)
 		}
-
-		addOrderPrintSignatureSection(pdf, hospitalInfo, data.GeneratedAt, "Petugas Cetak", data.PrintedBy, "Dokter Pemeriksa", visit.Doctor.FullName)
+		rows = append(rows, supportingOrderResultTableRow{
+			Values: []string{
+				strconv.Itoa(index + 1),
+				fallbackText(item.TestCodeSnapshot),
+				resolveLaboratoryItemTitle(item),
+				paramInfo,
+				fallbackText(item.Instructions),
+			},
+		})
 	}
+	addSupportingOrderResultTable(
+		pdf,
+		"DAFTAR PEMERIKSAAN DIMINTA",
+		[]supportingOrderResultTableColumn{
+			{Title: "No", WidthRatio: 0.06, Align: "C"},
+			{Title: "Kode", WidthRatio: 0.14, Align: "C"},
+			{Title: "Nama Pemeriksaan", WidthRatio: 0.36, Align: "L"},
+			{Title: "Parameter / Rujukan", WidthRatio: 0.22, Align: "L"},
+			{Title: "Instruksi", WidthRatio: 0.22, Align: "L"},
+		},
+		rows,
+		"Belum ada pemeriksaan laboratorium diminta.",
+	)
+
+	if strings.TrimSpace(data.Record.Notes) != "" {
+		addInitialAssessmentCompactFieldSection(pdf, "CATATAN ORDER", []initialAssessmentPrintField{{Label: "Catatan", Value: data.Record.Notes}}, "")
+	}
+
+	addOrderPrintSignatureSection(pdf, hospitalInfo, data.GeneratedAt, "Petugas Cetak", data.PrintedBy, "Dokter Pengirim", visit.Doctor.FullName)
 
 	pdfBytes, err := outputInitialAssessmentStyledPDF(pdf)
 	if err != nil {
@@ -617,14 +648,38 @@ func renderLaboratoryResultPDF(hospitalInfo initialAssessmentHospitalInfo, data 
 	doctorTTESignature := loadTTESignedSignatureByDocumentKeyWithBaseURL(fmt.Sprintf("laboratory_result:%d", data.Record.ID), data.ValidationBaseURL)
 	staffTTESignature := loadTTESignedSignatureByDocumentKeyWithBaseURL(fmt.Sprintf("laboratory_result_staff:%d", data.Record.ID), data.ValidationBaseURL)
 
-	for index, item := range data.Record.LaboratoryOrderItems {
-		beginInitialAssessmentStyledSection(pdf, hospitalInfo, "HASIL LABORATORIUM", buildSupportingOrderSectionSubtitle(visit.VisitNumber, resolveLaboratoryItemTitle(item)))
-		addInitialAssessmentCompactFieldSection(pdf, "INFORMASI DOKUMEN", buildLaboratoryResultDocumentFields(data, visit, item, index+1, len(data.Record.LaboratoryOrderItems)), "")
-		addInitialAssessmentCompactFieldSection(pdf, "DATA PASIEN", buildSupportingOrderPatientFields(visit.Patient), "Data pasien tidak tersedia.")
-		addInitialAssessmentCompactFieldSection(pdf, "DATA KUNJUNGAN", buildInitialAssessmentVisitFields(visit), "Data kunjungan tidak tersedia.")
-		addLaboratoryResultItemSection(pdf, item)
-		addOrderPrintSignatureSectionWithDualTTE(pdf, hospitalInfo, data.GeneratedAt, "Petugas Laboratorium", resolveLaboratoryItemResultUserName(item), staffTTESignature, "Dokter Pemeriksa", visit.Doctor.FullName, doctorTTESignature)
+	beginInitialAssessmentStyledSection(pdf, hospitalInfo, "HASIL PEMERIKSAAN LABORATORIUM", "No. Kunjungan : "+fallbackText(visit.VisitNumber))
+
+	var latestResultAt *time.Time
+	staffName := ""
+	for _, item := range data.Record.LaboratoryOrderItems {
+		if item.ResultDate != nil && (latestResultAt == nil || item.ResultDate.After(*latestResultAt)) {
+			latestResultAt = item.ResultDate
+		}
+		if staffName == "" {
+			if candidate := strings.TrimSpace(resolveLaboratoryItemResultUserName(item)); candidate != "" && candidate != "-" {
+				staffName = candidate
+			}
+		}
 	}
+
+	identityFields := mergePatientVisitPrintFields(visit.Patient, visit,
+		initialAssessmentPrintField{Label: "Tgl. Order", Value: resolveOrderDateLabel(data.Record.LaboratoryOrderedAt, data.Record.RecordDate)},
+		initialAssessmentPrintField{Label: "Tgl. Hasil", Value: formatRecordDateTimePDF(latestResultAt)},
+		initialAssessmentPrintField{Label: "Analis / Petugas", Value: fallbackText(staffName)},
+		initialAssessmentPrintField{Label: "Status", Value: supportingOrderWorkflowStatusLabel(data.Record.LaboratoryWorkflowStatus)},
+	)
+	addInitialAssessmentCompactFieldSection(pdf, "IDENTITAS PASIEN & PEMERIKSAAN", identityFields, "Data pasien tidak tersedia.")
+
+	for _, item := range data.Record.LaboratoryOrderItems {
+		addLaboratoryResultItemSection(pdf, item)
+	}
+
+	if strings.TrimSpace(data.Record.Notes) != "" {
+		addInitialAssessmentCompactFieldSection(pdf, "CATATAN LABORATORIUM", []initialAssessmentPrintField{{Label: "Catatan", Value: data.Record.Notes}}, "")
+	}
+
+	addOrderPrintSignatureSectionWithDualTTE(pdf, hospitalInfo, data.GeneratedAt, "Petugas Laboratorium", fallbackText(staffName), staffTTESignature, "Dokter Pemeriksa", visit.Doctor.FullName, doctorTTESignature)
 
 	pdfBytes, err := outputInitialAssessmentStyledPDF(pdf)
 	if err != nil {
@@ -638,22 +693,50 @@ func renderLaboratoryResultPDF(hospitalInfo initialAssessmentHospitalInfo, data 
 func renderRadiologyTicketPDF(hospitalInfo initialAssessmentHospitalInfo, data orderPrintBaseViewData) ([]byte, string, error) {
 	visit := resolvePrintVisit(data.Record)
 	pdf := newInitialAssessmentStyledPDF("TIKET RADIOLOGI", data.PrintedBy, data.GeneratedAt)
+	beginInitialAssessmentStyledSection(pdf, hospitalInfo, "PERMINTAAN / TIKET RADIOLOGI", "No. Kunjungan : "+fallbackText(visit.VisitNumber))
 
+	identityFields := mergePatientVisitPrintFields(visit.Patient, visit,
+		initialAssessmentPrintField{Label: "Status Order", Value: supportingOrderWorkflowStatusLabel(data.Record.RadiologyWorkflowStatus)},
+		initialAssessmentPrintField{Label: "Tgl. Order", Value: resolveOrderDateLabel(data.Record.RadiologyOrderedAt, data.Record.RecordDate)},
+		initialAssessmentPrintField{Label: "Jumlah Item", Value: fmt.Sprintf("%d pemeriksaan", len(data.Record.RadiologyOrderItems))},
+	)
+	addInitialAssessmentCompactFieldSection(pdf, "IDENTITAS PASIEN & ORDER RADIOLOGI", identityFields, "Data pasien tidak tersedia.")
+
+	rows := make([]supportingOrderResultTableRow, 0, len(data.Record.RadiologyOrderItems))
 	for index, item := range data.Record.RadiologyOrderItems {
-		beginInitialAssessmentStyledSection(pdf, hospitalInfo, "TIKET RADIOLOGI", buildSupportingOrderSectionSubtitle(visit.VisitNumber, resolveRadiologyItemTitle(item)))
-		addInitialAssessmentCompactFieldSection(pdf, "INFORMASI DOKUMEN", buildRadiologyTicketDocumentFields(data, visit, item, index+1, len(data.Record.RadiologyOrderItems)), "")
-		addInitialAssessmentCompactFieldSection(pdf, "DATA PASIEN", buildSupportingOrderPatientFields(visit.Patient), "Data pasien tidak tersedia.")
-		addInitialAssessmentCompactFieldSection(pdf, "DATA KUNJUNGAN", buildInitialAssessmentVisitFields(visit), "Data kunjungan tidak tersedia.")
-		addRadiologyTicketItemSection(pdf, item)
-
-		if strings.TrimSpace(data.Record.Notes) != "" {
-			addInitialAssessmentSectionTitle(pdf, "CATATAN ORDER")
-			addInitialAssessmentFullWidthRow(pdf, data.Record.Notes, false)
-			addInitialAssessmentSectionSpacing(pdf)
+		paramInfo := "-"
+		if len(item.ParameterResults) > 0 {
+			paramInfo = fmt.Sprintf("%d parameter", len(item.ParameterResults))
 		}
-
-		addOrderPrintSignatureSection(pdf, hospitalInfo, data.GeneratedAt, "Petugas Cetak", data.PrintedBy, "Dokter Pemeriksa", visit.Doctor.FullName)
+		rows = append(rows, supportingOrderResultTableRow{
+			Values: []string{
+				strconv.Itoa(index + 1),
+				fallbackText(item.ServiceCodeSnapshot),
+				resolveRadiologyItemTitle(item),
+				paramInfo,
+				fallbackText(item.Instructions),
+			},
+		})
 	}
+	addSupportingOrderResultTable(
+		pdf,
+		"DAFTAR PEMERIKSAAN DIMINTA",
+		[]supportingOrderResultTableColumn{
+			{Title: "No", WidthRatio: 0.06, Align: "C"},
+			{Title: "Kode", WidthRatio: 0.14, Align: "C"},
+			{Title: "Nama Pemeriksaan", WidthRatio: 0.38, Align: "L"},
+			{Title: "Parameter", WidthRatio: 0.16, Align: "C"},
+			{Title: "Instruksi", WidthRatio: 0.26, Align: "L"},
+		},
+		rows,
+		"Belum ada pemeriksaan radiologi diminta.",
+	)
+
+	if strings.TrimSpace(data.Record.Notes) != "" {
+		addInitialAssessmentCompactFieldSection(pdf, "CATATAN ORDER", []initialAssessmentPrintField{{Label: "Catatan", Value: data.Record.Notes}}, "")
+	}
+
+	addOrderPrintSignatureSection(pdf, hospitalInfo, data.GeneratedAt, "Petugas Cetak", data.PrintedBy, "Dokter Pengirim", visit.Doctor.FullName)
 
 	pdfBytes, err := outputInitialAssessmentStyledPDF(pdf)
 	if err != nil {
@@ -670,14 +753,38 @@ func renderRadiologyResultPDF(hospitalInfo initialAssessmentHospitalInfo, data o
 	doctorTTESignature := loadTTESignedSignatureByDocumentKeyWithBaseURL(fmt.Sprintf("radiology_result:%d", data.Record.ID), data.ValidationBaseURL)
 	staffTTESignature := loadTTESignedSignatureByDocumentKeyWithBaseURL(fmt.Sprintf("radiology_result_staff:%d", data.Record.ID), data.ValidationBaseURL)
 
-	for index, item := range data.Record.RadiologyOrderItems {
-		beginInitialAssessmentStyledSection(pdf, hospitalInfo, "HASIL RADIOLOGI", buildSupportingOrderSectionSubtitle(visit.VisitNumber, resolveRadiologyItemTitle(item)))
-		addInitialAssessmentCompactFieldSection(pdf, "INFORMASI DOKUMEN", buildRadiologyResultDocumentFields(data, visit, item, index+1, len(data.Record.RadiologyOrderItems)), "")
-		addInitialAssessmentCompactFieldSection(pdf, "DATA PASIEN", buildSupportingOrderPatientFields(visit.Patient), "Data pasien tidak tersedia.")
-		addInitialAssessmentCompactFieldSection(pdf, "DATA KUNJUNGAN", buildInitialAssessmentVisitFields(visit), "Data kunjungan tidak tersedia.")
-		addRadiologyResultItemSection(pdf, item)
-		addOrderPrintSignatureSectionWithDualTTE(pdf, hospitalInfo, data.GeneratedAt, "Petugas Radiologi", resolveRadiologyItemResultUserName(item), staffTTESignature, "Dokter Pemeriksa", visit.Doctor.FullName, doctorTTESignature)
+	beginInitialAssessmentStyledSection(pdf, hospitalInfo, "HASIL PEMERIKSAAN RADIOLOGI", "No. Kunjungan : "+fallbackText(visit.VisitNumber))
+
+	var latestResultAt *time.Time
+	staffName := ""
+	for _, item := range data.Record.RadiologyOrderItems {
+		if item.ResultDate != nil && (latestResultAt == nil || item.ResultDate.After(*latestResultAt)) {
+			latestResultAt = item.ResultDate
+		}
+		if staffName == "" {
+			if candidate := strings.TrimSpace(resolveRadiologyItemResultUserName(item)); candidate != "" && candidate != "-" {
+				staffName = candidate
+			}
+		}
 	}
+
+	identityFields := mergePatientVisitPrintFields(visit.Patient, visit,
+		initialAssessmentPrintField{Label: "Tgl. Order", Value: resolveOrderDateLabel(data.Record.RadiologyOrderedAt, data.Record.RecordDate)},
+		initialAssessmentPrintField{Label: "Tgl. Hasil", Value: formatRecordDateTimePDF(latestResultAt)},
+		initialAssessmentPrintField{Label: "Radiografer / Petugas", Value: fallbackText(staffName)},
+		initialAssessmentPrintField{Label: "Status", Value: supportingOrderWorkflowStatusLabel(data.Record.RadiologyWorkflowStatus)},
+	)
+	addInitialAssessmentCompactFieldSection(pdf, "IDENTITAS PASIEN & PEMERIKSAAN", identityFields, "Data pasien tidak tersedia.")
+
+	for _, item := range data.Record.RadiologyOrderItems {
+		addRadiologyResultItemSection(pdf, item)
+	}
+
+	if strings.TrimSpace(data.Record.Notes) != "" {
+		addInitialAssessmentCompactFieldSection(pdf, "CATATAN RADIOLOGI", []initialAssessmentPrintField{{Label: "Catatan", Value: data.Record.Notes}}, "")
+	}
+
+	addOrderPrintSignatureSectionWithDualTTE(pdf, hospitalInfo, data.GeneratedAt, "Petugas Radiologi", fallbackText(staffName), staffTTESignature, "Dokter Pemeriksa", visit.Doctor.FullName, doctorTTESignature)
 
 	pdfBytes, err := outputInitialAssessmentStyledPDF(pdf)
 	if err != nil {
@@ -697,10 +804,10 @@ func newInitialAssessmentStyledPDF(title string, author string, generatedAt time
 	pdf.SetAuthor(sanitizePDFText(author), false)
 	pdf.SetCreator("SIMKLINIK", false)
 	pdf.SetFooterFunc(func() {
-		pdf.SetY(-8)
-		pdf.SetFont("Arial", "", 8)
-		pdf.SetTextColor(90, 90, 90)
-		pdf.CellFormat(90, 4, "Dicetak: "+formatDateTimeIndonesian(generatedAt), "", 0, "L", false, 0, "")
+		pdf.SetY(-7.5)
+		pdf.SetFont("Arial", "", 7.5)
+		pdf.SetTextColor(70, 70, 70)
+		pdf.CellFormat(110, 4, "Dicetak: "+formatDateTimeIndonesian(generatedAt)+" | Petugas: "+fallbackText(author), "", 0, "L", false, 0, "")
 		pdf.CellFormat(0, 4, fmt.Sprintf("Halaman %d/{nb}", pdf.PageNo()), "", 0, "R", false, 0, "")
 		pdf.SetTextColor(0, 0, 0)
 	})
@@ -836,30 +943,35 @@ func addLaboratoryTicketItemSection(pdf *gofpdf.Fpdf, item models.LaboratoryOrde
 }
 
 func addLaboratoryResultItemSection(pdf *gofpdf.Fpdf, item models.LaboratoryOrderItem) {
-
+	sectionTitle := "HASIL PEMERIKSAAN - " + strings.ToUpper(resolveLaboratoryItemTitle(item))
+	if code := strings.TrimSpace(item.TestCodeSnapshot); code != "" {
+		sectionTitle += " (" + code + ")"
+	}
 	if len(item.ParameterResults) > 0 {
 		addSupportingOrderResultTable(
 			pdf,
-			"HASIL PEMERIKSAAN ",
+			sectionTitle,
 			[]supportingOrderResultTableColumn{
-				{Title: "Parameter", WidthRatio: 0.30, Align: "L"},
-				{Title: "Rujukan", WidthRatio: 0.26, Align: "L"},
-				{Title: "Hasil", WidthRatio: 0.26, Align: "L"},
-				{Title: "Flag", WidthRatio: 0.18, Align: "C"},
+				{Title: "Parameter", WidthRatio: 0.34, Align: "L"},
+				{Title: "Hasil", WidthRatio: 0.24, Align: "L"},
+				{Title: "Nilai Rujukan", WidthRatio: 0.28, Align: "L"},
+				{Title: "Flag", WidthRatio: 0.14, Align: "C"},
 			},
 			buildLaboratoryResultTableRows(item.ParameterResults),
 			"Belum ada hasil parameter laboratorium.",
 		)
 	} else {
-		addInitialAssessmentKeyValueRow(pdf, "Hasil", buildLaboratorySingleResultValue(item))
+		fields := []initialAssessmentPrintField{
+			{Label: "Hasil", Value: buildLaboratorySingleResultValue(item)},
+		}
 		if strings.TrimSpace(item.NormalValueSnapshot) != "" {
-			addInitialAssessmentKeyValueRow(pdf, "Nilai Rujukan", item.NormalValueSnapshot)
+			fields = append(fields, initialAssessmentPrintField{Label: "Nilai Rujukan", Value: item.NormalValueSnapshot})
 		}
 		if strings.TrimSpace(item.Flag) != "" {
-			addInitialAssessmentKeyValueRow(pdf, "Flag", item.Flag)
+			fields = append(fields, initialAssessmentPrintField{Label: "Flag", Value: strings.ToUpper(strings.TrimSpace(item.Flag))})
 		}
+		addInitialAssessmentCompactFieldSection(pdf, sectionTitle, fields, "Belum ada hasil pemeriksaan.")
 	}
-	addInitialAssessmentSectionSpacing(pdf)
 }
 
 func addRadiologyTicketItemSection(pdf *gofpdf.Fpdf, item models.RadiologyOrderItem) {
@@ -875,29 +987,34 @@ func addRadiologyTicketItemSection(pdf *gofpdf.Fpdf, item models.RadiologyOrderI
 }
 
 func addRadiologyResultItemSection(pdf *gofpdf.Fpdf, item models.RadiologyOrderItem) {
+	sectionTitle := "HASIL PEMERIKSAAN - " + strings.ToUpper(resolveRadiologyItemTitle(item))
+	if code := strings.TrimSpace(item.ServiceCodeSnapshot); code != "" {
+		sectionTitle += " (" + code + ")"
+	}
 	if len(item.ParameterResults) > 0 {
 		addSupportingOrderResultTable(
 			pdf,
-			"HASIL PEMERIKSAAN",
+			sectionTitle,
 			[]supportingOrderResultTableColumn{
-				{Title: "Parameter", WidthRatio: 0.25, Align: "L"},
-				{Title: "Hasil", WidthRatio: 0.75, Align: "L"},
+				{Title: "Parameter", WidthRatio: 0.26, Align: "L"},
+				{Title: "Hasil / Ekspertise", WidthRatio: 0.74, Align: "L"},
 			},
 			buildRadiologyResultTableRows(item.ParameterResults),
 			"Belum ada hasil parameter radiologi.",
 		)
 	} else {
+		fields := make([]initialAssessmentPrintField, 0, 3)
 		if strings.TrimSpace(item.Findings) != "" {
-			addInitialAssessmentKeyValueRow(pdf, "Temuan", item.Findings)
+			fields = append(fields, initialAssessmentPrintField{Label: "Temuan", Value: item.Findings})
 		}
 		if strings.TrimSpace(item.Impression) != "" {
-			addInitialAssessmentKeyValueRow(pdf, "Kesan", item.Impression)
+			fields = append(fields, initialAssessmentPrintField{Label: "Kesan", Value: item.Impression})
 		}
 		if strings.TrimSpace(item.Recommendation) != "" {
-			addInitialAssessmentKeyValueRow(pdf, "Rekomendasi", item.Recommendation)
+			fields = append(fields, initialAssessmentPrintField{Label: "Rekomendasi", Value: item.Recommendation})
 		}
+		addInitialAssessmentCompactFieldSection(pdf, sectionTitle, fields, "Belum ada hasil pemeriksaan radiologi.")
 	}
-	addInitialAssessmentSectionSpacing(pdf)
 }
 
 func buildLaboratoryParameterResultValue(parameter models.LaboratoryOrderParameterResult) string {
@@ -967,8 +1084,8 @@ func buildLaboratoryResultTableRows(parameters []models.LaboratoryOrderParameter
 			Flag: flag,
 			Values: []string{
 				fallbackText(resolveLaboratoryParameterName(parameter)),
-				fallbackText(parameter.NormalValueSnapshot),
 				resultValue,
+				fallbackText(parameter.NormalValueSnapshot),
 				flagLabel,
 			},
 		})
@@ -999,9 +1116,20 @@ func buildRadiologyResultTableRows(parameters []models.RadiologyOrderParameterRe
 }
 
 func addSupportingOrderResultTable(pdf *gofpdf.Fpdf, title string, columns []supportingOrderResultTableColumn, rows []supportingOrderResultTableRow, emptyMessage string) {
+	left, _, right, _ := pdf.GetMargins()
+	pageWidth, _ := pdf.GetPageSize()
+	contentWidth := pageWidth - left - right
 	addInitialAssessmentSectionTitle(pdf, title)
 	if len(rows) == 0 {
+		boxStartY := pdf.GetY()
+		pdf.SetY(boxStartY + 1.2)
 		addInitialAssessmentFullWidthRow(pdf, firstNonEmpty(emptyMessage, "Tidak ada data hasil parameter."), false)
+		boxEndY := pdf.GetY() + 1.2
+		pdf.SetDrawColor(0, 0, 0)
+		pdf.SetLineWidth(0.25)
+		pdf.Rect(left, boxStartY, contentWidth, boxEndY-boxStartY, "D")
+		pdf.SetLineWidth(0.2)
+		pdf.SetY(boxEndY)
 		addInitialAssessmentSectionSpacing(pdf)
 		return
 	}
@@ -1011,7 +1139,7 @@ func addSupportingOrderResultTable(pdf *gofpdf.Fpdf, title string, columns []sup
 	}
 
 	drawHeader()
-	for _, row := range rows {
+	for rowIndex, row := range rows {
 		rowHeight := measureSupportingOrderResultTableRowHeight(pdf, columns, row)
 		_, pageHeight := pdf.GetPageSize()
 		if pdf.GetY()+rowHeight > pageHeight-initialAssessmentPDFMarginBottom {
@@ -1019,7 +1147,7 @@ func addSupportingOrderResultTable(pdf *gofpdf.Fpdf, title string, columns []sup
 			pdf.SetY(initialAssessmentPDFPageContentStartForPDF(pdf, pdf.PageNo()))
 			drawHeader()
 		}
-		drawSupportingOrderResultTableRow(pdf, columns, row, rowHeight)
+		drawSupportingOrderResultTableRow(pdf, columns, row, rowHeight, rowIndex%2 == 1)
 	}
 	addInitialAssessmentSectionSpacing(pdf)
 }
@@ -1028,42 +1156,40 @@ func drawSupportingOrderResultTableHeader(pdf *gofpdf.Fpdf, columns []supporting
 	left, _, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
 	contentWidth := pageWidth - left - right
-	headerHeight := 6.0
-	ensureInitialAssessmentPDFSpace(pdf, headerHeight)
+	headerHeight := 5.6
+	ensureInitialAssessmentPDFSpace(pdf, headerHeight+5.0)
 
 	x := left
 	y := pdf.GetY()
-	pdf.SetFont("Arial", "B", 8)
-	pdf.SetDrawColor(120, 120, 120)
-	pdf.SetFillColor(225, 225, 225)
+	pdf.SetFont("Arial", "B", 7.8)
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetLineWidth(0.25)
 	for index, column := range columns {
 		width := resolveSupportingOrderResultTableColumnWidth(contentWidth, columns, index)
-		pdf.Rect(x, y, width, headerHeight, "DF")
-		pdf.SetXY(x+1, y+0.35)
-		pdf.CellFormat(width-2, headerHeight-0.7, strings.ToUpper(sanitizePDFSingleLineText(column.Title)), "", 0, "C", false, 0, "")
+		pdf.Rect(x, y, width, headerHeight, "D")
+		pdf.SetXY(x+1.0, y+0.4)
+		pdf.CellFormat(width-2.0, headerHeight-0.8, strings.ToUpper(sanitizePDFSingleLineText(column.Title)), "", 0, "C", false, 0, "")
 		x += width
 	}
+	pdf.SetLineWidth(0.2)
 	pdf.SetY(y + headerHeight)
-	pdf.SetFont("Arial", "", 9)
+	pdf.SetFont("Arial", "", 8.0)
 }
 
-func drawSupportingOrderResultTableRow(pdf *gofpdf.Fpdf, columns []supportingOrderResultTableColumn, row supportingOrderResultTableRow, rowHeight float64) {
+func drawSupportingOrderResultTableRow(pdf *gofpdf.Fpdf, columns []supportingOrderResultTableColumn, row supportingOrderResultTableRow, rowHeight float64, _ bool) {
 	left, _, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
 	contentWidth := pageWidth - left - right
 	x := left
 	y := pdf.GetY()
-	fillR, fillG, fillB, useFill := resolveSupportingOrderFlagFillColor(row.Flag)
-	pdf.SetDrawColor(120, 120, 120)
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.2)
+	pdf.SetTextColor(0, 0, 0)
 
 	for index, column := range columns {
 		width := resolveSupportingOrderResultTableColumnWidth(contentWidth, columns, index)
-		style := "D"
-		if useFill {
-			style = "DF"
-			pdf.SetFillColor(fillR, fillG, fillB)
-		}
-		pdf.Rect(x, y, width, rowHeight, style)
+		pdf.Rect(x, y, width, rowHeight, "D")
 
 		textValue := "-"
 		if index < len(row.Values) && strings.TrimSpace(row.Values[index]) != "" {
@@ -1074,13 +1200,13 @@ func drawSupportingOrderResultTableRow(pdf *gofpdf.Fpdf, columns []supportingOrd
 		if strings.EqualFold(column.Title, "Flag") {
 			fontStyle = "B"
 		}
-		pdf.SetXY(x+1.2, y+0.35)
-		pdf.SetFont("Arial", fontStyle, 8.2)
-		pdf.MultiCell(width-3, 4, textValue, "", column.Align, false)
+		pdf.SetXY(x+1.4, y+0.8)
+		pdf.SetFont("Arial", fontStyle, 8.0)
+		pdf.MultiCell(width-2.8, 3.8, textValue, "", column.Align, false)
 		x += width
 	}
 
-	pdf.SetFont("Arial", "", 9)
+	pdf.SetFont("Arial", "", 8.0)
 	pdf.SetY(y + rowHeight)
 }
 
@@ -1088,7 +1214,7 @@ func measureSupportingOrderResultTableRowHeight(pdf *gofpdf.Fpdf, columns []supp
 	left, _, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
 	contentWidth := pageWidth - left - right
-	maxHeight := 6.0
+	maxHeight := 5.4
 
 	for index := range columns {
 		width := resolveSupportingOrderResultTableColumnWidth(contentWidth, columns, index)
@@ -1096,13 +1222,13 @@ func measureSupportingOrderResultTableRowHeight(pdf *gofpdf.Fpdf, columns []supp
 		if index < len(row.Values) && strings.TrimSpace(row.Values[index]) != "" {
 			textValue = sanitizePDFSingleLineText(row.Values[index])
 		}
-		height := measureInitialAssessmentTextRowHeight(pdf, textValue, width-3, 8.5, 4)
+		height := measureInitialAssessmentTextRowHeight(pdf, textValue, width-2.8, 8.0, 3.8) + 0.4
 		if height > maxHeight {
 			maxHeight = height
 		}
 	}
 
-	return maxHeight + 0.5
+	return maxHeight
 }
 
 func resolveSupportingOrderResultTableColumnWidth(contentWidth float64, columns []supportingOrderResultTableColumn, index int) float64 {
@@ -1283,17 +1409,27 @@ func addOrderPrintSignatureSectionWithDualTTE(pdf *gofpdf.Fpdf, hospitalInfo ini
 	left, _, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
 	contentWidth := pageWidth - left - right
-	columnGap := 12.0
-	columnWidth := (contentWidth - columnGap) / 2
-	requiresQRCodeSpace := hasTTEQRCode(leftSignature) || hasTTEQRCode(rightSignature)
-	requiredHeight := 40.0
+	columnWidth := contentWidth / 2
+	splitX := left + columnWidth
+	hasLeftQR := hasTTEQRCode(leftSignature)
+	hasRightQR := hasTTEQRCode(rightSignature)
+	requiresQRCodeSpace := hasLeftQR || hasRightQR
+	reservedQRHeight := maxFloat64(
+		resolveTTESignatureAnnotationReservedHeight(columnWidth, leftSignature),
+		resolveTTESignatureAnnotationReservedHeight(columnWidth, rightSignature),
+	)
+	boxH := 28.0
 	if requiresQRCodeSpace {
-		requiredHeight = 52.0 + maxFloat64(resolveTTESignatureAnnotationReservedHeight(columnWidth, leftSignature), resolveTTESignatureAnnotationReservedHeight(columnWidth, rightSignature))
+		boxH = maxFloat64(32.0, 16.5+reservedQRHeight)
 	}
-	ensureInitialAssessmentPDFSpace(pdf, requiredHeight)
-	leftColumnX := left
-	rightColumnX := left + columnWidth + columnGap
-	currentY := pdf.GetY() + 4
+	ensureInitialAssessmentPDFSpace(pdf, boxH)
+	boxStartY := pdf.GetY()
+
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.25)
+	pdf.Rect(left, boxStartY, contentWidth, boxH, "D")
+	pdf.Line(splitX, boxStartY, splitX, boxStartY+boxH)
+	pdf.SetLineWidth(0.2)
 
 	datePrefix := strings.TrimSpace(hospitalInfo.City)
 	dateLabel := formatDateIndonesian(resolveTTEPrintSignatureTime(firstNonNilTTESignature(rightSignature, leftSignature), generatedAt))
@@ -1301,38 +1437,34 @@ func addOrderPrintSignatureSectionWithDualTTE(pdf *gofpdf.Fpdf, hospitalInfo ini
 		dateLabel = datePrefix + ", " + dateLabel
 	}
 
-	pdf.SetFont("Arial", "", 10)
-	pdf.SetXY(rightColumnX, currentY)
-	pdf.CellFormat(columnWidth, 5, dateLabel, "", 1, "C", false, 0, "")
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetFont("Arial", "", 8.4)
+	pdf.SetXY(splitX, boxStartY+2.0)
+	pdf.CellFormat(columnWidth, 4.0, dateLabel, "", 1, "C", false, 0, "")
 
-	currentY = pdf.GetY() + 3
-	pdf.SetXY(leftColumnX, currentY)
-	pdf.CellFormat(columnWidth, 5, fallbackText(leftLabel), "", 0, "C", false, 0, "")
-	pdf.SetXY(rightColumnX, currentY)
-	pdf.CellFormat(columnWidth, 5, fallbackText(rightLabel), "", 1, "C", false, 0, "")
-	annotationY := currentY + 5.2
-	drawTTESignatureAnnotation(pdf, leftColumnX, annotationY, columnWidth, leftSignature)
-	drawTTESignatureAnnotation(pdf, rightColumnX, annotationY, columnWidth, rightSignature)
+	labelY := boxStartY + 6.0
+	pdf.SetXY(left, labelY)
+	pdf.CellFormat(columnWidth, 4.0, fallbackText(leftLabel), "", 0, "C", false, 0, "")
+	pdf.SetXY(splitX, labelY)
+	pdf.CellFormat(columnWidth, 4.0, fallbackText(rightLabel), "", 1, "C", false, 0, "")
 
-	lineWidth := minFloat64(52, columnWidth-26)
-	leftLineX := leftColumnX + ((columnWidth - lineWidth) / 2)
-	rightLineX := rightColumnX + ((columnWidth - lineWidth) / 2)
-	signatureLineY := pdf.GetY() + 16.0
-	if requiresQRCodeSpace {
-		signatureLineY = annotationY + maxFloat64(resolveTTESignatureAnnotationReservedHeight(columnWidth, leftSignature), resolveTTESignatureAnnotationReservedHeight(columnWidth, rightSignature)) + 0.55
+	annotationY := labelY + 4.4
+	if leftSignature != nil {
+		drawTTESignatureAnnotation(pdf, left, annotationY, columnWidth, leftSignature)
 	}
-	pdf.SetDrawColor(60, 60, 60)
-	pdf.Line(leftLineX, signatureLineY, leftLineX+lineWidth, signatureLineY)
-	pdf.Line(rightLineX, signatureLineY, rightLineX+lineWidth, signatureLineY)
+	if rightSignature != nil {
+		drawTTESignatureAnnotation(pdf, splitX, annotationY, columnWidth, rightSignature)
+	}
 
-	pdf.SetFont("Arial", "B", 10)
-	pdf.SetY(signatureLineY + 2.5)
-	pdf.SetXY(leftColumnX, pdf.GetY())
-	pdf.CellFormat(columnWidth, 5, fallbackText(resolveTTEPrintSignatureName(leftSignature, leftName)), "", 0, "C", false, 0, "")
-	pdf.SetXY(rightColumnX, pdf.GetY())
-	pdf.CellFormat(columnWidth, 5, fallbackText(resolveTTEPrintSignatureName(rightSignature, rightName)), "", 1, "C", false, 0, "")
-	pdf.SetFont("Arial", "", 9)
-	pdf.SetY(pdf.GetY() + 4)
+	nameY := boxStartY + boxH - 6.0
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetFont("Arial", "B", 8.6)
+	pdf.SetXY(left, nameY)
+	pdf.CellFormat(columnWidth, 4.2, "( "+fallbackText(resolveTTEPrintSignatureName(leftSignature, leftName))+" )", "", 0, "C", false, 0, "")
+	pdf.SetXY(splitX, nameY)
+	pdf.CellFormat(columnWidth, 4.2, "( "+fallbackText(resolveTTEPrintSignatureName(rightSignature, rightName))+" )", "", 1, "C", false, 0, "")
+	pdf.SetFont("Arial", "", 8.2)
+	pdf.SetY(boxStartY + boxH)
 }
 
 func firstNonNilTTESignature(values ...*ttePrintSignatureInfo) *ttePrintSignatureInfo {

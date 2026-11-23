@@ -48,7 +48,7 @@ func GetMedicines(c *gin.Context) {
 	}
 
 	offset := (page - 1) * perPage
-	if err := query.Preload("Category").Preload("Unit").Order("name ASC").Offset(offset).Limit(perPage).Find(&medicines).Error; err != nil {
+	if err := query.Preload("Category").Preload("Unit").Preload("LargeUnit").Preload("RoomStocks.Room").Order("name ASC").Offset(offset).Limit(perPage).Find(&medicines).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -65,7 +65,7 @@ func GetMedicine(c *gin.Context) {
 	id := c.Param("id")
 
 	var medicine models.Medicine
-	if err := database.DB.Preload("Category").Preload("Unit").First(&medicine, id).Error; err != nil {
+	if err := database.DB.Preload("Category").Preload("Unit").Preload("LargeUnit").Preload("RoomStocks.Room").First(&medicine, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Obat tidak ditemukan"})
 		return
 	}
@@ -78,9 +78,11 @@ type CreateMedicineRequest struct {
 	KFAName       string  `json:"kfa_name"`
 	Name          string  `json:"name" binding:"required"`
 	GenericName   string  `json:"generic_name"`
-	CategoryID    uint    `json:"category_id" binding:"required"`
-	UnitID        uint    `json:"unit_id" binding:"required"`
-	Type          string  `json:"type"`
+	CategoryID       uint    `json:"category_id" binding:"required"`
+	UnitID           uint    `json:"unit_id" binding:"required"`
+	LargeUnitID      *uint   `json:"large_unit_id"`
+	ConversionFactor int     `json:"conversion_factor"`
+	Type             string  `json:"type"`
 	Form          string  `json:"form"`
 	Strength      string  `json:"strength"`
 	Manufacturer  string  `json:"manufacturer"`
@@ -109,15 +111,26 @@ func CreateMedicine(c *gin.Context) {
 		isActive = *req.IsActive
 	}
 
+	largeUnitID := req.LargeUnitID
+	conversionFactor := req.ConversionFactor
+	if largeUnitID == nil || *largeUnitID == 0 {
+		largeUnitID = nil
+		conversionFactor = 1
+	} else if conversionFactor < 1 {
+		conversionFactor = 1
+	}
+
 	medicine := models.Medicine{
-		Code:          generateMedicineCode(),
-		KFACode:       req.KFACode,
-		KFAName:       req.KFAName,
-		Name:          req.Name,
-		GenericName:   req.GenericName,
-		CategoryID:    req.CategoryID,
-		UnitID:        req.UnitID,
-		Type:          req.Type,
+		Code:             generateMedicineCode(),
+		KFACode:          req.KFACode,
+		KFAName:          req.KFAName,
+		Name:             req.Name,
+		GenericName:      req.GenericName,
+		CategoryID:       req.CategoryID,
+		UnitID:           req.UnitID,
+		LargeUnitID:      largeUnitID,
+		ConversionFactor: conversionFactor,
+		Type:             req.Type,
 		Form:          req.Form,
 		Strength:      req.Strength,
 		Manufacturer:  req.Manufacturer,
@@ -133,7 +146,24 @@ func CreateMedicine(c *gin.Context) {
 		return
 	}
 
-	database.DB.Preload("Category").Preload("Unit").First(&medicine, medicine.ID)
+	if depo, err := getDefaultDepoRoom(database.DB); err == nil {
+		database.DB.Create(&models.MedicineRoomStock{
+			MedicineID: medicine.ID,
+			RoomID:     depo.ID,
+			Quantity:   medicine.CurrentStock,
+			MinStock:   medicine.MinStock,
+		})
+	}
+	if apotek, err := getDefaultApotekRoom(database.DB); err == nil {
+		database.DB.Create(&models.MedicineRoomStock{
+			MedicineID: medicine.ID,
+			RoomID:     apotek.ID,
+			Quantity:   0,
+			MinStock:   medicine.MinStock,
+		})
+	}
+
+	database.DB.Preload("Category").Preload("Unit").Preload("LargeUnit").Preload("RoomStocks.Room").First(&medicine, medicine.ID)
 	c.JSON(http.StatusCreated, gin.H{"data": medicine})
 }
 
@@ -152,12 +182,23 @@ func UpdateMedicine(c *gin.Context) {
 		return
 	}
 
+	largeUnitID := req.LargeUnitID
+	conversionFactor := req.ConversionFactor
+	if largeUnitID == nil || *largeUnitID == 0 {
+		largeUnitID = nil
+		conversionFactor = 1
+	} else if conversionFactor < 1 {
+		conversionFactor = 1
+	}
+
 	medicine.Name = req.Name
 	medicine.KFACode = req.KFACode
 	medicine.KFAName = req.KFAName
 	medicine.GenericName = req.GenericName
 	medicine.CategoryID = req.CategoryID
 	medicine.UnitID = req.UnitID
+	medicine.LargeUnitID = largeUnitID
+	medicine.ConversionFactor = conversionFactor
 	medicine.Type = req.Type
 	medicine.Form = req.Form
 	medicine.Strength = req.Strength
@@ -174,7 +215,7 @@ func UpdateMedicine(c *gin.Context) {
 		return
 	}
 
-	database.DB.Preload("Category").Preload("Unit").First(&medicine, medicine.ID)
+	database.DB.Preload("Category").Preload("Unit").Preload("LargeUnit").Preload("RoomStocks.Room").First(&medicine, medicine.ID)
 	c.JSON(http.StatusOK, gin.H{"data": medicine})
 }
 

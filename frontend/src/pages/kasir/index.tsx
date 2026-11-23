@@ -12,6 +12,7 @@ import { getLocalISODate } from '@/lib/utils';
 import { billingApi } from '@/lib/api';
 import type { CashierQueueItem, Invoice } from '@/lib/api';
 import { setPageTitle } from '@/lib/page-title';
+import { announceQueueCall } from '@/lib/queue-caller';
 import { formatCurrency, formatDateTime } from './utils';
 import {
   DropdownMenu,
@@ -21,7 +22,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ArrowRight, Eye, FileSpreadsheet, FileText, Loader2, Plus, Printer, Receipt, RefreshCw } from 'lucide-react';
+import { ArrowRight, Banknote, Eye, FileSpreadsheet, FileText, Loader2, Monitor, Plus, Printer, Receipt, RefreshCw, Volume2 } from 'lucide-react';
 
 // ── Status helpers ─────────────────────────────────────────────────────────
 
@@ -55,6 +56,7 @@ export default function KasirIndexPage() {
   // search field: DataTable has built-in search; state kept for API call
   const [statusFilter, setStatusFilter] = useState('');
   const [syncingVisitId, setSyncingVisitId] = useState<number | null>(null);
+  const [callingVisitId, setCallingVisitId] = useState<number | null>(null);
   const [activeView, setActiveView] = useState<'queue' | 'invoices'>('queue');
 
   const loadData = useCallback(async () => {
@@ -130,7 +132,7 @@ export default function KasirIndexPage() {
     }
   }, [loadData, navigate, toast]);
 
-  const handlePrint = useCallback(async (invoiceId: number, format: 'a4' | 'a5' | 'thermal' = 'a4') => {
+  const handlePrint = useCallback(async (invoiceId: number, format: 'a4' | 'a5' | 'thermal' | 'kwitansi' = 'a4') => {
     try {
       const res = await billingApi.print(invoiceId, format);
       const blob = new Blob([res.data as ArrayBuffer], { type: 'application/pdf' });
@@ -140,6 +142,34 @@ export default function KasirIndexPage() {
     }
   }, [toast]);
 
+
+  const handleCallCashier = useCallback(async (item: CashierQueueItem) => {
+    setCallingVisitId(item.visit.id);
+    try {
+      const saved = await announceQueueCall({
+        queueNumber: item.visit.queue_number,
+        patientName: item.visit.patient?.full_name,
+        unitType: 'kasir',
+        destinationName: 'Kasir',
+      });
+      const numLabel = String(item.visit.queue_number).padStart(3, '0');
+      if (saved) {
+        toast({
+          variant: 'success',
+          title: `Memanggil No. ${numLabel}`,
+          description: 'Panggilan berhasil dikirim ke display Kasir.',
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: `Gagal memanggil No. ${numLabel}`,
+          description: 'Tidak dapat mengirim panggilan ke server display.',
+        });
+      }
+    } finally {
+      setCallingVisitId(null);
+    }
+  }, [toast]);
 
   // ── Queue columns ──
   const queueColumns: ColumnDef<CashierQueueItem>[] = useMemo(() => [
@@ -218,35 +248,61 @@ export default function KasirIndexPage() {
       header: '',
       cell: ({ row }) => {
         const item = row.original;
-        if (!item.has_invoice) {
-          return (
-            <Button
-              size="sm"
-              className="rounded-none shadow-none"
-              disabled={syncingVisitId === item.visit.id}
-              onClick={() => void handleSyncInvoice(item.visit.id)}
-            >
-              {syncingVisitId === item.visit.id
-                ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                : <Plus className="mr-1.5 h-4 w-4" />}
-              Buat Invoice
-            </Button>
-          );
-        }
-        return (
+        const isCalling = callingVisitId === item.visit.id;
+        const callButton = (
           <Button
+            type="button"
             size="sm"
             variant="outline"
             className="rounded-none shadow-none"
-            onClick={() => navigate(`/kasir/${item.invoice_id}`)}
+            title="Panggil pasien ke Kasir"
+            disabled={isCalling}
+            onClick={() => void handleCallCashier(item)}
           >
-            <ArrowRight className="mr-1.5 h-4 w-4" />
-            {item.invoice_status === 'lunas' ? 'Lihat' : 'Proses'}
+            {isCalling ? (
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            ) : (
+              <Volume2 className="mr-1.5 h-4 w-4" />
+            )}
+            {isCalling ? 'Memanggil...' : 'Panggil'}
           </Button>
+        );
+
+        if (!item.has_invoice) {
+          return (
+            <div className="flex items-center justify-end gap-1.5">
+              {callButton}
+              <Button
+                size="sm"
+                className="rounded-none shadow-none"
+                disabled={syncingVisitId === item.visit.id}
+                onClick={() => void handleSyncInvoice(item.visit.id)}
+              >
+                {syncingVisitId === item.visit.id
+                  ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                  : <Plus className="mr-1.5 h-4 w-4" />}
+                Buat Invoice
+              </Button>
+            </div>
+          );
+        }
+        return (
+          <div className="flex items-center justify-end gap-1.5">
+            {callButton}
+            <Button
+              size="sm"
+              variant="outline"
+              className="rounded-none shadow-none"
+              onClick={() => navigate(`/kasir/${item.invoice_id}`)}
+            >
+              <ArrowRight className="mr-1.5 h-4 w-4" />
+              {item.invoice_status === 'lunas' ? 'Lihat' : 'Proses'}
+            </Button>
+          </div>
         );
       },
     },
-  ], [handleSyncInvoice, navigate, syncingVisitId]);
+  ], [callingVisitId, handleCallCashier, handleSyncInvoice, navigate, syncingVisitId]);
 
   // ── Invoice columns ──
   const invoiceColumns: ColumnDef<Invoice>[] = useMemo(() => [
@@ -352,6 +408,11 @@ export default function KasirIndexPage() {
                 <Receipt className="h-4 w-4 text-amber-600 shrink-0" />
                 <span className="text-xs">Struk Thermal (80mm)</span>
               </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => void handlePrint(row.original.id, 'kwitansi')} className="gap-2.5 cursor-pointer py-1.5">
+                <Banknote className="h-4 w-4 text-violet-600 shrink-0" />
+                <span className="text-xs">Kwitansi Terbilang (Tanpa Rincian)</span>
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -421,6 +482,18 @@ export default function KasirIndexPage() {
               className="h-9 w-36 rounded-none text-xs focus:ring-inset shrink-0"
               square
             />
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
+              onClick={() => window.open('/queue/display?mode=kasir', '_blank', 'popup=yes,width=1600,height=900,noopener,noreferrer')}
+              title="Buka layar TV Display Antrian Kasir"
+            >
+              <Monitor className="mr-1.5 h-3.5 w-3.5" />
+              Display Kasir
+            </Button>
 
             <Button
               type="button"

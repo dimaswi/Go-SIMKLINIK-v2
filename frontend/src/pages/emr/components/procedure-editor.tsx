@@ -1642,16 +1642,8 @@ export function ProcedureEditor({
                   <Badge variant="secondary" className="rounded-none px-2 py-0 uppercase tracking-wide">{SERVICE_DOMAIN_LABELS[selectedServiceDomain]}</Badge>
                   <Badge variant="outline" className="rounded-none px-2 py-0 uppercase tracking-wide">{TARGET_SCOPE_LABELS[selectedTargetScope]}</Badge>
                   {(selectedService.parameters?.length || 0) > 0 && <Badge variant="outline" className="rounded-none px-2 py-0 uppercase tracking-wide">{selectedService.parameters?.length || 0} parameter</Badge>}
-                  {selectedService.requires_consent && <Badge className="rounded-none border-0 bg-amber-600 px-2 py-0 uppercase tracking-wide text-white">Butuh consent</Badge>}
                   {selectedService.supports_odontogram_sync && <Badge className="rounded-none border-0 bg-sky-700 px-2 py-0 uppercase tracking-wide text-white">Odontogram sync</Badge>}
                 </div>
-              </TableCell>
-            </TableRow>
-          )}
-          {selectedService?.requires_consent && (
-            <TableRow>
-              <TableCell label="Informed Consent" colSpan={4}>
-                <p className="text-xs text-amber-700">Draft informed consent akan dibuat otomatis saat tindakan ini disimpan. Anda bisa meninjaunya di sheet Informed Consent.</p>
               </TableCell>
             </TableRow>
           )}
@@ -1794,11 +1786,6 @@ export function ProcedureEditor({
                         {formatTarget(target)}
                       </Badge>
                     ))}
-                    {action.requires_consent_snapshot && (
-                      <Badge className="rounded-none border-0 bg-amber-600 px-1.5 py-0 text-[10px] uppercase text-white font-mono">
-                        Consent
-                      </Badge>
-                    )}
                     {action.notes && (
                       <span className="text-[11px] italic text-muted-foreground truncate max-w-[220px]" title={action.notes}>
                         · {action.notes}

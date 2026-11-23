@@ -27,6 +27,7 @@ import {
   Tag,
   Trash2,
   UserRound,
+  Volume2,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -63,6 +64,7 @@ import {
 } from '@/lib/api';
 import { downloadBlobResponse } from '../../lib/blob-download';
 import { setPageTitle } from '@/lib/page-title';
+import { announceQueueCall } from '@/lib/queue-caller';
 import { cn } from '@/lib/utils';
 import {
   PRESCRIPTION_SIGNA_OPTIONS,
@@ -76,6 +78,7 @@ import {
   formatDateTime,
   getCompoundIngredientStockStatus,
   getCompoundStockStatus,
+  getMedicineRoomStock,
   getPrescriptionStockStatus,
   getRecordStockSummary,
   getRecordTotalPrice,
@@ -140,6 +143,7 @@ export default function PharmacyShow() {
   const [markingReady, setMarkingReady] = useState(false);
   const [dispensing, setDispensing] = useState(false);
   const [returning, setReturning] = useState(false);
+  const [callingPatient, setCallingPatient] = useState(false);
   const [downloadingTicket, setDownloadingTicket] = useState(false);
   const [downloadingDoctor, setDownloadingDoctor] = useState(false);
   const [downloadingPharmacy, setDownloadingPharmacy] = useState(false);
@@ -615,11 +619,23 @@ export default function PharmacyShow() {
   };
 
   const medicineSelectOptions = useMemo(() => {
-    return medicines.map((m) => ({
-      value: String(m.id),
-      label: `${m.name} (${m.unit?.name || 'item'}) - Stok: ${m.current_stock} - ${formatCurrency(m.selling_price || 0)}`,
-    }));
-  }, [medicines]);
+    const roomId = order?.prescription_room_id;
+    const roomName = order?.prescription_room?.name || 'Apotek';
+    return medicines.map((m) => {
+      const roomStock = getMedicineRoomStock(m, roomId);
+      const unitName = m.unit?.name || 'item';
+      return {
+        value: String(m.id),
+        label: `${m.name}${m.strength ? ` ${m.strength}` : ''}`,
+        description: `${m.code || `OBT${String(m.id).padStart(7, '0')}`} • ${formatCurrency(m.selling_price || 0)} • ${roomName}`,
+        badge: `Stok ${roomStock} ${unitName}`,
+        badgeClassName: roomStock > 0
+          ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+          : 'border-rose-300 bg-rose-50 text-rose-700',
+        searchText: [m.code, m.generic_name, m.strength, m.form].filter(Boolean).join(' '),
+      };
+    });
+  }, [medicines, order?.prescription_room?.name, order?.prescription_room_id]);
 
   if (loading) {
     return (
@@ -746,6 +762,12 @@ export default function PharmacyShow() {
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                   <span className="font-medium text-foreground">{order.polyclinic?.name || '-'}</span>
+                  {order.prescription_room?.name ? (
+                    <>
+                      <span>→</span>
+                      <span className="font-medium text-primary">{order.prescription_room.name}</span>
+                    </>
+                  ) : null}
                   <span>•</span>
                   <span>dr. {order.doctor?.full_name || '-'}</span>
                   <span>•</span>
@@ -868,7 +890,7 @@ export default function PharmacyShow() {
                     <>
                       {/* Non-Racikan Rows */}
                       {prescriptions.map((item) => {
-                        const stockStatus = getPrescriptionStockStatus(item);
+                        const stockStatus = getPrescriptionStockStatus(item, order.prescription_room_id);
                         const subtotal = buildPrescriptionPrice(item);
                         const isDeleting = deletingPrescriptionId === item.id;
                         const isSyncing = syncingPrescriptionId === item.id;
@@ -1062,7 +1084,7 @@ export default function PharmacyShow() {
 
                       {/* Racikan Rows */}
                       {compounds.map((compound) => {
-                        const compoundStock = getCompoundStockStatus(compound);
+                        const compoundStock = getCompoundStockStatus(compound, order.prescription_room_id);
                         const compoundPrice = buildCompoundPrice(compound);
                         const isExpanded = Boolean(expandedCompoundIds[compound.id]);
 
@@ -1166,7 +1188,7 @@ export default function PharmacyShow() {
                             {/* Ingredient Sub-Rows directly in the table */}
                             {isExpanded &&
                               (compound.items || []).map((ingredient) => {
-                                const ingStock = getCompoundIngredientStockStatus(ingredient);
+                                const ingStock = getCompoundIngredientStockStatus(ingredient, order.prescription_room_id);
                                 const doseMatch = ingredient.notes?.match(/Dosis:\s*([^·]+)/i)?.[1]?.trim();
                                 const extraNote = ingredient.notes?.replace(/Dosis:\s*[^·]+(·\s*)?/i, '').trim();
                                 const ingredientSubtotal = (ingredient.medicine?.selling_price || 0) * (ingredient.quantity || 0);
@@ -1341,6 +1363,52 @@ export default function PharmacyShow() {
               </Button>
             )}
 
+            {/* Tombol Panggil Pasien ke Apotek (setelah resep diterima/disiapkan) */}
+            {status !== 'ordered' && status !== 'draft' && order.visit?.queue_number ? (
+              <Button
+                type="button"
+                variant={status === 'ready' ? 'default' : 'outline'}
+                size="sm"
+                className={cn(
+                  'h-8 px-3 rounded-none shadow-none text-xs gap-1.5 font-medium',
+                  status === 'ready' && 'bg-blue-600 hover:bg-blue-700 text-white',
+                )}
+                disabled={callingPatient}
+                onClick={async () => {
+                  const destName = order.prescription_room?.name || 'Ruangan Apotek';
+                  const numLabel = String(order.visit!.queue_number).padStart(3, '0');
+                  setCallingPatient(true);
+                  try {
+                    const saved = await announceQueueCall({
+                      queueNumber: order.visit!.queue_number,
+                      patientName: order.patient?.full_name,
+                      unitType: 'farmasi',
+                      destinationName: destName,
+                    });
+                    if (saved) {
+                      toast({
+                        variant: 'success',
+                        title: `Memanggil No. ${numLabel}`,
+                        description: `Panggilan berhasil dikirim ke display tujuan ${destName}.`,
+                      });
+                    } else {
+                      toast({
+                        variant: 'destructive',
+                        title: `Gagal memanggil No. ${numLabel}`,
+                        description: 'Tidak dapat mengirim panggilan ke server display.',
+                      });
+                    }
+                  } finally {
+                    setCallingPatient(false);
+                  }
+                }}
+                title={`Panggil pasien ke ${order.prescription_room?.name || 'Ruangan Apotek'}`}
+              >
+                {callingPatient ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
+                <span>{callingPatient ? 'Memanggil...' : status === 'dispensed' ? 'Panggil Ulang' : 'Panggil Pasien'}</span>
+              </Button>
+            ) : null}
+
             {/* Tombol Serahkan Obat (if ready) */}
             {status === 'ready' && canManage && (
               <Button
@@ -1431,6 +1499,10 @@ export default function PharmacyShow() {
                   <p className="font-medium text-foreground">{order.polyclinic?.name || '-'}</p>
                 </div>
                 <div>
+                  <span className="text-muted-foreground">Ruangan Apotek:</span>
+                  <p className="font-medium text-primary">{order.prescription_room?.name || 'Apotek Utama'}</p>
+                </div>
+                <div>
                   <span className="text-muted-foreground">Dokter Penulis:</span>
                   <p className="font-medium text-foreground">{order.doctor?.full_name || '-'}</p>
                 </div>
@@ -1490,14 +1562,37 @@ export default function PharmacyShow() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="font-medium text-foreground">Jumlah (Qty)</label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={addPayload.quantity}
-                  onChange={(e) => setAddPayload((p) => ({ ...p, quantity: Math.max(1, Number(e.target.value)) }))}
-                  className="h-9 rounded-none text-xs focus:ring-inset mt-1"
-                />
+                {(() => {
+                  const selectedAddMed = medicines.find((m) => m.id === addPayload.medicine_id);
+                  const unitName = selectedAddMed?.unit?.name || '';
+                  return (
+                    <>
+                      <label className="font-medium text-foreground">
+                        Jumlah (Qty{unitName ? ` · ${unitName}` : ' · Satuan Kecil'})
+                      </label>
+                      <div className="mt-1 flex items-center gap-1.5">
+                        <Input
+                          type="number"
+                          min="1"
+                          value={addPayload.quantity}
+                          onChange={(e) => setAddPayload((p) => ({ ...p, quantity: Math.max(1, Number(e.target.value)) }))}
+                          className="h-9 rounded-none text-xs focus:ring-inset"
+                        />
+                        {unitName ? (
+                          <Badge variant="outline" className="h-9 rounded-none px-2 text-[11px] bg-muted/30 shrink-0">
+                            {unitName}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 text-[10px] text-muted-foreground">
+                        Satuan kecil{unitName ? `: ${unitName}` : ''}
+                        {selectedAddMed?.large_unit?.name && (selectedAddMed.conversion_factor || 1) > 1
+                          ? ` (1 ${selectedAddMed.large_unit.name} = ${selectedAddMed.conversion_factor} ${unitName})`
+                          : ''}
+                      </p>
+                    </>
+                  );
+                })()}
               </div>
               <div>
                 <label className="font-medium text-foreground">Dosis</label>
@@ -1586,14 +1681,37 @@ export default function PharmacyShow() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="font-medium text-foreground">Jumlah (Qty)</label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={editPayload.quantity}
-                  onChange={(e) => setEditPayload((p) => ({ ...p, quantity: Math.max(1, Number(e.target.value)) }))}
-                  className="h-9 rounded-none text-xs focus:ring-inset mt-1"
-                />
+                {(() => {
+                  const selectedEditMed = medicines.find((m) => m.id === editPayload.medicine_id) || editingPrescription?.medicine;
+                  const unitName = selectedEditMed?.unit?.name || '';
+                  return (
+                    <>
+                      <label className="font-medium text-foreground">
+                        Jumlah (Qty{unitName ? ` · ${unitName}` : ' · Satuan Kecil'})
+                      </label>
+                      <div className="mt-1 flex items-center gap-1.5">
+                        <Input
+                          type="number"
+                          min="1"
+                          value={editPayload.quantity}
+                          onChange={(e) => setEditPayload((p) => ({ ...p, quantity: Math.max(1, Number(e.target.value)) }))}
+                          className="h-9 rounded-none text-xs focus:ring-inset"
+                        />
+                        {unitName ? (
+                          <Badge variant="outline" className="h-9 rounded-none px-2 text-[11px] bg-muted/30 shrink-0">
+                            {unitName}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 text-[10px] text-muted-foreground">
+                        Satuan kecil{unitName ? `: ${unitName}` : ''}
+                        {selectedEditMed?.large_unit?.name && (selectedEditMed.conversion_factor || 1) > 1
+                          ? ` (1 ${selectedEditMed.large_unit.name} = ${selectedEditMed.conversion_factor} ${unitName})`
+                          : ''}
+                      </p>
+                    </>
+                  );
+                })()}
               </div>
               <div>
                 <label className="font-medium text-foreground">Dosis</label>
@@ -1717,6 +1835,8 @@ export default function PharmacyShow() {
           onOpenChange={setCompoundDeductionModalOpen}
           compounds={compounds}
           patientName={order?.patient?.full_name}
+          roomId={order?.prescription_room_id}
+          roomName={order?.prescription_room?.name}
           isDispenseStep={status === 'ready'}
           onConfirm={handleConfirmCompoundDeductions}
           onSaveOnly={handleSaveCompoundDeductionsOnly}

@@ -20,7 +20,19 @@ function formatOrderDate(value?: string) {
   return date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-export function createColumns(onDelete: (id: number) => void): ColumnDef<PurchaseOrder>[] {
+interface CreatePurchaseOrderColumnsOptions {
+  onDelete: (id: number) => void;
+  hasViewPermission: boolean;
+  hasEditPermission: boolean;
+  hasDeletePermission: boolean;
+}
+
+export function createColumns({
+  onDelete,
+  hasViewPermission,
+  hasEditPermission,
+  hasDeletePermission,
+}: CreatePurchaseOrderColumnsOptions): ColumnDef<PurchaseOrder>[] {
   return [
     {
       accessorKey: 'po_number',
@@ -39,9 +51,9 @@ export function createColumns(onDelete: (id: number) => void): ColumnDef<Purchas
       cell: ({ row }) => (
         <div>
           <p className="font-medium text-sm">{row.original.supplier?.name || '-'}</p>
-          {row.original.supplier?.phone && (
-            <p className="text-xs text-muted-foreground">{row.original.supplier.phone}</p>
-          )}
+          <p className="text-xs text-muted-foreground">
+            Tujuan: {row.original.destination_room?.name || 'Depo Farmasi'}
+          </p>
         </div>
       ),
     },
@@ -57,11 +69,27 @@ export function createColumns(onDelete: (id: number) => void): ColumnDef<Purchas
     {
       accessorKey: 'status',
       header: 'Status',
-      size: 170,
-      minSize: 140,
+      size: 160,
+      minSize: 130,
       cell: ({ row }) => {
         const s = STATUS_MAP[row.original.status] || { label: row.original.status, variant: 'secondary' as const };
         return <Badge variant={s.variant} className={s.className ? `rounded-none shadow-none ${s.className}` : 'rounded-none shadow-none'}>{s.label}</Badge>;
+      },
+    },
+    {
+      accessorKey: 'payment_status',
+      header: 'Pembayaran',
+      size: 140,
+      minSize: 120,
+      cell: ({ row }) => {
+        const ps = row.original.payment_status || 'unpaid';
+        if (ps === 'paid') {
+          return <Badge className="rounded-none shadow-none bg-emerald-600 text-white hover:bg-emerald-600">Lunas</Badge>;
+        }
+        if (ps === 'partial') {
+          return <Badge variant="outline" className="rounded-none shadow-none border-amber-500 text-amber-600">Sebagian</Badge>;
+        }
+        return <Badge variant="secondary" className="rounded-none shadow-none">Belum Lunas</Badge>;
       },
     },
     {
@@ -92,17 +120,23 @@ export function createColumns(onDelete: (id: number) => void): ColumnDef<Purchas
         const po = row.original;
         return (
           <div className="flex items-center justify-end gap-1">
-            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none" asChild>
-              <Link to={`/purchasing/${po.id}`}><Eye className="h-4 w-4" /></Link>
-            </Button>
+            {hasViewPermission && (
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none" asChild>
+                <Link to={`/purchasing/${po.id}`}><Eye className="h-4 w-4" /></Link>
+              </Button>
+            )}
             {po.status === 'draft' && (
               <>
-                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none" asChild>
-                  <Link to={`/purchasing/${po.id}/edit`}><Edit className="h-4 w-4" /></Link>
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none text-destructive hover:text-destructive" onClick={() => onDelete(po.id)}>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                {hasEditPermission && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none" asChild>
+                    <Link to={`/purchasing/${po.id}/edit`}><Edit className="h-4 w-4" /></Link>
+                  </Button>
+                )}
+                {hasDeletePermission && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none text-destructive hover:text-destructive" onClick={() => onDelete(po.id)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
               </>
             )}
           </div>

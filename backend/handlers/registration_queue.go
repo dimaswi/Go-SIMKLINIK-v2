@@ -57,23 +57,6 @@ func registrationQueueQuery() *gorm.DB {
 		Preload("Visit.Doctor")
 }
 
-func hasOtherActiveRegistrationQueue(date time.Time, excludeID uint) (bool, error) {
-	var count int64
-	query := database.DB.
-		Model(&models.RegistrationQueue{}).
-		Where("DATE(queue_date) = ? AND status IN ?", date.Format("2006-01-02"), []string{"called", "processing"})
-
-	if excludeID != 0 {
-		query = query.Where("id <> ?", excludeID)
-	}
-
-	if err := query.Count(&count).Error; err != nil {
-		return false, err
-	}
-
-	return count > 0, nil
-}
-
 func GetRegistrationQueues(c *gin.Context) {
 	var queues []models.RegistrationQueue
 	query := registrationQueueQuery().Order("ticket_number ASC")
@@ -265,15 +248,6 @@ func CreateRegistrationQueue(c *gin.Context) {
 
 func CallNextRegistrationQueue(c *gin.Context) {
 	today := time.Now().Format("2006-01-02")
-	hasActive, err := hasOtherActiveRegistrationQueue(time.Now(), 0)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if hasActive {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Masih ada tiket pendaftaran aktif yang belum selesai diproses"})
-		return
-	}
 
 	var queue models.RegistrationQueue
 	if err := registrationQueueQuery().
@@ -335,18 +309,6 @@ func UpdateRegistrationQueueStatus(c *gin.Context) {
 	now := time.Now()
 	updates := map[string]interface{}{
 		"status": req.Status,
-	}
-
-	if req.Status == "called" || req.Status == "processing" {
-		hasActive, err := hasOtherActiveRegistrationQueue(queue.QueueDate, queue.ID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		if hasActive {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Masih ada tiket pendaftaran aktif yang belum selesai diproses"})
-			return
-		}
 	}
 
 	switch req.Status {

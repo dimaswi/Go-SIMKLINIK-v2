@@ -23,7 +23,7 @@ export default function MedicineCreate() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [formData, setFormData] = useState({
     kfa_code: '', kfa_name: '',
-    name: '', generic_name: '', category_id: 0, unit_id: 0,
+    name: '', generic_name: '', category_id: 0, unit_id: 0, large_unit_id: 0, conversion_factor: 1,
     type: 'generic', form: '', strength: '', manufacturer: '',
     min_stock: 10, current_stock: 0, purchase_price: 0, selling_price: 0, is_active: true,
   });
@@ -42,7 +42,10 @@ export default function MedicineCreate() {
     try {
       await medicinesApi.create({
         ...formData,
-        category_id: Number(formData.category_id), unit_id: Number(formData.unit_id),
+        category_id: Number(formData.category_id),
+        unit_id: Number(formData.unit_id),
+        large_unit_id: formData.large_unit_id ? Number(formData.large_unit_id) : null,
+        conversion_factor: formData.large_unit_id ? Math.max(1, Number(formData.conversion_factor) || 1) : 1,
         min_stock: Number(formData.min_stock), current_stock: Number(formData.current_stock),
         purchase_price: Number(formData.purchase_price), selling_price: Number(formData.selling_price),
       });
@@ -140,16 +143,52 @@ export default function MedicineCreate() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs font-medium">Satuan</Label>
+                  <Label className="text-xs font-medium">Satuan Terkecil *</Label>
                   <SearchableSelect
                     options={units.map(u => ({ value: String(u.id), label: u.name }))}
                     value={formData.unit_id ? String(formData.unit_id) : ''}
                     onValueChange={v => setFormData({ ...formData, unit_id: Number(v) })}
-                    placeholder="Pilih satuan"
+                    placeholder="Pilih satuan terkecil"
                     searchPlaceholder="Cari satuan..."
                     square
                     className="h-9 text-xs rounded-none"
                   />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Satuan Besar (Opsional)</Label>
+                  <SearchableSelect
+                    options={units.map(u => ({ value: String(u.id), label: u.name }))}
+                    value={formData.large_unit_id ? String(formData.large_unit_id) : ''}
+                    onValueChange={v => setFormData({
+                      ...formData,
+                      large_unit_id: Number(v) || 0,
+                      conversion_factor: Number(v) ? Math.max(1, formData.conversion_factor || 1) : 1,
+                    })}
+                    noneLabel="Tidak ada satuan besar"
+                    placeholder="Misal: Box / Dus"
+                    searchPlaceholder="Cari satuan besar..."
+                    square
+                    className="h-9 text-xs rounded-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="conversion_factor" className="text-xs font-medium">
+                    Isi per Satuan Besar
+                  </Label>
+                  <Input
+                    id="conversion_factor"
+                    type="number"
+                    min={1}
+                    disabled={!formData.large_unit_id}
+                    value={formData.conversion_factor}
+                    onChange={e => setFormData({ ...formData, conversion_factor: Math.max(1, Number(e.target.value) || 1) })}
+                    className="h-9 text-xs rounded-none"
+                  />
+                  {formData.large_unit_id > 0 && (
+                    <p className="text-[11px] text-muted-foreground">
+                      1 {units.find(u => u.id === formData.large_unit_id)?.name || 'Satuan Besar'} = {formData.conversion_factor} {units.find(u => u.id === formData.unit_id)?.name || 'Satuan Kecil'}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs font-medium">Tipe</Label>
@@ -192,9 +231,9 @@ export default function MedicineCreate() {
 
             <div className="space-y-2.5">
               <div className="border-b border-border/60 pb-1">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Stok & Harga</span>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Batas Minimum &amp; Harga</span>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="space-y-1">
                   <Label htmlFor="min_stock" className="text-xs font-medium">Stok Min.</Label>
                   <Input
@@ -203,17 +242,6 @@ export default function MedicineCreate() {
                     min="0"
                     value={formData.min_stock}
                     onChange={e => setFormData({ ...formData, min_stock: Number(e.target.value) })}
-                    className="h-9 text-xs rounded-none"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="current_stock" className="text-xs font-medium">Stok Saat Ini</Label>
-                  <Input
-                    id="current_stock"
-                    type="number"
-                    min="0"
-                    value={formData.current_stock}
-                    onChange={e => setFormData({ ...formData, current_stock: Number(e.target.value) })}
                     className="h-9 text-xs rounded-none"
                   />
                 </div>

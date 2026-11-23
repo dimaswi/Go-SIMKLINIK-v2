@@ -91,12 +91,36 @@ func PrintMedicalResumeVisit(c *gin.Context) {
 	c.Data(http.StatusOK, "application/pdf", pdfBytes)
 }
 
+func isMedicalResumeSuratRecord(record models.MedicalRecord) bool {
+	if inferSuratTypeFromEntryGroupKey(record.EntryGroupKey) != "" {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(record.Disposition)) {
+	case "surat_diterbitkan", "surat_ditunda", "surat_tidak_diterbitkan":
+		return true
+	}
+	return false
+}
+
+func isRawISODateString(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) != 10 {
+		return false
+	}
+	_, err := time.Parse("2006-01-02", trimmed)
+	return err == nil
+}
+
 func buildMedicalResumePrintViewData(c *gin.Context, visit models.Visit, records []models.MedicalRecord, odontogramEntries []models.OdontogramEntry) medicalResumePrintViewData {
 	generatedAt := time.Now()
 	activeRecords := filterPrintableMedicalResumeRecords(records)
 	sectionRecords := make(map[string]*models.MedicalRecord, 4)
 	for index := range activeRecords {
 		record := &activeRecords[index]
+		// Abaikan entri surat (surat sakit/sehat/mcu/buta warna/rujukan) agar tidak menimpa assessment & outcome klinis kunjungan!
+		if isMedicalResumeSuratRecord(*record) {
+			continue
+		}
 		sectionRecords[normalizeMedicalRecordSection(record.SectionType)] = record
 	}
 
@@ -137,29 +161,67 @@ func buildMedicalResumePrintViewData(c *gin.Context, visit models.Visit, records
 
 func renderMedicalResumePDF(hospitalInfo initialAssessmentHospitalInfo, data medicalResumePrintViewData) ([]byte, string, error) {
 	pdf := newInitialAssessmentStyledPDF("Resume Medis", data.PrintedBy, data.GeneratedAt)
-	beginInitialAssessmentStyledSection(pdf, hospitalInfo, "RESUME MEDIS", fallbackText(data.Visit.VisitNumber))
+	beginInitialAssessmentStyledSection(pdf, hospitalInfo, "RESUME MEDIS", "No. Kunjungan : "+fallbackText(data.Visit.VisitNumber))
 	tteSignature := loadTTESignedSignatureByDocumentKeyWithBaseURL(fmt.Sprintf("resume_medis:visit:%d", data.Visit.ID), data.ValidationBaseURL)
 
-	addInitialAssessmentFieldSection(pdf, "INFORMASI DOKUMEN", filterMedicalResumeFields(data.DocumentFields), "Informasi dokumen tidak tersedia.")
-	addInitialAssessmentFieldSection(pdf, "DATA PASIEN", filterMedicalResumeFields(data.PatientFields), "Data pasien tidak tersedia.")
-	addInitialAssessmentFieldSection(pdf, "DATA KUNJUNGAN", filterMedicalResumeFields(data.VisitFields), "Data kunjungan tidak tersedia.")
-	addInitialAssessmentFieldSection(pdf, "ANAMNESIS", filterMedicalResumeFields(data.AnamnesisFields), "Tidak ada ringkasan anamnesis.")
-	addInitialAssessmentFieldSection(pdf, "PEMERIKSAAN FISIK", filterMedicalResumeFields(data.PhysicalExamFields), "Tidak ada ringkasan pemeriksaan fisik.")
-	addInitialAssessmentFieldSection(pdf, "ASSESSMENT DAN RENCANA", filterMedicalResumeFields(data.AssessmentFields), "Tidak ada ringkasan assessment.")
-	addInitialAssessmentDiagnosisSection(pdf, data.Diagnoses)
-	addInitialAssessmentFieldSection(pdf, "PEMULANGAN DAN TINDAK LANJUT", filterMedicalResumeFields(data.OutcomeFields), "Outcome finalisasi belum tersedia.")
+	// 1. Blok Identitas Pasien & Kunjungan Terpadu (2 kolom rapat standar RS Indonesia)
+	extraMeta := make([]initialAssessmentPrintField, 0, 3)
+	for _, field := range data.DocumentFields {
+		switch field.Label {
+		case "Status Kunjungan", "Tanggal Finalisasi", "Outcome Akhir":
+			extraMeta = append(extraMeta, field)
+		}
+	}
+	identityFields := mergePatientVisitPrintFields(data.Visit.Patient, data.Visit, extraMeta...)
+	addInitialAssessmentCompactFieldSection(pdf, "IDENTITAS PASIEN & KUNJUNGAN", identityFields, "Data pasien tidak tersedia.")
 
+	// 2. Anamnesis
+	if anamnesis := filterMedicalResumeFields(data.AnamnesisFields); len(anamnesis) > 0 {
+		addInitialAssessmentCompactFieldSection(pdf, "ANAMNESIS", anamnesis, "")
+	}
+
+	// 3. Pemeriksaan Fisik & Tanda Vital
+	if phys := filterMedicalResumeFields(data.PhysicalExamFields); len(phys) > 0 {
+		addInitialAssessmentCompactFieldSection(pdf, "PEMERIKSAAN FISIK & TANDA VITAL", phys, "")
+	}
+
+	// 4. Diagnosis (Tabel Ringkas ICD-10)
+	if len(data.Diagnoses) > 0 {
+		addInitialAssessmentDiagnosisSection(pdf, data.Diagnoses)
+	}
+
+	// 5. Assessment & Rencana Terapi
+	if assessment := filterMedicalResumeFields(data.AssessmentFields); len(assessment) > 0 {
+		addInitialAssessmentCompactFieldSection(pdf, "ASSESSMENT & RENCANA", assessment, "")
+	}
+
+	// 6. Tindakan, Resep, Penunjang & Odontogram — hanya cetak bagian yang memiliki data agar hemat halaman & bersih
+	if len(data.ProcedureRows) > 0 {
+		addSupportingOrderResultTable(pdf, "TINDAKAN & PROSEDUR", buildMedicalResumeProcedureColumns(), data.ProcedureRows, "")
+	}
+	if len(data.PharmacyRows) > 0 {
+		addSupportingOrderResultTable(pdf, "TERAPI / RESEP OBAT", buildMedicalResumePharmacyColumns(), data.PharmacyRows, "")
+	}
+	if len(data.LaboratoryRows) > 0 {
+		addSupportingOrderResultTable(pdf, "PEMERIKSAAN LABORATORIUM", buildMedicalResumeLaboratoryColumns(), data.LaboratoryRows, "")
+	}
+	if len(data.RadiologyRows) > 0 {
+		addSupportingOrderResultTable(pdf, "PEMERIKSAAN RADIOLOGI", buildMedicalResumeRadiologyColumns(), data.RadiologyRows, "")
+	}
 	if len(data.PhysicalExamImageSummaries) > 0 {
-		addMedicalResumeNarrativeSection(pdf, "GAMBAR PEMERIKSAAN FISIK", data.PhysicalExamImageSummaries, "Tidak ada ringkasan gambar pemeriksaan fisik.")
+		addMedicalResumeNarrativeSection(pdf, "GAMBAR PEMERIKSAAN FISIK", data.PhysicalExamImageSummaries, "")
 	}
-	addSupportingOrderResultTable(pdf, "TINDAKAN DAN PROSEDUR", buildMedicalResumeProcedureColumns(), data.ProcedureRows, "Tidak ada tindakan tercatat.")
-	addSupportingOrderResultTable(pdf, "RESEP DAN FARMASI", buildMedicalResumePharmacyColumns(), data.PharmacyRows, "Tidak ada resep aktif.")
-	addSupportingOrderResultTable(pdf, "LABORATORIUM", buildMedicalResumeLaboratoryColumns(), data.LaboratoryRows, "Tidak ada order laboratorium.")
-	addSupportingOrderResultTable(pdf, "RADIOLOGI", buildMedicalResumeRadiologyColumns(), data.RadiologyRows, "Tidak ada order radiologi.")
 	if len(data.ConsentSummaries) > 0 {
-		addMedicalResumeNarrativeSection(pdf, "INFORMED CONSENT", data.ConsentSummaries, "Tidak ada informed consent tercatat.")
+		addMedicalResumeNarrativeSection(pdf, "INFORMED CONSENT", data.ConsentSummaries, "")
 	}
-	addSupportingOrderResultTable(pdf, "ODONTOGRAM", buildMedicalResumeOdontogramColumns(), data.OdontogramRows, "Tidak ada odontogram tercatat.")
+	if len(data.OdontogramRows) > 0 {
+		addSupportingOrderResultTable(pdf, "ODONTOGRAM", buildMedicalResumeOdontogramColumns(), data.OdontogramRows, "")
+	}
+
+	// 7. Pemulangan & Tindak Lanjut
+	if outcome := filterMedicalResumeFields(data.OutcomeFields); len(outcome) > 0 {
+		addInitialAssessmentCompactFieldSection(pdf, "PEMULANGAN & TINDAK LANJUT", outcome, "")
+	}
 
 	addOrderPrintSignatureSectionWithTTE(pdf, hospitalInfo, data.GeneratedAt, "Pasien / Keluarga", data.Visit.Patient.FullName, "Dokter Pemeriksa", data.Visit.Doctor.FullName, tteSignature)
 
@@ -237,7 +299,17 @@ func buildMedicalResumeOutcomeFields(record *models.MedicalRecord) []initialAsse
 
 	followUpAt := "-"
 	if record.FollowUpAt != nil && !record.FollowUpAt.IsZero() {
-		followUpAt = formatDateTimeIndonesian(*record.FollowUpAt)
+		followUpAt = formatVisitDateForPrint(*record.FollowUpAt)
+	}
+
+	referralDest := fallbackText(record.ReferralDestination)
+	referralReason := fallbackText(record.ReferralReason)
+	// Lindungi agar tanggal masa berlaku surat (YYYY-MM-DD) tidak pernah tampil sebagai Tujuan/Alasan Rujukan
+	if isRawISODateString(referralDest) {
+		referralDest = "-"
+	}
+	if isRawISODateString(referralReason) {
+		referralReason = "-"
 	}
 
 	return []initialAssessmentPrintField{
@@ -245,8 +317,8 @@ func buildMedicalResumeOutcomeFields(record *models.MedicalRecord) []initialAsse
 		{Label: "Kondisi Pulang", Value: fallbackText(record.DischargeCondition)},
 		{Label: "Instruksi Tindak Lanjut", Value: fallbackText(record.FollowUpInstruction)},
 		{Label: "Jadwal Kontrol", Value: followUpAt},
-		{Label: "Tujuan Rujukan", Value: fallbackText(record.ReferralDestination)},
-		{Label: "Alasan Rujukan", Value: fallbackText(record.ReferralReason)},
+		{Label: "Tujuan Rujukan", Value: referralDest},
+		{Label: "Alasan Rujukan", Value: referralReason},
 		{Label: "Catatan Final", Value: fallbackText(record.Notes)},
 	}
 }
@@ -334,7 +406,7 @@ func buildMedicalResumePrescriptionSummaries(records []models.MedicalRecord) []s
 func buildMedicalResumePharmacyRows(records []models.MedicalRecord) []supportingOrderResultTableRow {
 	rows := make([]supportingOrderResultTableRow, 0)
 	for _, record := range records {
-		recordTime := formatDateTimeIndonesian(resolveMedicalResumeRecordTime(record))
+		recordTime := resolveMedicalResumeRecordTime(record).Format("02/01/2006 15:04")
 		for _, prescription := range record.Prescriptions {
 			rows = append(rows, supportingOrderResultTableRow{Values: []string{
 				recordTime,
@@ -411,7 +483,7 @@ func buildMedicalResumeLaboratorySummaries(records []models.MedicalRecord) []str
 func buildMedicalResumeLaboratoryRows(records []models.MedicalRecord) []supportingOrderResultTableRow {
 	rows := make([]supportingOrderResultTableRow, 0)
 	for _, record := range records {
-		recordTime := formatDateTimeIndonesian(resolveMedicalResumeRecordTime(record))
+		recordTime := resolveMedicalResumeRecordTime(record).Format("02/01/2006 15:04")
 		status := supportingOrderWorkflowStatusLabel(record.LaboratoryWorkflowStatus)
 		for _, item := range record.LaboratoryOrderItems {
 			parameterResults := make([]string, 0, len(item.ParameterResults))
@@ -471,7 +543,7 @@ func buildMedicalResumeRadiologySummaries(records []models.MedicalRecord) []stri
 func buildMedicalResumeRadiologyRows(records []models.MedicalRecord) []supportingOrderResultTableRow {
 	rows := make([]supportingOrderResultTableRow, 0)
 	for _, record := range records {
-		recordTime := formatDateTimeIndonesian(resolveMedicalResumeRecordTime(record))
+		recordTime := resolveMedicalResumeRecordTime(record).Format("02/01/2006 15:04")
 		status := supportingOrderWorkflowStatusLabel(record.RadiologyWorkflowStatus)
 		for _, item := range record.RadiologyOrderItems {
 			rows = append(rows, supportingOrderResultTableRow{Values: []string{
@@ -520,7 +592,7 @@ func buildMedicalResumeProcedureSummaries(records []models.MedicalRecord) []stri
 func buildMedicalResumeProcedureRows(records []models.MedicalRecord) []supportingOrderResultTableRow {
 	rows := make([]supportingOrderResultTableRow, 0)
 	for _, record := range records {
-		recordTime := formatDateTimeIndonesian(resolveMedicalResumeRecordTime(record))
+		recordTime := resolveMedicalResumeRecordTime(record).Format("02/01/2006 15:04")
 		for _, action := range record.Actions {
 			rows = append(rows, supportingOrderResultTableRow{Values: []string{
 				recordTime,
@@ -610,7 +682,7 @@ func buildMedicalResumeOdontogramRows(entries []models.OdontogramEntry) []suppor
 		if entryTime.IsZero() {
 			entryTime = entry.UpdatedAt
 		}
-		formattedTime := formatDateTimeIndonesian(entryTime)
+		formattedTime := entryTime.Format("02/01/2006 15:04")
 		chartLabel := medicalResumeOdontogramChartLabel(entry.ChartType)
 		for _, tooth := range entry.Teeth {
 			surfaceText := buildOdontogramSurfaceText(tooth.SurfaceFindings)
@@ -633,68 +705,79 @@ func buildMedicalResumeOdontogramRows(entries []models.OdontogramEntry) []suppor
 
 func addMedicalResumeNarrativeSection(pdf *gofpdf.Fpdf, title string, items []string, emptyMessage string) {
 	addInitialAssessmentSectionTitle(pdf, title)
+	left, _, right, _ := pdf.GetMargins()
+	pageWidth, _ := pdf.GetPageSize()
+	contentWidth := pageWidth - left - right
+	boxStartY := pdf.GetY()
+	pdf.SetY(boxStartY + 1.2)
+
 	if len(items) == 0 {
 		addInitialAssessmentFullWidthRow(pdf, firstNonEmpty(emptyMessage, "Tidak ada data."), false)
-		addInitialAssessmentSectionSpacing(pdf)
-		return
+	} else {
+		for index, item := range items {
+			addInitialAssessmentFullWidthRow(pdf, fmt.Sprintf("%d. %s", index+1, firstNonEmpty(item, "-")), false)
+		}
 	}
 
-	for index, item := range items {
-		addInitialAssessmentFullWidthRow(pdf, fmt.Sprintf("%d. %s", index+1, firstNonEmpty(item, "-")), false)
-	}
+	boxEndY := pdf.GetY() + 1.2
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.25)
+	pdf.Rect(left, boxStartY, contentWidth, boxEndY-boxStartY, "D")
+	pdf.SetLineWidth(0.2)
+	pdf.SetY(boxEndY)
 	addInitialAssessmentSectionSpacing(pdf)
 }
 
 func buildMedicalResumePharmacyColumns() []supportingOrderResultTableColumn {
 	return []supportingOrderResultTableColumn{
-		{Title: "Waktu", WidthRatio: 0.14, Align: "L"},
+		{Title: "Waktu", WidthRatio: 0.16, Align: "C"},
 		{Title: "Jenis", WidthRatio: 0.07, Align: "C"},
-		{Title: "Item", WidthRatio: 0.23, Align: "L"},
-		{Title: "Qty", WidthRatio: 0.11, Align: "L"},
-		{Title: "Aturan", WidthRatio: 0.18, Align: "L"},
-		{Title: "Keterangan", WidthRatio: 0.27, Align: "L"},
+		{Title: "Item", WidthRatio: 0.22, Align: "L"},
+		{Title: "Qty", WidthRatio: 0.11, Align: "C"},
+		{Title: "Aturan", WidthRatio: 0.20, Align: "L"},
+		{Title: "Keterangan", WidthRatio: 0.24, Align: "L"},
 	}
 }
 
 func buildMedicalResumeLaboratoryColumns() []supportingOrderResultTableColumn {
 	return []supportingOrderResultTableColumn{
-		{Title: "Waktu", WidthRatio: 0.14, Align: "L"},
+		{Title: "Waktu", WidthRatio: 0.16, Align: "C"},
 		{Title: "Pemeriksaan", WidthRatio: 0.20, Align: "L"},
 		{Title: "Status", WidthRatio: 0.10, Align: "C"},
-		{Title: "Instruksi", WidthRatio: 0.16, Align: "L"},
+		{Title: "Instruksi", WidthRatio: 0.15, Align: "L"},
 		{Title: "Hasil", WidthRatio: 0.22, Align: "L"},
-		{Title: "Catatan", WidthRatio: 0.18, Align: "L"},
+		{Title: "Catatan", WidthRatio: 0.17, Align: "L"},
 	}
 }
 
 func buildMedicalResumeRadiologyColumns() []supportingOrderResultTableColumn {
 	return []supportingOrderResultTableColumn{
-		{Title: "Waktu", WidthRatio: 0.14, Align: "L"},
+		{Title: "Waktu", WidthRatio: 0.16, Align: "C"},
 		{Title: "Pemeriksaan", WidthRatio: 0.18, Align: "L"},
 		{Title: "Status", WidthRatio: 0.10, Align: "C"},
 		{Title: "Instruksi", WidthRatio: 0.14, Align: "L"},
-		{Title: "Hasil Ringkas", WidthRatio: 0.28, Align: "L"},
+		{Title: "Hasil Ringkas", WidthRatio: 0.26, Align: "L"},
 		{Title: "Catatan", WidthRatio: 0.16, Align: "L"},
 	}
 }
 
 func buildMedicalResumeProcedureColumns() []supportingOrderResultTableColumn {
 	return []supportingOrderResultTableColumn{
-		{Title: "Waktu", WidthRatio: 0.14, Align: "L"},
+		{Title: "Waktu", WidthRatio: 0.16, Align: "C"},
 		{Title: "Tindakan", WidthRatio: 0.20, Align: "L"},
 		{Title: "Target", WidthRatio: 0.16, Align: "L"},
-		{Title: "Parameter", WidthRatio: 0.28, Align: "L"},
+		{Title: "Parameter", WidthRatio: 0.26, Align: "L"},
 		{Title: "Catatan", WidthRatio: 0.22, Align: "L"},
 	}
 }
 
 func buildMedicalResumeOdontogramColumns() []supportingOrderResultTableColumn {
 	return []supportingOrderResultTableColumn{
-		{Title: "Waktu", WidthRatio: 0.15, Align: "L"},
+		{Title: "Waktu", WidthRatio: 0.16, Align: "C"},
 		{Title: "Chart", WidthRatio: 0.11, Align: "L"},
 		{Title: "Gigi", WidthRatio: 0.08, Align: "C"},
 		{Title: "Kondisi", WidthRatio: 0.16, Align: "L"},
-		{Title: "Temuan / Catatan", WidthRatio: 0.50, Align: "L"},
+		{Title: "Temuan / Catatan", WidthRatio: 0.49, Align: "L"},
 	}
 }
 
@@ -792,18 +875,24 @@ func buildMedicalResumePrescriptionQuantityLine(quantity int, unitName string) s
 func buildMedicalResumeRegimenLine(dosage string, frequency string, duration string, route string) string {
 	parts := make([]string, 0, 4)
 	if trimmed := strings.TrimSpace(dosage); trimmed != "" {
-		parts = append(parts, "dosis "+trimmed)
+		parts = append(parts, trimmed)
 	}
 	if trimmed := strings.TrimSpace(frequency); trimmed != "" {
-		parts = append(parts, "frekuensi "+trimmed)
+		parts = append(parts, trimmed)
 	}
 	if trimmed := strings.TrimSpace(duration); trimmed != "" {
-		parts = append(parts, "durasi "+trimmed)
+		parts = append(parts, trimmed)
 	}
+	line := strings.Join(parts, ", ")
 	if trimmed := strings.TrimSpace(route); trimmed != "" {
-		parts = append(parts, "rute "+trimmed)
+		routeLabel := humanizeSnakeCaseIndonesian(trimmed)
+		if line != "" {
+			line += " (" + routeLabel + ")"
+		} else {
+			line = routeLabel
+		}
 	}
-	return strings.Join(parts, ", ")
+	return line
 }
 
 func buildMedicalResumeCompoundOutputLine(compound models.PrescriptionCompound) string {
@@ -928,18 +1017,34 @@ func medicalResumeVisitStatusLabel(value string) string {
 
 func medicalResumeDispositionLabel(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "kontrol":
-		return "Kontrol ulang"
-	case "rujuk":
+	case "", "-":
+		return "-"
+	case "kontrol", "kontrol_ulang":
+		return "Kontrol Ulang"
+	case "rujuk", "dirujuk":
 		return "Rujuk"
 	case "observasi":
 		return "Observasi"
 	case "rawat_inap":
 		return "Rawat Inap"
-	case "rawat_jalan":
+	case "rawat_jalan", "pulang", "pulang_berobat_jalan":
 		return "Pulang / Rawat Jalan"
+	case "sembuh":
+		return "Sembuh"
+	case "membaik":
+		return "Membaik"
+	case "aps", "pulang_paksa":
+		return "Pulang Atas Permintaan Sendiri"
+	case "meninggal":
+		return "Meninggal"
+	case "surat_diterbitkan":
+		return "Surat Diterbitkan"
+	case "surat_ditunda":
+		return "Surat Ditunda"
+	case "surat_tidak_diterbitkan":
+		return "Surat Tidak Diterbitkan"
 	default:
-		return fallbackText(value)
+		return humanizeSnakeCaseIndonesian(value)
 	}
 }
 

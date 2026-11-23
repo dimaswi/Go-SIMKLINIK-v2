@@ -9,7 +9,9 @@ import { useToast } from '@/hooks/use-toast';
 import {
   informedConsentsApi,
   medicalRecordsApi,
+  type CreateInformedConsentPayload,
   type FinalizeVisitPayload,
+  type InformedConsent,
   type MedicalActionMutationPayload,
   type MedicalRecord,
   type MedicalRecordSectionType,
@@ -75,6 +77,7 @@ export default function EMRSheetPage() {
     medicineList,
     serviceList,
     physicalExamImageList,
+    apotekRoomList,
     loading: loadingReferences,
     error: referenceError,
   } = useEmrReferences(visitId);
@@ -285,6 +288,14 @@ export default function EMRSheetPage() {
 
   const saveAndSubmitPrescriptionOrder = async () => {
     if (!selectedRecord) return;
+    if (draft.prescription_fulfillment_mode === 'internal' && !draft.prescription_room_id) {
+      toast({
+        variant: 'destructive',
+        title: 'Ruangan apotek belum dipilih',
+        description: 'Pilih ruangan berjenis Apotek terlebih dahulu sebelum mengirim order internal farmasi.',
+      });
+      return;
+    }
 
     setSubmittingPrescriptionOrder(true);
     try {
@@ -904,6 +915,31 @@ export default function EMRSheetPage() {
     }
   };
 
+  const createInformedConsent = async (payload: CreateInformedConsentPayload): Promise<InformedConsent | null> => {
+    try {
+      const response = await informedConsentsApi.create(payload);
+      const createdConsent = response.data.data;
+      if (response.data.medical_record) {
+        upsertRecord(response.data.medical_record);
+      } else {
+        patchRecord(createdConsent.medical_record_id, (record) => ({
+          ...record,
+          informed_consents: [createdConsent, ...(record.informed_consents || []).filter((c) => c.id !== createdConsent.id)],
+        }));
+      }
+      if (response.data.created_new_record) {
+        updateVisit((currentVisit) =>
+          currentVisit ? { ...currentVisit, status: 'in_progress', queue_status: 'in_consultation' } : currentVisit
+        );
+      }
+      toast({ variant: 'success', title: 'Entri informed consent berhasil ditambahkan' });
+      return createdConsent;
+    } catch (requestError: any) {
+      toast({ variant: 'destructive', title: 'Gagal membuat informed consent', description: requestError.response?.data?.error });
+      return null;
+    }
+  };
+
   const updateInformedConsent = async (consentId: number, payload: UpdateInformedConsentPayload) => {
     try {
       const response = await informedConsentsApi.update(consentId, payload);
@@ -912,9 +948,28 @@ export default function EMRSheetPage() {
         ...record,
         informed_consents: [updatedConsent, ...(record.informed_consents || []).filter((consent) => consent.id !== updatedConsent.id)],
       }));
-      toast({ title: 'Informed consent berhasil disimpan' });
+      toast({ variant: 'success', title: 'Informed consent berhasil disimpan' });
     } catch (requestError: any) {
       toast({ variant: 'destructive', title: 'Gagal menyimpan informed consent', description: requestError.response?.data?.error });
+      throw requestError;
+    }
+  };
+
+  const deleteInformedConsent = async (consentId: number) => {
+    try {
+      const response = await informedConsentsApi.delete(consentId);
+      const targetRecordId = response.data.medical_record_id;
+      if (targetRecordId) {
+        patchRecord(targetRecordId, (record) => ({
+          ...record,
+          informed_consents: (record.informed_consents || []).filter((consent) => consent.id !== consentId),
+        }));
+      } else {
+        await reload();
+      }
+      toast({ variant: 'success', title: 'Informed consent berhasil dihapus' });
+    } catch (requestError: any) {
+      toast({ variant: 'destructive', title: 'Gagal menghapus informed consent', description: requestError.response?.data?.error });
       throw requestError;
     }
   };
@@ -1023,7 +1078,9 @@ export default function EMRSheetPage() {
     return (
       <InformedConsentSheetPage
         visit={visit}
-        consents={collectVisitInformedConsents(getRecordsForSheetSections(recordsBySection, activeSheetConfig.sections))}
+        records={records}
+        serviceList={serviceList}
+        consents={collectVisitInformedConsents(records)}
         completedSections={completedSections}
         allergyInfo={allergyInfo}
         workspaceLocked={Boolean(workspaceLocked)}
@@ -1034,7 +1091,9 @@ export default function EMRSheetPage() {
         onPrintControlLetter={printControlLetter}
         showControlLetter={controlLetterAvailable}
         printingControlLetter={printingControlLetter}
+        onCreateConsent={createInformedConsent}
         onUpdateConsent={updateInformedConsent}
+        onDeleteConsent={deleteInformedConsent}
         onPrintMedicalResume={printMedicalResume}
         printingMedicalResume={printingResumeMedical}
         onCancelFinalization={cancelFinalization}
@@ -1242,6 +1301,7 @@ export default function EMRSheetPage() {
                       medicineList={medicineList}
                       serviceList={serviceList}
                       physicalExamImageList={physicalExamImageList}
+                      apotekRoomList={apotekRoomList}
                       onAddDiagnosis={addDiagnosis}
                       onDeleteDiagnosis={deleteDiagnosis}
                       onAddPrescription={addPrescription}
@@ -1354,6 +1414,7 @@ export default function EMRSheetPage() {
                               medicineList={medicineList}
                               serviceList={serviceList}
                               physicalExamImageList={physicalExamImageList}
+                              apotekRoomList={apotekRoomList}
                               onAddDiagnosis={addDiagnosis}
                               onDeleteDiagnosis={deleteDiagnosis}
                               onAddPrescription={addPrescription}

@@ -13,6 +13,9 @@ type Polyclinic struct {
 	DeletedAt                     gorm.DeletedAt `gorm:"index" json:"-"`
 	Name                          string         `gorm:"not null;size:100" json:"name"`
 	Code                          string         `gorm:"uniqueIndex;not null;size:20" json:"code"`
+	RoomType                      string         `gorm:"size:30;default:'poliklinik';index" json:"room_type"`
+	IsDefaultDepo                 bool           `gorm:"default:false" json:"is_default_depo"`
+	IsDefaultApotek               bool           `gorm:"default:false" json:"is_default_apotek"`
 	Description                   string         `gorm:"size:255" json:"description"`
 	AdminFee                      float64        `gorm:"default:0" json:"admin_fee"`
 	IsActive                      bool           `gorm:"default:true" json:"is_active"`

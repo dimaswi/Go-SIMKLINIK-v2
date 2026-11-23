@@ -4,6 +4,15 @@ import { Badge } from "@/components/ui/badge"
 import { Eye, Edit, Trash2, ArrowUpDown } from "lucide-react"
 import type { Polyclinic } from "@/lib/api"
 
+const ROOM_TYPE_LABELS: Record<string, string> = {
+  poliklinik: 'Poliklinik',
+  depo: 'Depo Farmasi',
+  apotek: 'Ruangan Apotek',
+  radiologi: 'Radiologi',
+  laboratorium: 'Laboratorium',
+  lainnya: 'Ruang Lainnya',
+}
+
 const currencyFormatter = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 })
 
 interface PolyclinicColumnsProps {
@@ -28,7 +37,7 @@ export function createPolyclinicColumns({
       accessorKey: "name",
       header: ({ column }) => (
         <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} className="h-8 p-0 hover:bg-transparent">
-          Nama Poliklinik
+          Nama Ruangan
           <ArrowUpDown className="ml-2 h-4 w-4" />
         </Button>
       ),
@@ -37,12 +46,32 @@ export function createPolyclinicColumns({
         return (
           <div className="flex items-center gap-3">
             <div className="flex items-center justify-center h-8 w-8 rounded-lg text-white text-xs font-bold" style={{ backgroundColor: poly.color || '#6B7280' }}>
-              {poly.code?.substring(0, 2) || 'P'}
+              {poly.code?.substring(0, 2) || 'R'}
             </div>
             <div className="flex flex-col">
               <span className="font-medium">{poly.name}</span>
               <span className="text-sm text-muted-foreground">{poly.code}</span>
             </div>
+          </div>
+        )
+      },
+    },
+    {
+      accessorKey: "room_type",
+      header: "Jenis Ruangan",
+      cell: ({ row }) => {
+        const roomType = row.original.room_type || 'poliklinik'
+        return (
+          <div className="flex flex-wrap items-center gap-1">
+            <Badge variant="outline" className="rounded-none text-[11px]">
+              {ROOM_TYPE_LABELS[roomType] || roomType}
+            </Badge>
+            {row.original.is_default_depo && (
+              <Badge variant="secondary" className="rounded-none text-[10px]">Default Depo</Badge>
+            )}
+            {row.original.is_default_apotek && (
+              <Badge variant="secondary" className="rounded-none text-[10px]">Default Apotek</Badge>
+            )}
           </div>
         )
       },

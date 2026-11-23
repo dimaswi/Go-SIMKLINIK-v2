@@ -83,16 +83,28 @@ func UploadLogo(c *gin.Context) {
 		return
 	}
 
-	// Get upload type (logo, favicon, or print logo)
+	// Get upload type (logo, favicon, print_logo, display_video, or display_ad)
 	uploadType := c.PostForm("type")
-	if uploadType != "logo" && uploadType != "favicon" && uploadType != "print_logo" {
+	if uploadType != "logo" && uploadType != "favicon" && uploadType != "print_logo" && uploadType != "display_video" && uploadType != "display_ad" {
 		uploadType = "logo"
 	}
 
 	// Validate file type
 	ext := strings.ToLower(filepath.Ext(file.Filename))
 	allowedExts := map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".ico": true, ".svg": true}
-	if !allowedExts[ext] {
+	if uploadType == "display_video" {
+		allowedExts = map[string]bool{".mp4": true, ".webm": true, ".mov": true}
+		if !allowedExts[ext] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid video file type. Allowed: mp4, webm, mov"})
+			return
+		}
+	} else if uploadType == "display_ad" {
+		allowedExts = map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".webp": true, ".gif": true}
+		if !allowedExts[ext] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid image file type. Allowed: png, jpg, jpeg, webp, gif"})
+			return
+		}
+	} else if !allowedExts[ext] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file type. Allowed: png, jpg, jpeg, ico, svg"})
 		return
 	}
@@ -114,9 +126,22 @@ func UploadLogo(c *gin.Context) {
 		return
 	}
 
+	fileURL := "/uploads/" + filename
+
+	// Multi-item ads store JSON list separately via UpdateSettings; return URL directly
+	if uploadType == "display_ad" {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Ad image uploaded successfully",
+			"url":     fileURL,
+		})
+		return
+	}
+
 	// Save to settings
 	settingKey := "app_" + uploadType
-	fileURL := "/uploads/" + filename
+	if uploadType == "display_video" {
+		settingKey = "display_video_url"
+	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 

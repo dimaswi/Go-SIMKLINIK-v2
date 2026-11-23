@@ -76,7 +76,7 @@ export default function MedicalServiceCreate() {
         setPolyclinics(pRes.data.data);
         setSpecimenTemplates(sRes.data.data);
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -232,19 +232,7 @@ export default function MedicalServiceCreate() {
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
-              <div className="flex items-center justify-between border border-border/70 p-2.5 bg-muted/10">
-                <div>
-                  <Label htmlFor="requires_consent" className="cursor-pointer text-xs font-medium">Informed Consent</Label>
-                  <p className="text-[11px] text-muted-foreground">Perlu persetujuan medis</p>
-                </div>
-                <Switch
-                  id="requires_consent"
-                  checked={formData.requires_consent}
-                  onCheckedChange={(checked) => setFormData({ ...formData, requires_consent: checked })}
-                />
-              </div>
-
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
               <div className="flex items-center justify-between border border-border/70 p-2.5 bg-muted/10">
                 <div>
                   <Label htmlFor="supports_odontogram_sync" className="cursor-pointer text-xs font-medium">Sinkron Odontogram</Label>

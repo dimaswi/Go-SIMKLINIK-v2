@@ -36,6 +36,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   AlertTriangle,
+  Banknote,
   ChevronDown,
   CreditCard,
   FileSpreadsheet,
@@ -178,7 +179,7 @@ export default function KasirDetailPage() {
     }
   };
 
-  const handlePrint = async (format: 'a4' | 'a5' | 'thermal' = 'a4') => {
+  const handlePrint = async (format: 'a4' | 'a5' | 'thermal' | 'kwitansi' = 'a4') => {
     try {
       const res = await billingApi.print(Number(id), format);
       const blob = new Blob([res.data as ArrayBuffer], { type: 'application/pdf' });
@@ -408,6 +409,14 @@ export default function KasirDetailPage() {
                   <div className="flex flex-col">
                     <span className="font-medium text-xs">Struk Thermal (80mm)</span>
                     <span className="text-[10px] text-muted-foreground">Printer struk kasir</span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => void handlePrint('kwitansi')} className="gap-2.5 cursor-pointer py-2">
+                  <Banknote className="h-4 w-4 text-violet-600 shrink-0" />
+                  <div className="flex flex-col">
+                    <span className="font-medium text-xs">Kwitansi Terbilang</span>
+                    <span className="text-[10px] text-muted-foreground">Tanpa rincian item + terbilang</span>
                   </div>
                 </DropdownMenuItem>
               </DropdownMenuContent>

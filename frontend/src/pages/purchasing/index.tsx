@@ -7,6 +7,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { purchaseOrdersApi, suppliersApi, type PurchaseOrder, type Supplier } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import { usePermission } from '@/hooks/usePermission';
 import { Loader2, Plus, RefreshCw, ShoppingCart } from 'lucide-react';
 import { setPageTitle } from '@/lib/page-title';
 import { createColumns } from './columns';
@@ -14,6 +15,7 @@ import { createColumns } from './columns';
 export default function PurchasingIndex() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { hasPermission } = usePermission();
   const [data, setData] = useState<PurchaseOrder[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,7 +62,12 @@ export default function PurchasingIndex() {
       .finally(() => { setDeleteDialogOpen(false); setDeleteId(null); });
   };
 
-  const columns = useMemo(() => createColumns((id) => { setDeleteId(id); setDeleteDialogOpen(true); }), []);
+  const columns = useMemo(() => createColumns({
+    onDelete: (id) => { setDeleteId(id); setDeleteDialogOpen(true); },
+    hasViewPermission: hasPermission('purchase_orders.view'),
+    hasEditPermission: hasPermission('purchase_orders.update'),
+    hasDeletePermission: hasPermission('purchase_orders.delete'),
+  }), [hasPermission]);
 
   const filteredData = useMemo(() => {
     if (!search.trim()) return data;
@@ -137,13 +144,15 @@ export default function PurchasingIndex() {
               Segarkan
             </Button>
 
-            <Button
-              className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
-              onClick={() => navigate('/purchasing/create')}
-            >
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
-              Buat PO
-            </Button>
+            {hasPermission('purchase_orders.create') && (
+              <Button
+                className="h-9 px-3 rounded-none text-xs shadow-none shrink-0"
+                onClick={() => navigate('/purchasing/create')}
+              >
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
+                Buat PO
+              </Button>
+            )}
           </div>
         </div>
 

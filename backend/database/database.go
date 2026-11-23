@@ -952,9 +952,13 @@ func Migrate() error {
 		&models.LabTestParameter{},
 
 		// Purchasing & Stock
+		&models.MedicineRoomStock{},
 		&models.PurchaseOrder{},
 		&models.PurchaseOrderItem{},
+		&models.PurchaseOrderPayment{},
 		&models.StockMovement{},
+		&models.StockRequest{},
+		&models.StockRequestItem{},
 
 		// Phase 2: Front Office
 		&models.Patient{},
@@ -962,6 +966,7 @@ func Migrate() error {
 		&models.QueueCounter{},
 		&models.Visit{},
 		&models.RegistrationQueue{},
+		&models.QueueCall{},
 
 		// Phase 3: EMR base tables
 		&models.MedicalRecord{},
@@ -1201,7 +1206,18 @@ func SeedData() error {
 		{Name: "purchase_orders.update", Module: "Pembelian", Category: "Purchase Orders", Description: "Update purchase orders", Actions: `["update"]`},
 		{Name: "purchase_orders.delete", Module: "Pembelian", Category: "Purchase Orders", Description: "Delete purchase orders", Actions: `["delete"]`},
 		{Name: "purchase_orders.receive", Module: "Pembelian", Category: "Purchase Orders", Description: "Receive purchase orders into stock", Actions: `["receive"]`},
+		{Name: "purchase_orders.pay", Module: "Pembelian", Category: "Purchase Orders", Description: "Record payments for purchase orders", Actions: `["pay"]`},
 		{Name: "stock_movements.view", Module: "Pembelian", Category: "Stock Movements", Description: "View stock movement history", Actions: `["read"]`},
+
+		{Name: "medicine_rooms.view", Module: "Master Data", Category: "Ruangan / Depo Obat", Description: "View medicine rooms and room stock", Actions: `["read"]`},
+		{Name: "medicine_rooms.create", Module: "Master Data", Category: "Ruangan / Depo Obat", Description: "Create medicine rooms", Actions: `["create"]`},
+		{Name: "medicine_rooms.update", Module: "Master Data", Category: "Ruangan / Depo Obat", Description: "Update medicine rooms", Actions: `["update"]`},
+		{Name: "medicine_rooms.delete", Module: "Master Data", Category: "Ruangan / Depo Obat", Description: "Delete medicine rooms", Actions: `["delete"]`},
+
+		{Name: "stock_requests.view", Module: "Pembelian", Category: "Permintaan Stok", Description: "View stock requests between rooms", Actions: `["read"]`},
+		{Name: "stock_requests.create", Module: "Pembelian", Category: "Permintaan Stok", Description: "Create stock requests to depo", Actions: `["create"]`},
+		{Name: "stock_requests.approve", Module: "Pembelian", Category: "Permintaan Stok", Description: "Approve or reject stock requests", Actions: `["approve"]`},
+		{Name: "stock_requests.delete", Module: "Pembelian", Category: "Permintaan Stok", Description: "Cancel or delete pending stock requests", Actions: `["delete"]`},
 
 		{Name: "icd10.view", Module: "Master Data", Category: "ICD10", Description: "View ICD-10 codes", Actions: `["read"]`},
 
@@ -1275,6 +1291,102 @@ func SeedData() error {
 		DB.Model(&userRole).Association("Permissions").Replace(limitedPermissions)
 	}
 
+	// Seed standard clinic roles with default permissions (only when role has no permissions yet)
+	roleSeeds := []struct {
+		Name        string
+		Description string
+		Permissions []string
+	}{
+		{
+			Name:        "petugas_farmasi",
+			Description: "Petugas Farmasi / Apotek untuk pelayanan resep dan permintaan stok ke depo",
+			Permissions: []string{
+				"profile.view", "profile.update", "dashboard.view",
+				"pharmacy.view", "pharmacy.process", "prescriptions.view", "prescriptions.process", "prescriptions.update",
+				"medical_records.view",
+				"medicines.view", "medicine_categories.view", "units.view",
+				"medicine_rooms.view",
+				"stock_requests.view", "stock_requests.create", "stock_requests.delete",
+				"stock_movements.view",
+			},
+		},
+		{
+			Name:        "petugas_depo",
+			Description: "Petugas Depo Farmasi untuk pembelian obat, manajemen stok, dan persetujuan mutasi stok",
+			Permissions: []string{
+				"profile.view", "profile.update", "dashboard.view",
+				"medicines.view", "medicines.create", "medicines.update", "medicines.delete",
+				"medicine_categories.view", "medicine_categories.create", "medicine_categories.update", "medicine_categories.delete",
+				"units.view", "units.create", "units.update", "units.delete",
+				"medicine_rooms.view",
+				"purchase_orders.view", "purchase_orders.create", "purchase_orders.update", "purchase_orders.delete", "purchase_orders.receive", "purchase_orders.pay",
+				"stock_requests.view", "stock_requests.create", "stock_requests.approve", "stock_requests.delete",
+				"stock_movements.view",
+			},
+		},
+		{
+			Name:        "perawat",
+			Description: "Perawat untuk pengkajian awal, tindakan medis, dan permintaan stok unit",
+			Permissions: []string{
+				"profile.view", "profile.update", "dashboard.view",
+				"patients.view", "doctors.view",
+				"medical_records.view", "medical_records.create", "medical_records.update",
+				"informed_consent.view", "informed_consent.create",
+				"icd10.view",
+				"stock_requests.view", "stock_requests.create",
+			},
+		},
+		{
+			Name:        "dokter",
+			Description: "Dokter untuk pemeriksaan pasien, diagnosa, resep, finalisasi EMR, dan TTE",
+			Permissions: []string{
+				"profile.view", "profile.update", "dashboard.view",
+				"patients.view", "doctors.view",
+				"medical_records.view", "medical_records.create", "medical_records.update", "medical_records.finalize",
+				"prescriptions.view", "prescriptions.create", "prescriptions.update",
+				"informed_consent.view", "informed_consent.create",
+				"document_signatures.view", "document_signatures.request", "document_signatures.approve",
+				"laboratory.view", "radiology.view", "icd10.view",
+			},
+		},
+		{
+			Name:        "pendaftaran",
+			Description: "Petugas Pendaftaran / Front Office untuk registrasi pasien, kunjungan, dan antrean",
+			Permissions: []string{
+				"profile.view", "profile.update", "dashboard.view",
+				"patients.view", "patients.create", "patients.update", "patients.delete",
+				"visits.view", "visits.create", "visits.update", "visits.delete",
+				"queue.view", "queue.manage", "doctors.view", "doctor_schedules.view",
+			},
+		},
+		{
+			Name:        "kasir",
+			Description: "Petugas Kasir untuk pengelolaan tagihan, pembayaran pasien, dan laporan kasir",
+			Permissions: []string{
+				"profile.view", "profile.update", "dashboard.view", "reports.view",
+				"invoices.view", "invoices.create", "invoices.update", "invoices.pay",
+				"patients.view", "visits.view",
+			},
+		},
+	}
+
+	for _, rs := range roleSeeds {
+		var role models.Role
+		if err := DB.Unscoped().Where("LOWER(name) = LOWER(?)", rs.Name).First(&role).Error; err != nil {
+			role = models.Role{
+				Name:        rs.Name,
+				Description: rs.Description,
+			}
+			if err := DB.Create(&role).Error; err == nil {
+				var rolePerms []models.Permission
+				DB.Where("name IN ?", rs.Permissions).Find(&rolePerms)
+				if len(rolePerms) > 0 {
+					DB.Model(&role).Association("Permissions").Replace(rolePerms)
+				}
+			}
+		}
+	}
+
 	// Create default admin user
 	var adminUser models.User
 	result := DB.Where(models.User{Email: "admin@simrs.com"}).FirstOrCreate(&adminUser, models.User{
@@ -1289,6 +1401,44 @@ func SeedData() error {
 		adminUser.HashPassword("admin123")
 		DB.Save(&adminUser)
 		log.Println("Default admin user created: admin@simrs.com / admin123")
+	}
+
+	// Create default users for each seeded role
+	userSeeds := []struct {
+		Email    string
+		Username string
+		FullName string
+		RoleName string
+		Password string
+	}{
+		{Email: "farmasi@simrs.com", Username: "farmasi", FullName: "Petugas Farmasi", RoleName: "petugas_farmasi", Password: "password123"},
+		{Email: "depo@simrs.com", Username: "depo", FullName: "Petugas Depo", RoleName: "petugas_depo", Password: "password123"},
+		{Email: "perawat@simrs.com", Username: "perawat", FullName: "Perawat Poli", RoleName: "perawat", Password: "password123"},
+		{Email: "dokter@simrs.com", Username: "dokter", FullName: "Dokter Klinik", RoleName: "dokter", Password: "password123"},
+		{Email: "pendaftaran@simrs.com", Username: "pendaftaran", FullName: "Petugas Pendaftaran", RoleName: "pendaftaran", Password: "password123"},
+		{Email: "kasir@simrs.com", Username: "kasir", FullName: "Petugas Kasir", RoleName: "kasir", Password: "password123"},
+	}
+
+	for _, us := range userSeeds {
+		var existingUser models.User
+		if err := DB.Unscoped().Where("email = ? OR username = ?", us.Email, us.Username).First(&existingUser).Error; err == nil {
+			continue
+		}
+		var role models.Role
+		if err := DB.Where("LOWER(name) = LOWER(?)", us.RoleName).First(&role).Error; err != nil {
+			continue
+		}
+		u := models.User{
+			Email:    us.Email,
+			Username: us.Username,
+			FullName: us.FullName,
+			IsActive: true,
+			RoleID:   role.ID,
+		}
+		u.HashPassword(us.Password)
+		if err := DB.Create(&u).Error; err == nil {
+			log.Printf("Default user created: %s (%s) / %s", us.Username, us.Email, us.Password)
+		}
 	}
 
 	// Create default settings
@@ -1583,8 +1733,23 @@ func seedMasterData() {
 		DB.Where(models.Polyclinic{Code: p.Code}).FirstOrCreate(&p)
 	}
 
+	// Ensure partial unique indexes for soft-deleted tables so deleted rows never block active records
+	DB.Exec("DROP INDEX IF EXISTS idx_roles_name")
+	DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_roles_name ON roles (name) WHERE deleted_at IS NULL")
+	DB.Exec("DROP INDEX IF EXISTS idx_users_email")
+	DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (email) WHERE deleted_at IS NULL")
+	DB.Exec("DROP INDEX IF EXISTS idx_users_username")
+	DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users (username) WHERE deleted_at IS NULL")
+	DB.Exec("DROP INDEX IF EXISTS idx_polyclinics_code")
+	DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_polyclinics_code ON polyclinics (code) WHERE deleted_at IS NULL")
+	DB.Exec("DROP INDEX IF EXISTS idx_medicines_code")
+	DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_medicines_code ON medicines (code) WHERE deleted_at IS NULL")
+
 	// Seed Suppliers & Medicines Dummy Data
 	seedSuppliersAndMedicines()
+
+	// Seed Medicine Rooms (Depo Farmasi & Ruangan Apotek) & migrate existing stock
+	seedMedicineRoomsAndMigrateStock()
 
 	// Seed ICD-10 & ICD-9-CM codes from TSV dataset
 	seedICD10FromTSV()
@@ -1898,4 +2063,109 @@ func mapICDChapter(code, system string) string {
 	default:
 		return ""
 	}
+}
+
+func seedMedicineRoomsAndMigrateStock() {
+	// Ensure default large unit "Box" exists
+	boxUnit := models.Unit{
+		Name: "Box",
+	}
+	DB.Where(models.Unit{Name: boxUnit.Name}).FirstOrCreate(&boxUnit)
+
+	// Ensure existing polyclinics have room_type = 'poliklinik'
+	DB.Model(&models.Polyclinic{}).
+		Where("room_type IS NULL OR room_type = ''").
+		Update("room_type", "poliklinik")
+
+	var depo models.Polyclinic
+	if err := DB.Unscoped().Where("code = ? OR is_default_depo = ?", "DEPO-FARMASI", true).First(&depo).Error; err != nil {
+		depo = models.Polyclinic{
+			Code:          "DEPO-FARMASI",
+			Name:          "Depo Farmasi",
+			RoomType:      "depo",
+			Description:   "Gudang / Depo Farmasi utama untuk penyimpanan dan pembelian obat",
+			IsDefaultDepo: true,
+			IsActive:      true,
+			SortOrder:     90,
+		}
+		DB.Create(&depo)
+	}
+
+	var apotek models.Polyclinic
+	if err := DB.Unscoped().Where("code = ? OR is_default_apotek = ?", "APOTEK", true).First(&apotek).Error; err != nil {
+		apotek = models.Polyclinic{
+			Code:            "APOTEK",
+			Name:            "Ruangan Apotek",
+			RoomType:        "apotek",
+			Description:     "Unit / Ruangan Apotek untuk pelayanan resep pasien",
+			IsDefaultApotek: true,
+			IsActive:        true,
+			SortOrder:       91,
+		}
+		DB.Create(&apotek)
+	}
+
+	// Migrate existing medicines that have no room stock records yet into Depo Farmasi
+	// Also seed default large_unit_id (Box) & conversion_factor for medicines that don't have one yet
+	var medicines []models.Medicine
+	if err := DB.Preload("Unit").Find(&medicines).Error; err == nil {
+		// Fix accidental mapping from old medicine_rooms table (id=1 -> Poli Umum, id=2 -> Poli Gigi)
+		var depoStockCount int64
+		DB.Model(&models.MedicineRoomStock{}).Where("room_id = ?", depo.ID).Count(&depoStockCount)
+		if depoStockCount == 0 {
+			var poli1 models.Polyclinic
+			if err := DB.Where("id = 1 AND room_type = ?", "poliklinik").First(&poli1).Error; err == nil {
+				DB.Model(&models.MedicineRoomStock{}).Where("room_id = ?", poli1.ID).Update("room_id", depo.ID)
+			}
+			var poli2 models.Polyclinic
+			if err := DB.Where("id = 2 AND room_type = ?", "poliklinik").First(&poli2).Error; err == nil {
+				DB.Model(&models.MedicineRoomStock{}).Where("room_id = ? AND quantity = 0", poli2.ID).Update("room_id", apotek.ID)
+			}
+		}
+
+		for _, med := range medicines {
+			if med.LargeUnitID == nil || *med.LargeUnitID == 0 {
+				factor := 100
+				unitName := strings.ToLower(strings.TrimSpace(med.Unit.Name))
+				switch unitName {
+				case "botol", "tube":
+					factor = 10
+				case "sachet":
+					factor = 50
+				case "box":
+					factor = 1
+				}
+				if unitName != "box" {
+					DB.Model(&models.Medicine{}).Where("id = ?", med.ID).Updates(map[string]interface{}{
+						"large_unit_id":     boxUnit.ID,
+						"conversion_factor": factor,
+					})
+				}
+			}
+
+			var existingCount int64
+			DB.Model(&models.MedicineRoomStock{}).Where("medicine_id = ?", med.ID).Count(&existingCount)
+			if existingCount == 0 {
+				DB.Create(&models.MedicineRoomStock{
+					MedicineID: med.ID,
+					RoomID:     depo.ID,
+					Quantity:   med.CurrentStock,
+					MinStock:   med.MinStock,
+				})
+				DB.Create(&models.MedicineRoomStock{
+					MedicineID: med.ID,
+					RoomID:     apotek.ID,
+					Quantity:   0,
+					MinStock:   med.MinStock,
+				})
+			}
+		}
+	}
+
+	// Backfill existing purchase orders without destination room to Depo Farmasi
+	DB.Model(&models.PurchaseOrder{}).Where("destination_room_id IS NULL").Update("destination_room_id", depo.ID)
+	// Backfill existing incoming stock movements without room_id to Depo Farmasi
+	DB.Model(&models.StockMovement{}).Where("room_id IS NULL AND type = ?", "in").Update("room_id", depo.ID)
+	// Backfill existing outgoing stock movements without room_id to Ruangan Apotek
+	DB.Model(&models.StockMovement{}).Where("room_id IS NULL AND type = ?", "out").Update("room_id", apotek.ID)
 }

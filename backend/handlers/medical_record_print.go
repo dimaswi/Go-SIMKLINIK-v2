@@ -25,12 +25,12 @@ import (
 )
 
 const (
-	initialAssessmentPDFMarginLeft   = 15.0
-	initialAssessmentPDFMarginTop    = 10.0
-	initialAssessmentPDFMarginRight  = 15.0
-	initialAssessmentPDFMarginBottom = 12.0
-	initialAssessmentPDFContentStart = 50.0
-	initialAssessmentPDFPageStart    = 12.0
+	initialAssessmentPDFMarginLeft   = 10.0
+	initialAssessmentPDFMarginTop    = 8.0
+	initialAssessmentPDFMarginRight  = 10.0
+	initialAssessmentPDFMarginBottom = 10.0
+	initialAssessmentPDFContentStart = 36.0
+	initialAssessmentPDFPageStart    = 10.0
 )
 
 var initialAssessmentPDFPageStartOverrides sync.Map
@@ -56,7 +56,9 @@ var initialAssessmentPDFTextReplacer = strings.NewReplacer(
 	"✖", "x",
 	"⨯", "x",
 	"±", "+/-",
-	"°", " deg ",
+	"°C", " C",
+	"°c", " C",
+	"°", " ",
 	"µ", "u",
 	"μ", "u",
 )
@@ -486,11 +488,11 @@ func buildSuratPrintViewData(c *gin.Context, visit models.Visit, entryGroupKey s
 func buildSuratVisitFields(visit models.Visit) []initialAssessmentPrintField {
 	return []initialAssessmentPrintField{
 		{Label: "No. Kunjungan", Value: fallbackText(visit.VisitNumber)},
-		{Label: "Tanggal Kunjungan", Value: visit.VisitDate.Format("02 Jan 2006 15:04")},
+		{Label: "Tanggal Kunjungan", Value: formatVisitDateForPrint(visit.VisitDate)},
 		{Label: "Poliklinik", Value: fallbackText(visit.Polyclinic.Name)},
 		{Label: "Dokter", Value: fallbackText(visit.Doctor.FullName)},
-		{Label: "Jenis Kunjungan", Value: fallbackText(visit.VisitType)},
-		{Label: "Pembiayaan", Value: fallbackText(visit.PaymentType)},
+		{Label: "Jenis Kunjungan", Value: formatVisitTypeForPrint(visit.VisitType)},
+		{Label: "Pembiayaan", Value: formatPaymentTypeForPrint(visit.PaymentType)},
 	}
 }
 
@@ -945,10 +947,10 @@ func formatDoctorOfficialName(name string) string {
 func drawOfficialSuratKop(pdf *gofpdf.Fpdf, info initialAssessmentHospitalInfo) float64 {
 	left, top, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
-	currentY := top + 1.5
+	currentY := top + 1.0
 	hasLogo := info.LogoPath != "" && info.LogoType != ""
-	logoMaxHeight := 20.0
-	logoMaxWidth := 22.0
+	logoMaxHeight := 17.5
+	logoMaxWidth := 20.0
 	logoGap := 3.5
 
 	logoWidth := 0.0
@@ -968,13 +970,15 @@ func drawOfficialSuratKop(pdf *gofpdf.Fpdf, info initialAssessmentHospitalInfo) 
 		fontStyle  string
 		fontSize   float64
 		lineHeight float64
+		r, g, b    int
 	}
 
 	lines := []headerLine{{
 		text:       strings.ToUpper(fallbackText(info.Name)),
 		fontStyle:  "B",
-		fontSize:   14.5,
-		lineHeight: 5.5,
+		fontSize:   13.5,
+		lineHeight: 5.2,
+		r:          0, g: 0, b: 0,
 	}}
 
 	addressParts := make([]string, 0, 2)
@@ -988,8 +992,9 @@ func drawOfficialSuratKop(pdf *gofpdf.Fpdf, info initialAssessmentHospitalInfo) 
 		lines = append(lines, headerLine{
 			text:       strings.Join(addressParts, ", "),
 			fontStyle:  "",
-			fontSize:   8.5,
-			lineHeight: 4.0,
+			fontSize:   8.2,
+			lineHeight: 3.7,
+			r:          0, g: 0, b: 0,
 		})
 	}
 
@@ -1003,21 +1008,16 @@ func drawOfficialSuratKop(pdf *gofpdf.Fpdf, info initialAssessmentHospitalInfo) 
 	if trimmed := strings.TrimSpace(sanitizePDFText(info.Email)); trimmed != "" {
 		contactParts = append(contactParts, trimmed)
 	}
+	if trimmed := strings.TrimSpace(sanitizePDFText(info.Website)); trimmed != "" {
+		contactParts = append(contactParts, trimmed)
+	}
 	if len(contactParts) > 0 {
 		lines = append(lines, headerLine{
-			text:       strings.Join(contactParts, " | "),
+			text:       strings.Join(contactParts, "  |  "),
 			fontStyle:  "",
-			fontSize:   8.5,
-			lineHeight: 4.0,
-		})
-	}
-
-	if trimmed := strings.TrimSpace(sanitizePDFText(info.Website)); trimmed != "" {
-		lines = append(lines, headerLine{
-			text:       trimmed,
-			fontStyle:  "",
-			fontSize:   8.5,
-			lineHeight: 4.0,
+			fontSize:   8.0,
+			lineHeight: 3.7,
+			r:          0, g: 0, b: 0,
 		})
 	}
 
@@ -1049,23 +1049,26 @@ func drawOfficialSuratKop(pdf *gofpdf.Fpdf, info initialAssessmentHospitalInfo) 
 
 	textY := currentY + ((headerBlockHeight - textBlockHeight) / 2)
 	pdf.SetXY(textStartX, textY)
-	pdf.SetTextColor(0, 0, 0)
 	for _, line := range lines {
 		trimmedText := strings.TrimSpace(sanitizePDFText(line.text))
 		if trimmedText == "" {
 			continue
 		}
 		pdf.SetX(textStartX)
+		pdf.SetTextColor(line.r, line.g, line.b)
 		pdf.SetFont("Arial", line.fontStyle, line.fontSize)
 		pdf.MultiCell(textWidth, line.lineHeight, trimmedText, "", "L", false)
 	}
+	pdf.SetTextColor(0, 0, 0)
 
-	lineY := currentY + headerBlockHeight + 2.0
+	// Garis pembatas Kop Resmi RS/Klinik Indonesia (1 garis tegas bersih, tidak mepet)
+	lineY := currentY + headerBlockHeight + 2.2
 	pdf.SetDrawColor(0, 0, 0)
-	pdf.SetLineWidth(0.6)
+	pdf.SetLineWidth(0.5)
 	pdf.Line(left, lineY, pageWidth-right, lineY)
+	pdf.SetLineWidth(0.2)
 
-	return lineY + 3.0
+	return lineY + 3.5
 }
 
 func drawOfficialDoctorSignature(pdf *gofpdf.Fpdf, x float64, y float64, width float64, city string, date time.Time, doctor models.Doctor, tteSignature *ttePrintSignatureInfo) {
@@ -1076,35 +1079,29 @@ func drawOfficialDoctorSignature(pdf *gofpdf.Fpdf, x float64, y float64, width f
 	}
 
 	pdf.SetTextColor(0, 0, 0)
-	pdf.SetFont("Arial", "", 9.5)
+	pdf.SetFont("Arial", "", 9.2)
 	pdf.SetXY(x, y)
-	pdf.CellFormat(width, 4.5, dateLabel, "", 1, "C", false, 0, "")
+	pdf.CellFormat(width, 4.4, dateLabel, "", 1, "C", false, 0, "")
 
 	pdf.SetXY(x, pdf.GetY())
-	pdf.CellFormat(width, 4.5, "Dokter Pemeriksa,", "", 1, "C", false, 0, "")
+	pdf.CellFormat(width, 4.4, "Dokter Pemeriksa,", "", 1, "C", false, 0, "")
 
 	hasTTE := tteSignature != nil && hasTTEQRCode(tteSignature)
 	if hasTTE {
-		qrY := pdf.GetY() + 1.5
+		qrY := pdf.GetY() + 1.2
 		drawTTESignatureAnnotation(pdf, x, qrY, width, tteSignature)
 		qrSize := resolveTTESignatureQRCodeSize(width)
-		captionY := qrY + qrSize + 1.0
-		pdf.SetFont("Arial", "", 7)
-		pdf.SetTextColor(90, 90, 90)
-		pdf.SetXY(x, captionY)
-		pdf.CellFormat(width, 3.2, "Pindai untuk verifikasi surat", "", 1, "C", false, 0, "")
-		pdf.SetTextColor(0, 0, 0)
-		pdf.SetY(captionY + 3.0)
+		pdf.SetY(qrY + qrSize + 1.5)
 	} else {
 		pdf.SetY(pdf.GetY() + 15.0)
 	}
 
 	pdf.SetTextColor(0, 0, 0)
-	rawDoctorName := strings.TrimSpace(doctor.FullName)
+	rawDoctorName := strings.TrimSpace(resolveTTEPrintSignatureName(tteSignature, doctor.FullName))
 	docName := "( .................................................. )"
 	if rawDoctorName != "" && rawDoctorName != "-" {
 		docName = formatDoctorOfficialName(rawDoctorName)
-		pdf.SetFont("Arial", "BU", 9.5)
+		pdf.SetFont("Arial", "B", 9.5)
 	} else {
 		pdf.SetFont("Arial", "", 9.5)
 	}
@@ -1124,10 +1121,11 @@ func drawOfficialDoctorSignature(pdf *gofpdf.Fpdf, x float64, y float64, width f
 	}
 
 	if nipOrSip != "" {
-		pdf.SetFont("Arial", "", 9)
+		pdf.SetFont("Arial", "", 8.5)
 		pdf.SetXY(x, pdf.GetY())
-		pdf.CellFormat(width, 4.0, nipOrSip, "", 1, "C", false, 0, "")
+		pdf.CellFormat(width, 3.8, nipOrSip, "", 1, "C", false, 0, "")
 	}
+	pdf.SetTextColor(0, 0, 0)
 }
 
 func renderSuratEntryPDF(hospitalInfo initialAssessmentHospitalInfo, data suratPrintViewData) ([]byte, string, error) {
@@ -1140,10 +1138,10 @@ func renderSuratEntryPDF(hospitalInfo initialAssessmentHospitalInfo, data suratP
 		tteSignature = loadTTESignedSignatureByDocumentKeyWithBaseURL(buildTTESuratDocumentKey(data.Visit.ID, data.EntryGroupKey), data.ValidationBaseURL)
 	}
 
-	marginLeft := 20.0
-	marginRight := 20.0
-	marginTop := 12.0
-	marginBottom := 12.0
+	marginLeft := 16.0
+	marginRight := 16.0
+	marginTop := 10.0
+	marginBottom := 10.0
 	contentWidth := 210.0 - marginLeft - marginRight
 	startX := marginLeft
 	endX := 210.0 - marginRight
@@ -1158,13 +1156,13 @@ func renderSuratEntryPDF(hospitalInfo initialAssessmentHospitalInfo, data suratP
 
 	kopBottomY := drawOfficialSuratKop(pdf, hospitalInfo)
 
-	pdf.SetY(kopBottomY + 3.0)
-	pdf.SetFont("Arial", "BU", 13)
+	pdf.SetY(kopBottomY + 2.0)
+	pdf.SetFont("Arial", "B", 12.5)
 	pdf.SetTextColor(0, 0, 0)
-	pdf.CellFormat(contentWidth, 6.0, documentTitle, "", 1, "C", false, 0, "")
+	pdf.CellFormat(contentWidth, 5.8, documentTitle, "", 1, "C", false, 0, "")
 
-	pdf.SetFont("Arial", "", 10)
-	pdf.CellFormat(contentWidth, 5.0, "Nomor : "+data.OfficialNumber, "", 1, "C", false, 0, "")
+	pdf.SetFont("Arial", "", 9.2)
+	pdf.CellFormat(contentWidth, 4.6, "Nomor : "+data.OfficialNumber, "", 1, "C", false, 0, "")
 
 	suratTypeVal := normalizeSuratTypeValue(data.SuratType)
 	isSuratRujukan := suratTypeVal == medicalRecordEntryGroupPrefixSuratRujukan
@@ -1501,35 +1499,42 @@ func renderSuratEntryPDF(hospitalInfo initialAssessmentHospitalInfo, data suratP
 	boxHeight := gridHeight + ketBlockH
 
 	pdf.SetDrawColor(0, 0, 0)
-	pdf.SetLineWidth(0.3)
+	pdf.SetFillColor(255, 255, 255)
+	pdf.SetLineWidth(0.25)
 	pdf.Rect(boxX, boxY, boxWidth, boxHeight, "D")
+	pdf.SetLineWidth(0.2)
 	pdf.Line(boxX+halfWidth, boxY, boxX+halfWidth, boxY+gridHeight)
 	pdf.Line(boxX, boxY+gridHeight, boxX+boxWidth, boxY+gridHeight)
 
+	pdf.SetTextColor(0, 0, 0)
 	for i, item := range leftColItems {
 		rY := boxY + 1.2 + (float64(i) * rowH)
 		pdf.SetXY(boxX+3.0, rY)
-		pdf.SetFont("Arial", "", 9.0)
+		pdf.SetFont("Arial", "", 8.8)
 		pdf.CellFormat(colLabelW, rowH, item.label, "", 0, "L", false, 0, "")
 		pdf.CellFormat(colSepW, rowH, ":", "", 0, "C", false, 0, "")
-		pdf.CellFormat(halfWidth-colLabelW-colSepW-6.0, rowH, fitTextToWidth(pdf, item.val, halfWidth-colLabelW-colSepW-6.0), "", 0, "L", false, 0, "")
+		pdf.SetFont("Arial", "B", 8.8)
+		pdf.CellFormat(halfWidth-colLabelW-colSepW-6.0, rowH, fitTextToWidth(pdf, sanitizePDFSingleLineText(item.val), halfWidth-colLabelW-colSepW-6.0), "", 0, "L", false, 0, "")
 	}
 
 	for i, item := range rightColItems {
 		rY := boxY + 1.2 + (float64(i) * rowH)
 		pdf.SetXY(boxX+halfWidth+3.0, rY)
-		pdf.SetFont("Arial", "", 9.0)
+		pdf.SetFont("Arial", "", 8.8)
 		pdf.CellFormat(colLabelW+4.0, rowH, item.label, "", 0, "L", false, 0, "")
 		pdf.CellFormat(colSepW, rowH, ":", "", 0, "C", false, 0, "")
-		pdf.CellFormat(halfWidth-colLabelW-colSepW-10.0, rowH, fitTextToWidth(pdf, item.val, halfWidth-colLabelW-colSepW-10.0), "", 0, "L", false, 0, "")
+		pdf.SetFont("Arial", "B", 8.8)
+		pdf.CellFormat(halfWidth-colLabelW-colSepW-10.0, rowH, fitTextToWidth(pdf, sanitizePDFSingleLineText(item.val), halfWidth-colLabelW-colSepW-10.0), "", 0, "L", false, 0, "")
 	}
 
 	ketY := boxY + gridHeight + 1.6
 	pdf.SetXY(boxX+3.0, ketY)
-	pdf.SetFont("Arial", "", 9.0)
+	pdf.SetFont("Arial", "", 8.8)
 	pdf.CellFormat(colLabelW, ketLineH, bottomLabel, "", 0, "L", false, 0, "")
 	pdf.CellFormat(colSepW, ketLineH, ":", "", 0, "C", false, 0, "")
-	pdf.MultiCell(ketValW, ketLineH, keteranganLainStr, "", "L", false)
+	pdf.MultiCell(ketValW, ketLineH, sanitizePDFText(keteranganLainStr), "", "L", false)
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.2)
 
 
 	pdf.SetY(boxY + boxHeight + 4.5)
@@ -1717,27 +1722,47 @@ func renderInitialAssessmentEntryPDF(hospitalInfo initialAssessmentHospitalInfo,
 		if pdf.PageNo() != 1 {
 			return
 		}
-		addInitialAssessmentPDFHeader(pdf, hospitalInfo, strings.ToUpper(documentTitle), fallbackText(data.Visit.VisitNumber))
+		addInitialAssessmentPDFHeader(pdf, hospitalInfo, strings.ToUpper(documentTitle), "No. Kunjungan : "+fallbackText(data.Visit.VisitNumber))
 	}, true)
 	pdf.SetFooterFunc(func() {
-		pdf.SetY(-8)
-		pdf.SetFont("Arial", "", 8)
-		pdf.SetTextColor(90, 90, 90)
-		pdf.CellFormat(90, 4, "Dicetak: "+formatDateTimeIndonesian(data.GeneratedAt), "", 0, "L", false, 0, "")
+		pdf.SetY(-7.5)
+		pdf.SetFont("Arial", "", 7.5)
+		pdf.SetTextColor(70, 70, 70)
+		pdf.CellFormat(110, 4, "Dicetak: "+formatDateTimeIndonesian(data.GeneratedAt)+" | Petugas: "+fallbackText(data.PrintedByLabel), "", 0, "L", false, 0, "")
 		pdf.CellFormat(0, 4, fmt.Sprintf("Halaman %d/{nb}", pdf.PageNo()), "", 0, "R", false, 0, "")
 		pdf.SetTextColor(0, 0, 0)
 	})
 	pdf.AddPage()
 	pdf.SetY(initialAssessmentPDFPageContentStartForPDF(pdf, pdf.PageNo()))
 
-	addInitialAssessmentMetadata(pdf, data)
-	addInitialAssessmentCompactFieldSection(pdf, "DATA PASIEN", data.PatientFields, "Data pasien tidak tersedia.")
-	addInitialAssessmentCompactFieldSection(pdf, "DATA KUNJUNGAN", data.VisitFields, "Data kunjungan tidak tersedia.")
-	addInitialAssessmentFieldSection(pdf, "ANAMNESIS", data.AnamnesisFields, "Tidak ada data anamnesis.")
-	addInitialAssessmentFieldSection(pdf, "PEMERIKSAAN FISIK", data.PhysicalExamFields, "Tidak ada data pemeriksaan fisik.")
-	addInitialAssessmentImagesSection(pdf, data.PhysicalExamImages)
-	addInitialAssessmentFieldSection(pdf, "ASSESSMENT", data.AssessmentFields, "Tidak ada data assessment.")
-	addInitialAssessmentDiagnosisSection(pdf, data.Diagnoses)
+	identityFields := mergePatientVisitPrintFields(data.Visit.Patient, data.Visit,
+		initialAssessmentPrintField{Label: "Tanggal Entri", Value: formatRecordDateTimePDF(data.EntryRecordDate)},
+	)
+	addInitialAssessmentCompactFieldSection(pdf, "IDENTITAS PASIEN & KUNJUNGAN", identityFields, "Data pasien tidak tersedia.")
+
+	anamnesisFields := filterNonEmptyPrintFields(data.AnamnesisFields)
+	if len(anamnesisFields) > 0 {
+		addInitialAssessmentFieldSection(pdf, "ANAMNESIS", anamnesisFields, "Tidak ada data anamnesis.")
+	}
+
+	physicalFields := filterNonEmptyPrintFields(data.PhysicalExamFields)
+	if len(physicalFields) > 0 {
+		addInitialAssessmentFieldSection(pdf, "PEMERIKSAAN FISIK & TANDA VITAL", physicalFields, "Tidak ada data pemeriksaan fisik.")
+	}
+
+	if len(data.PhysicalExamImages) > 0 {
+		addInitialAssessmentImagesSection(pdf, data.PhysicalExamImages)
+	}
+
+	assessmentFields := filterNonEmptyPrintFields(data.AssessmentFields)
+	if len(assessmentFields) > 0 {
+		addInitialAssessmentFieldSection(pdf, "ASSESSMENT", assessmentFields, "Tidak ada data assessment.")
+	}
+
+	if len(data.Diagnoses) > 0 {
+		addInitialAssessmentDiagnosisSection(pdf, data.Diagnoses)
+	}
+
 	addInitialAssessmentSignatureSection(pdf, hospitalInfo, data)
 
 	var output bytes.Buffer
@@ -1758,43 +1783,62 @@ func renderPrintHeaderPreviewPDF(hospitalInfo initialAssessmentHospitalInfo) ([]
 	pdf.SetTitle("Contoh KOP PDF", false)
 	pdf.SetCreator("SIMKLINIK", false)
 	pdf.SetHeaderFuncMode(func() {
-		addInitialAssessmentPDFHeader(pdf, hospitalInfo, "CONTOH KOP PDF", "Preview dari halaman settings")
+		if pdf.PageNo() != 1 {
+			return
+		}
+		addInitialAssessmentPDFHeader(pdf, hospitalInfo, "CONTOH KOP PDF", "Preview Pengaturan KOP")
 	}, true)
 	pdf.SetFooterFunc(func() {
-		pdf.SetY(-8)
-		pdf.SetFont("Arial", "", 8)
-		pdf.SetTextColor(90, 90, 90)
-		pdf.CellFormat(90, 4, "Preview pengaturan KOP", "", 0, "L", false, 0, "")
+		pdf.SetY(-7.5)
+		pdf.SetFont("Arial", "", 7.5)
+		pdf.SetTextColor(70, 70, 70)
+		pdf.CellFormat(100, 4, "Preview pengaturan KOP | SIMKLINIK", "", 0, "L", false, 0, "")
 		pdf.CellFormat(0, 4, fmt.Sprintf("Halaman %d/{nb}", pdf.PageNo()), "", 0, "R", false, 0, "")
 		pdf.SetTextColor(0, 0, 0)
 	})
 	pdf.AddPage()
 	pdf.SetY(initialAssessmentPDFPageContentStartForPDF(pdf, pdf.PageNo()))
 
-	addInitialAssessmentFieldSection(pdf, "RINGKASAN KOP", []initialAssessmentPrintField{
+	addInitialAssessmentCompactFieldSection(pdf, "RINGKASAN KOP", []initialAssessmentPrintField{
 		{Label: "Nama Fasilitas", Value: hospitalInfo.Name},
-		{Label: "Alamat", Value: strings.Trim(strings.Join([]string{hospitalInfo.Address, hospitalInfo.City}, ", "), ", ")},
 		{Label: "Telepon", Value: hospitalInfo.Phone},
 		{Label: "Fax", Value: hospitalInfo.Fax},
 		{Label: "Email", Value: hospitalInfo.Email},
 		{Label: "Website", Value: hospitalInfo.Website},
+		{Label: "Alamat", Value: strings.Trim(strings.Join([]string{hospitalInfo.Address, hospitalInfo.City}, ", "), ", ")},
 	}, "Belum ada data KOP.")
 
-	addInitialAssessmentFullWidthRow(pdf, "Preview ini menggunakan nilai yang sedang ada di form settings. Jadi Anda bisa mengecek tampilan KOP PDF sebelum menyimpan perubahan.", false)
-	pdf.SetY(pdf.GetY() + 3)
+	addInitialAssessmentSectionTitle(pdf, "CATATAN PREVIEW")
+	left, _, right, _ := pdf.GetMargins()
+	pageWidth, _ := pdf.GetPageSize()
+	contentWidth := pageWidth - left - right
+	noteStartY := pdf.GetY()
+	pdf.SetY(noteStartY + 1.2)
+	addInitialAssessmentFullWidthRow(pdf, "Preview ini menggunakan nilai yang sedang ada di form settings. Dokumen rekam medis resmi seperti pengkajian awal, resume medis, hasil penunjang, dan lembar lainnya akan memakai standar KOP yang sama.", false)
+	noteEndY := pdf.GetY() + 1.2
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.25)
+	pdf.Rect(left, noteStartY, contentWidth, noteEndY-noteStartY, "D")
+	pdf.SetY(noteEndY)
 
-	addInitialAssessmentFieldSection(pdf, "CONTOH ISI DOKUMEN", []initialAssessmentPrintField{
-		{Label: "Tujuan", Value: "Bagian ini hanya simulasi konten untuk melihat posisi dan proporsi KOP pada PDF."},
-		{Label: "Catatan", Value: "Dokumen rekam medis asli seperti pengkajian awal, resume medis, dan lembar lain akan memakai KOP yang sama."},
-	}, "")
-
-	pdf.SetFont("Arial", "", 10)
-	pdf.SetY(pdf.GetY() + 6)
-	pdf.CellFormat(90, 5, "Petugas Administrasi", "", 0, "C", false, 0, "")
-	pdf.CellFormat(0, 5, "Penanggung Jawab Dokumen", "", 1, "C", false, 0, "")
-	pdf.SetY(pdf.GetY() + 16)
-	pdf.CellFormat(90, 5, "(____________________)", "", 0, "C", false, 0, "")
-	pdf.CellFormat(0, 5, "(____________________)", "", 1, "C", false, 0, "")
+	sigStartY := pdf.GetY()
+	sigH := 26.0
+	colW := contentWidth / 2
+	splitX := left + colW
+	pdf.Rect(left, sigStartY, contentWidth, sigH, "D")
+	pdf.Line(splitX, sigStartY, splitX, sigStartY+sigH)
+	pdf.SetLineWidth(0.2)
+	pdf.SetFont("Arial", "", 8.6)
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetXY(left, sigStartY+3.0)
+	pdf.CellFormat(colW, 4.4, "Petugas Administrasi", "", 0, "C", false, 0, "")
+	pdf.SetXY(splitX, sigStartY+3.0)
+	pdf.CellFormat(colW, 4.4, "Penanggung Jawab Dokumen", "", 1, "C", false, 0, "")
+	pdf.SetXY(left, sigStartY+sigH-6.0)
+	pdf.CellFormat(colW, 4.4, "( ________________________ )", "", 0, "C", false, 0, "")
+	pdf.SetXY(splitX, sigStartY+sigH-6.0)
+	pdf.CellFormat(colW, 4.4, "( ________________________ )", "", 1, "C", false, 0, "")
+	pdf.SetY(sigStartY + sigH)
 
 	var output bytes.Buffer
 	if err := pdf.Output(&output); err != nil {
@@ -1808,11 +1852,11 @@ func addInitialAssessmentPDFHeader(pdf *gofpdf.Fpdf, info initialAssessmentHospi
 	left, top, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
 	contentWidth := pageWidth - left - right
-	currentY := top + 1.5
+	currentY := top
 	hasLogo := info.LogoPath != "" && info.LogoType != ""
-	logoMaxHeight := 20.0
-	logoMaxWidth := 22.0
-	logoGap := 3.5
+	logoMaxHeight := 15.0
+	logoMaxWidth := 18.0
+	logoGap := 3.2
 
 	logoWidth := 0.0
 	logoHeight := 0.0
@@ -1836,8 +1880,8 @@ func addInitialAssessmentPDFHeader(pdf *gofpdf.Fpdf, info initialAssessmentHospi
 	lines := []headerLine{{
 		text:       strings.ToUpper(fallbackText(info.Name)),
 		fontStyle:  "B",
-		fontSize:   14.5,
-		lineHeight: 5.5,
+		fontSize:   12.5,
+		lineHeight: 4.8,
 	}}
 
 	addressParts := make([]string, 0, 2)
@@ -1851,8 +1895,8 @@ func addInitialAssessmentPDFHeader(pdf *gofpdf.Fpdf, info initialAssessmentHospi
 		lines = append(lines, headerLine{
 			text:       strings.Join(addressParts, ", "),
 			fontStyle:  "",
-			fontSize:   8.5,
-			lineHeight: 4.0,
+			fontSize:   7.8,
+			lineHeight: 3.4,
 		})
 	}
 
@@ -1866,21 +1910,15 @@ func addInitialAssessmentPDFHeader(pdf *gofpdf.Fpdf, info initialAssessmentHospi
 	if trimmed := strings.TrimSpace(sanitizePDFText(info.Email)); trimmed != "" {
 		contactParts = append(contactParts, trimmed)
 	}
+	if trimmed := strings.TrimSpace(sanitizePDFText(info.Website)); trimmed != "" {
+		contactParts = append(contactParts, trimmed)
+	}
 	if len(contactParts) > 0 {
 		lines = append(lines, headerLine{
-			text:       strings.Join(contactParts, " | "),
+			text:       strings.Join(contactParts, "  |  "),
 			fontStyle:  "",
-			fontSize:   8.5,
-			lineHeight: 4.0,
-		})
-	}
-
-	if trimmed := strings.TrimSpace(sanitizePDFText(info.Website)); trimmed != "" {
-		lines = append(lines, headerLine{
-			text:       trimmed,
-			fontStyle:  "",
-			fontSize:   8.5,
-			lineHeight: 4.0,
+			fontSize:   7.6,
+			lineHeight: 3.4,
 		})
 	}
 
@@ -1923,18 +1961,43 @@ func addInitialAssessmentPDFHeader(pdf *gofpdf.Fpdf, info initialAssessmentHospi
 		pdf.MultiCell(textWidth, line.lineHeight, trimmedText, "", "L", false)
 	}
 
-	lineY := currentY + headerBlockHeight + 2.0
+	// Garis pembatas Kop Resmi RS/Klinik Indonesia (1 garis tegas bersih, tidak mepet)
+	lineY := currentY + headerBlockHeight + 1.6
 	pdf.SetDrawColor(0, 0, 0)
 	pdf.SetLineWidth(0.6)
 	pdf.Line(left, lineY, pageWidth-right, lineY)
 
-	pdf.SetY(lineY + 3.0)
-	pdf.SetFont("Arial", "B", 13)
-	pdf.CellFormat(contentWidth, 5.5, firstNonEmpty(sanitizePDFText(title), "-"), "", 1, "C", false, 0, "")
-	pdf.SetFont("Arial", "", 9.5)
-	pdf.CellFormat(contentWidth, 4.2, firstNonEmpty(sanitizePDFText(subtitle), "-"), "", 1, "C", false, 0, "")
+	// Kotak Judul Dokumen menyatu langsung sebagai bagian atas bingkai besar (gaya Resep)
+	cleanTitle := strings.ToUpper(firstNonEmpty(sanitizePDFSingleLineText(title), "-"))
+	cleanSubtitle := strings.TrimSpace(sanitizePDFSingleLineText(subtitle))
+	hasSubtitle := cleanSubtitle != "" && cleanSubtitle != "-"
 
-	contentStartY := maxFloat64(initialAssessmentPDFContentStart, pdf.GetY()+2)
+	titleBoxY := lineY + 1.8
+	titleBoxH := 6.4
+	if hasSubtitle {
+		titleBoxH = 10.2
+	}
+
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.25)
+	pdf.Rect(left, titleBoxY, contentWidth, titleBoxH, "D")
+
+	pdf.SetTextColor(0, 0, 0)
+	if hasSubtitle {
+		pdf.SetXY(left, titleBoxY+0.8)
+		pdf.SetFont("Arial", "B", 10.8)
+		pdf.CellFormat(contentWidth, 4.8, cleanTitle, "", 1, "C", false, 0, "")
+		pdf.SetXY(left, titleBoxY+5.4)
+		pdf.SetFont("Arial", "", 8.2)
+		pdf.CellFormat(contentWidth, 4.0, cleanSubtitle, "", 1, "C", false, 0, "")
+	} else {
+		pdf.SetXY(left, titleBoxY+0.8)
+		pdf.SetFont("Arial", "B", 10.8)
+		pdf.CellFormat(contentWidth, 4.8, cleanTitle, "", 1, "C", false, 0, "")
+	}
+
+	pdf.SetLineWidth(0.2)
+	contentStartY := titleBoxY + titleBoxH
 	setInitialAssessmentPDFPageContentStartOverride(pdf, pdf.PageNo(), contentStartY)
 	pdf.SetY(contentStartY)
 }
@@ -1965,63 +2028,351 @@ func addInitialAssessmentMetadata(pdf *gofpdf.Fpdf, data initialAssessmentPrintV
 	addInitialAssessmentCompactFieldSection(pdf, "INFORMASI DOKUMEN", rows, "")
 }
 
-func addInitialAssessmentFieldSection(pdf *gofpdf.Fpdf, title string, fields []initialAssessmentPrintField, emptyMessage string) {
-	addInitialAssessmentSectionTitle(pdf, title)
-	if len(fields) == 0 {
-		addInitialAssessmentFullWidthRow(pdf, firstNonEmpty(emptyMessage, "Tidak ada data."), false)
-		return
+func humanizeSnakeCaseIndonesian(value string) string {
+	trimmed := strings.TrimSpace(sanitizePDFSingleLineText(value))
+	if trimmed == "" || trimmed == "-" {
+		return "-"
 	}
-
-	for _, field := range fields {
-		addInitialAssessmentKeyValueRow(pdf, field.Label, field.Value)
+	cleaned := strings.ReplaceAll(trimmed, "_", " ")
+	cleaned = strings.ReplaceAll(cleaned, "-", " ")
+	words := strings.Fields(cleaned)
+	for i, w := range words {
+		lower := strings.ToLower(w)
+		switch lower {
+		case "bpjs", "igd", "ugd", "mcu", "rm", "nik", "sip", "nip", "tte", "icd", "bmi", "spo2":
+			words[i] = strings.ToUpper(lower)
+		default:
+			runes := []rune(lower)
+			if len(runes) > 0 {
+				runes[0] = unicode.ToUpper(runes[0])
+				words[i] = string(runes)
+			}
+		}
 	}
-	addInitialAssessmentSectionSpacing(pdf)
+	return strings.Join(words, " ")
 }
 
+func formatPaymentTypeForPrint(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "-":
+		return "-"
+	case "umum", "general", "pribadi", "mandiri":
+		return "Umum"
+	case "cash", "tunai":
+		return "Tunai"
+	case "bpjs", "bpjs_kesehatan", "jkn":
+		return "BPJS Kesehatan"
+	case "asuransi", "insurance", "asuransi_swasta":
+		return "Asuransi"
+	case "perusahaan", "corporate":
+		return "Perusahaan"
+	default:
+		return humanizeSnakeCaseIndonesian(value)
+	}
+}
+
+func formatVisitTypeForPrint(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "-":
+		return "-"
+	case "baru", "new":
+		return "Pasien Baru"
+	case "lama", "old":
+		return "Pasien Lama"
+	case "kontrol", "follow_up":
+		return "Kontrol"
+	case "rujukan", "referral":
+		return "Rujukan"
+	case "igd", "ugd", "emergency":
+		return "IGD"
+	case "rawat_jalan", "outpatient":
+		return "Rawat Jalan"
+	default:
+		return humanizeSnakeCaseIndonesian(value)
+	}
+}
+
+func formatConsciousnessForPrint(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || trimmed == "-" {
+		return "-"
+	}
+	switch strings.ToLower(strings.ReplaceAll(trimmed, "_", " ")) {
+	case "compos mentis", "composmentis", "cm":
+		return "Compos Mentis"
+	case "apatis":
+		return "Apatis"
+	case "somnolen", "somnolence":
+		return "Somnolen"
+	case "sopor", "stupor":
+		return "Sopor"
+	case "koma", "coma":
+		return "Koma"
+	default:
+		return humanizeSnakeCaseIndonesian(trimmed)
+	}
+}
+
+func formatVisitDateForPrint(value time.Time) string {
+	if value.IsZero() {
+		return "-"
+	}
+	if value.Hour() == 0 && value.Minute() == 0 {
+		return formatDateIndonesian(value)
+	}
+	return formatDateTimeIndonesian(value)
+}
+
+func filterNonEmptyPrintFields(fields []initialAssessmentPrintField) []initialAssessmentPrintField {
+	filtered := make([]initialAssessmentPrintField, 0, len(fields))
+	for _, field := range fields {
+		val := strings.TrimSpace(sanitizePDFText(field.Value))
+		if val == "" || val == "-" {
+			continue
+		}
+		filtered = append(filtered, field)
+	}
+	return filtered
+}
+
+func mergePatientVisitPrintFields(patient models.Patient, visit models.Visit, extra ...initialAssessmentPrintField) []initialAssessmentPrintField {
+	genderAge := genderLabelForPrint(patient.Gender)
+	if age := calculatePatientAgeLabel(patient.BirthDate); age != "-" && age != "" {
+		if genderAge != "-" {
+			genderAge = genderAge + " / " + age
+		} else {
+			genderAge = age
+		}
+	}
+
+	visitDateStr := formatVisitDateForPrint(visit.VisitDate)
+
+	fields := []initialAssessmentPrintField{
+		{Label: "No. Rekam Medis", Value: fallbackText(patient.MedicalRecordNumber)},
+		{Label: "No. Kunjungan", Value: fallbackText(visit.VisitNumber)},
+		{Label: "Nama Pasien", Value: fallbackText(patient.FullName)},
+		{Label: "Tgl. Kunjungan", Value: visitDateStr},
+		{Label: "JK / Umur", Value: fallbackText(genderAge)},
+		{Label: "Poliklinik", Value: fallbackText(visit.Polyclinic.Name)},
+		{Label: "Dokter Pemeriksa", Value: fallbackText(visit.Doctor.FullName)},
+	}
+	if birthDateStr := formatDatePointer(patient.BirthDate); birthDateStr != "" && birthDateStr != "-" {
+		fields = append(fields, initialAssessmentPrintField{Label: "Tgl. Lahir", Value: birthDateStr})
+	}
+
+	if phone := strings.TrimSpace(patient.Phone); phone != "" && phone != "-" {
+		fields = append(fields, initialAssessmentPrintField{Label: "No. Telepon", Value: phone})
+	}
+	if pay := formatPaymentTypeForPrint(visit.PaymentType); pay != "" && pay != "-" {
+		payLabel := pay
+		if ins := strings.TrimSpace(visit.InsuranceNumber); ins != "" {
+			payLabel += " (" + ins + ")"
+		}
+		fields = append(fields, initialAssessmentPrintField{Label: "Pembiayaan", Value: payLabel})
+	}
+	for _, item := range extra {
+		val := strings.TrimSpace(sanitizePDFText(item.Value))
+		if val != "" && val != "-" {
+			fields = append(fields, item)
+		}
+	}
+	if addr := strings.TrimSpace(formatPatientAddress(patient)); addr != "" && addr != "-" {
+		fields = append(fields, initialAssessmentPrintField{Label: "Alamat", Value: addr})
+	}
+	return fields
+}
+
+func addInitialAssessmentFieldSection(pdf *gofpdf.Fpdf, title string, fields []initialAssessmentPrintField, emptyMessage string) {
+	addInitialAssessmentCompactFieldSection(pdf, title, fields, emptyMessage)
+}
+
+func resolveCompactGridColumnCount(contentWidth float64) int {
+	if contentWidth >= 230.0 {
+		return 3
+	}
+	return 2
+}
+
+// addInitialAssessmentCompactFieldSection merender blok informasi bergaya Resep (bingkai luar menyatu tanpa putus,
+// pembagi vertikal tengah untuk baris 2-kolom, dan titik dua (:) berjarak lega).
 func addInitialAssessmentCompactFieldSection(pdf *gofpdf.Fpdf, title string, fields []initialAssessmentPrintField, emptyMessage string) {
-	addInitialAssessmentSectionTitle(pdf, title)
+	left, _, right, _ := pdf.GetMargins()
+	pageWidth, _ := pdf.GetPageSize()
+	contentWidth := pageWidth - left - right
+
 	if len(fields) == 0 {
+		ensureInitialAssessmentPDFSpace(pdf, 12.5)
+		addInitialAssessmentSectionTitle(pdf, title)
+		boxStartY := pdf.GetY()
+		pdf.SetY(boxStartY + 1.2)
 		addInitialAssessmentFullWidthRow(pdf, firstNonEmpty(emptyMessage, "Tidak ada data."), false)
+		boxEndY := pdf.GetY() + 1.2
+		pdf.SetDrawColor(0, 0, 0)
+		pdf.SetLineWidth(0.25)
+		pdf.Rect(left, boxStartY, contentWidth, boxEndY-boxStartY, "D")
+		pdf.SetLineWidth(0.2)
+		pdf.SetY(boxEndY)
+		addInitialAssessmentSectionSpacing(pdf)
 		return
 	}
 
-	pending := make([]initialAssessmentPrintField, 0, 2)
+	maxCols := resolveCompactGridColumnCount(contentWidth)
+
+	type compactRenderRow struct {
+		isMultiCol bool
+		fields     []initialAssessmentPrintField
+		height     float64
+	}
+
+	rows := make([]compactRenderRow, 0, (len(fields)+1)/2)
+	pending := make([]initialAssessmentPrintField, 0, maxCols)
+
+	colPad := 2.5
+	colWidth := (contentWidth / float64(maxCols)) - (colPad * 2)
+	labelWidth := resolveInitialAssessmentCompactFieldLabelWidth(colWidth)
+
 	flushPending := func() {
 		if len(pending) == 0 {
 			return
 		}
-		if len(pending) == 1 {
-			drawInitialAssessmentCompactSingleFieldRow(pdf, pending[0])
-			pending = pending[:0]
+		rowCopy := make([]initialAssessmentPrintField, len(pending))
+		copy(rowCopy, pending)
+		pending = pending[:0]
+
+		if len(rowCopy) == 1 && (len(fields) == 1 || len(rows) == 0 || !rows[len(rows)-1].isMultiCol) {
+			h := measureInitialAssessmentSingleRowHeight(pdf, rowCopy[0].Label, rowCopy[0].Value)
+			rows = append(rows, compactRenderRow{isMultiCol: false, fields: rowCopy, height: h})
 			return
 		}
-		drawInitialAssessmentCompactFieldPair(pdf, pending[0], pending[1])
-		pending = pending[:0]
+
+		rowH := 4.4
+		for _, f := range rowCopy {
+			h := measureInitialAssessmentCompactFieldBoxHeight(pdf, colWidth, labelWidth, f)
+			if h > rowH {
+				rowH = h
+			}
+		}
+		rows = append(rows, compactRenderRow{isMultiCol: true, fields: rowCopy, height: rowH})
 	}
 
 	for _, field := range fields {
-		if !isInitialAssessmentFieldCompactFriendly(pdf, field) {
+		if len(fields) == 1 || !isInitialAssessmentFieldCompactFriendly(pdf, field, maxCols) {
 			flushPending()
-			addInitialAssessmentKeyValueRow(pdf, field.Label, field.Value)
+			h := measureInitialAssessmentSingleRowHeight(pdf, field.Label, field.Value)
+			rows = append(rows, compactRenderRow{
+				isMultiCol: false,
+				fields:     []initialAssessmentPrintField{field},
+				height:     h,
+			})
 			continue
 		}
 
 		pending = append(pending, field)
-		if len(pending) == 2 {
+		if len(pending) == maxCols {
 			flushPending()
 		}
 	}
-
 	flushPending()
+
+	totalBoxH := 2.4
+	for _, r := range rows {
+		totalBoxH += r.height
+	}
+	_, pageHeight := pdf.GetPageSize()
+	if totalBoxH+5.0 <= 110.0 && pdf.GetY()+5.0+totalBoxH > pageHeight-initialAssessmentPDFMarginBottom {
+		pdf.AddPage()
+		pdf.SetY(initialAssessmentPDFPageContentStartForPDF(pdf, pdf.PageNo()))
+	} else if len(rows) > 0 {
+		ensureInitialAssessmentPDFSpace(pdf, 5.0+rows[0].height+2.4)
+	}
+
+	addInitialAssessmentSectionTitle(pdf, title)
+
+	boxStartY := pdf.GetY()
+	pdf.SetY(boxStartY + 1.2)
+	multiColSpanStartY := -1.0
+
+	closeBoxOnCurrentPage := func(endY float64, lastWasMultiCol bool) {
+		pdf.SetDrawColor(0, 0, 0)
+		if lastWasMultiCol && multiColSpanStartY >= 0 {
+			pdf.SetLineWidth(0.25)
+			for c := 1; c < maxCols; c++ {
+				splitX := left + (contentWidth*float64(c))/float64(maxCols)
+				pdf.Line(splitX, multiColSpanStartY, splitX, endY)
+			}
+			multiColSpanStartY = -1.0
+		}
+		pdf.SetLineWidth(0.25)
+		pdf.Rect(left, boxStartY, contentWidth, endY-boxStartY, "D")
+		pdf.SetLineWidth(0.2)
+	}
+
+	for idx, r := range rows {
+		if pdf.GetY()+r.height+1.2 > pageHeight-initialAssessmentPDFMarginBottom {
+			prevMulti := idx > 0 && rows[idx-1].isMultiCol
+			closeBoxOnCurrentPage(pdf.GetY()+1.2, prevMulti)
+			pdf.AddPage()
+			pdf.SetY(initialAssessmentPDFPageContentStartForPDF(pdf, pdf.PageNo()))
+			boxStartY = pdf.GetY()
+			pdf.SetY(boxStartY + 1.2)
+			if r.isMultiCol {
+				multiColSpanStartY = boxStartY
+			}
+		}
+
+		rowY := pdf.GetY()
+		if r.isMultiCol {
+			if multiColSpanStartY < 0 {
+				if idx == 0 || rowY <= boxStartY+1.5 {
+					multiColSpanStartY = boxStartY
+				} else {
+					pdf.SetDrawColor(0, 0, 0)
+					pdf.SetLineWidth(0.25)
+					pdf.Line(left, rowY, left+contentWidth, rowY)
+					multiColSpanStartY = rowY
+				}
+			}
+			drawInitialAssessmentCompactFieldRowAt(pdf, rowY, r.height, r.fields, maxCols)
+			pdf.SetY(rowY + r.height)
+		} else {
+			if multiColSpanStartY >= 0 {
+				divY := rowY + 0.3
+				pdf.SetDrawColor(0, 0, 0)
+				pdf.SetLineWidth(0.25)
+				for c := 1; c < maxCols; c++ {
+					splitX := left + (contentWidth*float64(c))/float64(maxCols)
+					pdf.Line(splitX, multiColSpanStartY, splitX, divY)
+				}
+				pdf.Line(left, divY, left+contentWidth, divY)
+				multiColSpanStartY = -1.0
+				rowY = divY + 0.6
+				pdf.SetY(rowY)
+			} else if idx > 0 && !rows[idx-1].isMultiCol {
+				// Baris full-width berturut-turut dalam 1 kotak
+			}
+			drawInitialAssessmentKeyValueRowAtY(pdf, rowY, r.height, r.fields[0].Label, r.fields[0].Value)
+			pdf.SetY(rowY + r.height)
+		}
+	}
+
+	boxEndY := pdf.GetY() + 1.2
+	lastMulti := len(rows) > 0 && rows[len(rows)-1].isMultiCol
+	closeBoxOnCurrentPage(boxEndY, lastMulti)
+	pdf.SetY(boxEndY)
 	addInitialAssessmentSectionSpacing(pdf)
 }
 
-func isInitialAssessmentFieldCompactFriendly(pdf *gofpdf.Fpdf, field initialAssessmentPrintField) bool {
+func isInitialAssessmentFieldCompactFriendly(pdf *gofpdf.Fpdf, field initialAssessmentPrintField, cols int) bool {
 	trimmedLabel := sanitizePDFSingleLineText(field.Label)
-	trimmedValue := sanitizePDFSingleLineText(field.Value)
-	if strings.EqualFold(trimmedLabel, "Alamat") {
+	rawValue := strings.TrimSpace(sanitizePDFText(field.Value))
+	if strings.Contains(rawValue, "\n") {
 		return false
 	}
+	lowerLabel := strings.ToLower(trimmedLabel)
+	if strings.Contains(lowerLabel, "keputusan") {
+		return false
+	}
+	trimmedValue := sanitizePDFSingleLineText(rawValue)
 	if trimmedLabel == "" || trimmedValue == "" {
 		return true
 	}
@@ -2029,108 +2380,159 @@ func isInitialAssessmentFieldCompactFriendly(pdf *gofpdf.Fpdf, field initialAsse
 	left, _, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
 	contentWidth := pageWidth - left - right
-	halfWidth := contentWidth / 2
-	labelWidth := resolveInitialAssessmentCompactFieldLabelWidth(halfWidth)
-	valueWidth := halfWidth - labelWidth
+	colWidth := (contentWidth / float64(cols)) - 5.0
+	labelWidth := resolveInitialAssessmentCompactFieldLabelWidth(colWidth)
+	valueWidth := colWidth - labelWidth - 5.5
 
-	pdf.SetFont("Arial", "", 9)
-	labelFits := len(pdf.SplitLines([]byte(trimmedLabel), labelWidth-4)) <= 1
-	valueFits := len(pdf.SplitLines([]byte(trimmedValue), valueWidth-4)) <= 1
+	pdf.SetFont("Arial", "", 8.2)
+	labelFits := len(pdf.SplitLines([]byte(trimmedLabel), labelWidth-1.0)) <= 2
+	valueFits := len(pdf.SplitLines([]byte(trimmedValue), valueWidth-1.0)) <= 4
 	return labelFits && valueFits
 }
 
-func drawInitialAssessmentCompactFieldPair(pdf *gofpdf.Fpdf, leftField initialAssessmentPrintField, rightField initialAssessmentPrintField) {
+func drawInitialAssessmentCompactFieldRowAt(pdf *gofpdf.Fpdf, y float64, rowHeight float64, rowFields []initialAssessmentPrintField, maxCols int) {
+	if len(rowFields) == 0 {
+		return
+	}
 	left, _, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
 	contentWidth := pageWidth - left - right
-	halfWidth := contentWidth / 2
-	labelWidth := resolveInitialAssessmentCompactFieldLabelWidth(halfWidth)
-	rowHeight := maxFloat64(
-		measureInitialAssessmentCompactFieldBoxHeight(pdf, halfWidth, labelWidth, leftField),
-		measureInitialAssessmentCompactFieldBoxHeight(pdf, halfWidth, labelWidth, rightField),
-	)
-	ensureInitialAssessmentPDFSpace(pdf, rowHeight)
+	cellSpanW := contentWidth / float64(maxCols)
+	colPad := 2.5
+	colWidth := cellSpanW - (colPad * 2)
+	labelWidth := resolveInitialAssessmentCompactFieldLabelWidth(colWidth)
 
-	y := pdf.GetY()
-	drawInitialAssessmentCompactFieldBox(pdf, left, y, halfWidth, rowHeight, labelWidth, leftField)
-	drawInitialAssessmentCompactFieldBox(pdf, left+halfWidth, y, halfWidth, rowHeight, labelWidth, rightField)
-	pdf.SetY(y + rowHeight)
+	for i, field := range rowFields {
+		x := left + float64(i)*cellSpanW + colPad
+		drawInitialAssessmentCompactFieldBox(pdf, x, y, colWidth, rowHeight, labelWidth, field)
+	}
 }
 
-func drawInitialAssessmentCompactSingleFieldRow(pdf *gofpdf.Fpdf, field initialAssessmentPrintField) {
+func measureInitialAssessmentSingleRowHeight(pdf *gofpdf.Fpdf, label string, value string) float64 {
 	left, _, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
 	contentWidth := pageWidth - left - right
-	halfWidth := contentWidth / 2
-	labelWidth := resolveInitialAssessmentCompactFieldLabelWidth(halfWidth)
-	rowHeight := maxFloat64(
-		measureInitialAssessmentCompactFieldBoxHeight(pdf, halfWidth, labelWidth, field),
-		6.5,
-	)
-	ensureInitialAssessmentPDFSpace(pdf, rowHeight)
+	cols := resolveCompactGridColumnCount(contentWidth)
+	innerWidth := contentWidth - 5.0
+	colWidth := (contentWidth / float64(cols)) - 5.0
+	labelWidth := resolveInitialAssessmentCompactFieldLabelWidth(colWidth)
+	colonW := 4.0
+	valGap := 1.2
+	valueWidth := innerWidth - labelWidth - colonW - valGap - 1.0
 
-	y := pdf.GetY()
-	drawInitialAssessmentCompactFieldBox(pdf, left, y, halfWidth, rowHeight, labelWidth, field)
-	drawInitialAssessmentCompactBlankFieldBox(pdf, left+halfWidth, y, halfWidth, rowHeight, labelWidth)
-	pdf.SetY(y + rowHeight)
+	trimmedLabel := firstNonEmpty(strings.TrimSpace(sanitizePDFText(label)), "-")
+	trimmedValue := firstNonEmpty(strings.TrimSpace(sanitizePDFText(value)), "-")
+	pdf.SetFont("Arial", "", 8.2)
+	labelLines := pdf.SplitLines([]byte(trimmedLabel), labelWidth-1.0)
+	valueLines := pdf.SplitLines([]byte(trimmedValue), valueWidth)
+	lineCount := maxInt(len(labelLines), len(valueLines))
+	if lineCount < 1 {
+		lineCount = 1
+	}
+	return maxFloat64(4.6, float64(lineCount)*3.8+0.8)
 }
 
-func drawInitialAssessmentCompactFieldBox(pdf *gofpdf.Fpdf, x float64, y float64, totalWidth float64, rowHeight float64, labelWidth float64, field initialAssessmentPrintField) {
-	valueWidth := totalWidth - labelWidth
+func drawInitialAssessmentKeyValueRowAtY(pdf *gofpdf.Fpdf, y float64, rowHeight float64, label string, value string) {
+	left, _, right, _ := pdf.GetMargins()
+	pageWidth, _ := pdf.GetPageSize()
+	contentWidth := pageWidth - left - right
+	cols := resolveCompactGridColumnCount(contentWidth)
+	innerLeft := left + 2.5
+	innerWidth := contentWidth - 5.0
+	colWidth := (contentWidth / float64(cols)) - 5.0
+	labelWidth := resolveInitialAssessmentCompactFieldLabelWidth(colWidth)
+	colonW := 4.0
+	valGap := 1.2
+	valueWidth := innerWidth - labelWidth - colonW - valGap - 1.0
+
+	trimmedLabel := firstNonEmpty(strings.TrimSpace(sanitizePDFText(label)), "-")
+	trimmedValue := firstNonEmpty(strings.TrimSpace(sanitizePDFText(value)), "-")
+
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetXY(innerLeft, y+0.4)
+	pdf.SetFont("Arial", "", 8.2)
+	pdf.MultiCell(labelWidth-1.0, 3.8, trimmedLabel, "", "L", false)
+
+	pdf.SetXY(innerLeft+labelWidth, y+0.4)
+	pdf.CellFormat(colonW, 3.8, ":", "", 0, "C", false, 0, "")
+
+	pdf.SetXY(innerLeft+labelWidth+colonW+valGap, y+0.4)
+	pdf.SetFont("Arial", "", 8.2)
+	pdf.MultiCell(valueWidth, 3.8, trimmedValue, "", "L", false)
+	pdf.SetXY(left, y+rowHeight)
+}
+
+func drawInitialAssessmentCompactFieldBox(pdf *gofpdf.Fpdf, x float64, y float64, totalWidth float64, _ float64, labelWidth float64, field initialAssessmentPrintField) {
+	colonW := 4.0
+	valGap := 1.2
+	valueWidth := totalWidth - labelWidth - colonW - valGap - 1.0
 	trimmedLabel := firstNonEmpty(strings.TrimSpace(sanitizePDFText(field.Label)), "-")
 	trimmedValue := firstNonEmpty(strings.TrimSpace(sanitizePDFText(field.Value)), "-")
 
-	pdf.SetDrawColor(120, 120, 120)
-	pdf.SetFillColor(245, 245, 245)
-	pdf.Rect(x, y, labelWidth, rowHeight, "DF")
-	pdf.Rect(x+labelWidth, y, valueWidth, rowHeight, "D")
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetFont("Arial", "", 8.2)
+	pdf.SetXY(x, y+0.4)
+	pdf.MultiCell(labelWidth-1.0, 3.8, trimmedLabel, "", "L", false)
 
-	pdf.SetFont("Arial", "", 9)
-	pdf.SetXY(x+1.5, y+0.4)
-	pdf.MultiCell(labelWidth-3, 4.5, trimmedLabel, "", "L", false)
-	pdf.SetXY(x+labelWidth+1.5, y+0.4)
-	pdf.MultiCell(valueWidth-3, 4.5, trimmedValue, "", "L", false)
+	pdf.SetXY(x+labelWidth, y+0.4)
+	pdf.CellFormat(colonW, 3.8, ":", "", 0, "C", false, 0, "")
+
+	isEmphasized := strings.EqualFold(trimmedLabel, "Nama Pasien") ||
+		strings.EqualFold(trimmedLabel, "No. Rekam Medis") ||
+		strings.EqualFold(trimmedLabel, "No. Kunjungan")
+	if isEmphasized {
+		pdf.SetFont("Arial", "B", 8.2)
+	} else {
+		pdf.SetFont("Arial", "", 8.2)
+	}
+	pdf.SetXY(x+labelWidth+colonW+valGap, y+0.4)
+	pdf.MultiCell(valueWidth, 3.8, trimmedValue, "", "L", false)
 }
 
 func measureInitialAssessmentCompactFieldBoxHeight(pdf *gofpdf.Fpdf, totalWidth float64, labelWidth float64, field initialAssessmentPrintField) float64 {
-	valueWidth := totalWidth - labelWidth
+	colonW := 4.0
+	valGap := 1.2
+	valueWidth := totalWidth - labelWidth - colonW - valGap - 1.0
 	trimmedLabel := firstNonEmpty(strings.TrimSpace(sanitizePDFText(field.Label)), "-")
 	trimmedValue := firstNonEmpty(strings.TrimSpace(sanitizePDFText(field.Value)), "-")
 
-	pdf.SetFont("Arial", "", 9)
-	labelLines := pdf.SplitLines([]byte(trimmedLabel), labelWidth-3)
-	valueLines := pdf.SplitLines([]byte(trimmedValue), valueWidth-3)
+	pdf.SetFont("Arial", "", 8.2)
+	labelLines := pdf.SplitLines([]byte(trimmedLabel), labelWidth-1.0)
+	valueLines := pdf.SplitLines([]byte(trimmedValue), valueWidth)
 	lineCount := maxInt(len(labelLines), len(valueLines))
 	if lineCount < 1 {
 		lineCount = 1
 	}
 
-	return float64(lineCount)*4.5 + 1.6
-}
-
-func drawInitialAssessmentCompactBlankFieldBox(pdf *gofpdf.Fpdf, x float64, y float64, totalWidth float64, rowHeight float64, labelWidth float64) {
-	valueWidth := totalWidth - labelWidth
-	pdf.SetDrawColor(120, 120, 120)
-	pdf.SetFillColor(245, 245, 245)
-	pdf.Rect(x, y, labelWidth, rowHeight, "DF")
-	pdf.Rect(x+labelWidth, y, valueWidth, rowHeight, "D")
+	return float64(lineCount)*3.8 + 0.8
 }
 
 func resolveInitialAssessmentCompactFieldLabelWidth(columnWidth float64) float64 {
-	labelWidth := columnWidth * 0.42
-	if labelWidth < 36 {
-		labelWidth = 36
+	labelWidth := columnWidth * 0.36
+	if labelWidth < 31 {
+		labelWidth = 31
 	}
-	if labelWidth > 40 {
-		labelWidth = 40
+	if labelWidth > 37 {
+		labelWidth = 37
 	}
 	return labelWidth
 }
 
 func addInitialAssessmentImagesSection(pdf *gofpdf.Fpdf, images []initialAssessmentPrintImageView) {
+	left, _, right, _ := pdf.GetMargins()
+	pageWidth, _ := pdf.GetPageSize()
+	contentWidth := pageWidth - left - right
 	addInitialAssessmentSectionTitle(pdf, "GAMBAR PEMERIKSAAN FISIK")
 	if len(images) == 0 {
+		boxStartY := pdf.GetY()
+		pdf.SetY(boxStartY + 1.2)
 		addInitialAssessmentFullWidthRow(pdf, "Tidak ada gambar pemeriksaan fisik pada entri ini.", false)
+		boxEndY := pdf.GetY() + 1.2
+		pdf.SetDrawColor(0, 0, 0)
+		pdf.SetLineWidth(0.25)
+		pdf.Rect(left, boxStartY, contentWidth, boxEndY-boxStartY, "D")
+		pdf.SetLineWidth(0.2)
+		pdf.SetY(boxEndY)
 		addInitialAssessmentSectionSpacing(pdf)
 		return
 	}
@@ -2144,34 +2546,134 @@ func addInitialAssessmentImagesSection(pdf *gofpdf.Fpdf, images []initialAssessm
 }
 
 func addInitialAssessmentDiagnosisSection(pdf *gofpdf.Fpdf, diagnoses []initialAssessmentPrintDiagnosisView) {
+	left, _, right, _ := pdf.GetMargins()
+	pageWidth, _ := pdf.GetPageSize()
+	contentWidth := pageWidth - left - right
 	addInitialAssessmentSectionTitle(pdf, "DIAGNOSIS")
 	if len(diagnoses) == 0 {
-		addInitialAssessmentFullWidthRow(pdf, "Tidak ada diagnosis.", false)
+		boxStartY := pdf.GetY()
+		pdf.SetY(boxStartY + 1.2)
+		addInitialAssessmentFullWidthRow(pdf, "Tidak ada diagnosis tercatat.", false)
+		boxEndY := pdf.GetY() + 1.2
+		pdf.SetDrawColor(0, 0, 0)
+		pdf.SetLineWidth(0.25)
+		pdf.Rect(left, boxStartY, contentWidth, boxEndY-boxStartY, "D")
+		pdf.SetLineWidth(0.2)
+		pdf.SetY(boxEndY)
 		addInitialAssessmentSectionSpacing(pdf)
 		return
 	}
+	colWidths := []float64{
+		contentWidth * 0.05, // No
+		contentWidth * 0.12, // Jenis
+		contentWidth * 0.12, // Kode ICD-10
+		contentWidth * 0.38, // Nama Diagnosa
+		contentWidth * 0.33, // Keterangan Klinis
+	}
+	colWidths[4] = contentWidth - (colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3])
+	headers := []string{"NO", "JENIS", "KODE ICD", "DIAGNOSA / ICD-10", "KETERANGAN KLINIS"}
 
-	for index, diagnosis := range diagnoses {
-		addInitialAssessmentFullWidthRow(pdf, fmt.Sprintf("%d. %s", index+1, strings.TrimSpace(strings.Join([]string{diagnosis.Type, diagnosis.Code}, " - "))), true)
-		addInitialAssessmentKeyValueRow(pdf, "Nama ICD", diagnosis.Name)
-		addInitialAssessmentKeyValueRow(pdf, "Diagnosis Kerja", diagnosis.WorkingDiagnosis)
-		addInitialAssessmentKeyValueRow(pdf, "Diagnosis Banding", diagnosis.DifferentialDiagnosis)
-		addInitialAssessmentKeyValueRow(pdf, "Assessment", diagnosis.AssessmentNarrative)
-		addInitialAssessmentKeyValueRow(pdf, "Catatan", diagnosis.Notes)
+	drawHeader := func() {
+		headerH := 5.6
+		ensureInitialAssessmentPDFSpace(pdf, headerH+5.0)
+		x := left
+		y := pdf.GetY()
+		pdf.SetFont("Arial", "B", 7.8)
+		pdf.SetDrawColor(0, 0, 0)
+		pdf.SetTextColor(0, 0, 0)
+		pdf.SetLineWidth(0.25)
+		for i, h := range headers {
+			pdf.Rect(x, y, colWidths[i], headerH, "D")
+			pdf.SetXY(x+1.0, y+0.4)
+			pdf.CellFormat(colWidths[i]-2.0, headerH-0.8, h, "", 0, "C", false, 0, "")
+			x += colWidths[i]
+		}
+		pdf.SetLineWidth(0.2)
+		pdf.SetY(y + headerH)
+	}
+
+	drawHeader()
+
+	for index, diag := range diagnoses {
+		noteParts := make([]string, 0, 4)
+		if v := strings.TrimSpace(diag.WorkingDiagnosis); v != "" && v != "-" {
+			noteParts = append(noteParts, "Kerja: "+v)
+		}
+		if v := strings.TrimSpace(diag.DifferentialDiagnosis); v != "" && v != "-" {
+			noteParts = append(noteParts, "Banding: "+v)
+		}
+		if v := strings.TrimSpace(diag.AssessmentNarrative); v != "" && v != "-" {
+			noteParts = append(noteParts, v)
+		}
+		if v := strings.TrimSpace(diag.Notes); v != "" && v != "-" {
+			noteParts = append(noteParts, "Catatan: "+v)
+		}
+		clinicalNote := "-"
+		if len(noteParts) > 0 {
+			clinicalNote = strings.Join(noteParts, "; ")
+		}
+
+		cells := []string{
+			strconv.Itoa(index + 1),
+			fallbackText(diag.Type),
+			fallbackText(diag.Code),
+			fallbackText(diag.Name),
+			clinicalNote,
+		}
+		aligns := []string{"C", "C", "C", "L", "L"}
+
+		pdf.SetFont("Arial", "", 8.0)
+		maxLines := 1
+		for i, cell := range cells {
+			lines := pdf.SplitLines([]byte(sanitizePDFText(cell)), colWidths[i]-2.8)
+			if len(lines) > maxLines {
+				maxLines = len(lines)
+			}
+		}
+		rowH := maxFloat64(5.4, float64(maxLines)*3.8+1.6)
+		_, pageHeight := pdf.GetPageSize()
+		if pdf.GetY()+rowH > pageHeight-initialAssessmentPDFMarginBottom {
+			pdf.AddPage()
+			pdf.SetY(initialAssessmentPDFPageContentStartForPDF(pdf, pdf.PageNo()))
+			drawHeader()
+		}
+
+		x := left
+		y := pdf.GetY()
+		pdf.SetDrawColor(0, 0, 0)
+		pdf.SetLineWidth(0.2)
+		pdf.SetTextColor(0, 0, 0)
+		for i, cell := range cells {
+			pdf.Rect(x, y, colWidths[i], rowH, "D")
+			pdf.SetXY(x+1.4, y+0.8)
+			if i == 2 {
+				pdf.SetFont("Arial", "B", 8.0)
+			} else {
+				pdf.SetFont("Arial", "", 8.0)
+			}
+			pdf.MultiCell(colWidths[i]-2.8, 3.8, sanitizePDFText(cell), "", aligns[i], false)
+			x += colWidths[i]
+		}
+		pdf.SetY(y + rowH)
 	}
 	addInitialAssessmentSectionSpacing(pdf)
 }
 
 func addInitialAssessmentSignatureSection(pdf *gofpdf.Fpdf, hospitalInfo initialAssessmentHospitalInfo, data initialAssessmentPrintViewData) {
-	ensureInitialAssessmentPDFSpace(pdf, 38)
+	boxH := 28.0
+	ensureInitialAssessmentPDFSpace(pdf, boxH)
 	left, _, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
 	contentWidth := pageWidth - left - right
-	columnGap := 12.0
-	columnWidth := (contentWidth - columnGap) / 2
-	leftColumnX := left
-	rightColumnX := left + columnWidth + columnGap
-	currentY := pdf.GetY() + 4
+	columnWidth := contentWidth / 2
+	splitX := left + columnWidth
+	boxStartY := pdf.GetY()
+
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.25)
+	pdf.Rect(left, boxStartY, contentWidth, boxH, "D")
+	pdf.Line(splitX, boxStartY, splitX, boxStartY+boxH)
+	pdf.SetLineWidth(0.2)
 
 	signatureLocation := strings.TrimSpace(hospitalInfo.City)
 	signatureDate := formatDateIndonesian(data.GeneratedAt)
@@ -2180,79 +2682,88 @@ func addInitialAssessmentSignatureSection(pdf *gofpdf.Fpdf, hospitalInfo initial
 		locationDateLabel = signatureLocation + ", " + signatureDate
 	}
 
-	pdf.SetFont("Arial", "", 10)
-	pdf.SetXY(rightColumnX, currentY)
-	pdf.CellFormat(columnWidth, 5, locationDateLabel, "", 1, "C", false, 0, "")
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetFont("Arial", "", 8.4)
+	pdf.SetXY(splitX, boxStartY+2.0)
+	pdf.CellFormat(columnWidth, 4.0, locationDateLabel, "", 1, "C", false, 0, "")
 
-	currentY = pdf.GetY() + 3
-	pdf.SetXY(leftColumnX, currentY)
-	pdf.CellFormat(columnWidth, 5, "Pasien / Keluarga", "", 0, "C", false, 0, "")
-	pdf.SetXY(rightColumnX, currentY)
-	pdf.CellFormat(columnWidth, 5, "Dokter Pemeriksa", "", 1, "C", false, 0, "")
+	labelY := boxStartY + 6.0
+	pdf.SetXY(left, labelY)
+	pdf.CellFormat(columnWidth, 4.0, "Pasien / Keluarga", "", 0, "C", false, 0, "")
+	pdf.SetXY(splitX, labelY)
+	pdf.CellFormat(columnWidth, 4.0, "Dokter Pemeriksa", "", 1, "C", false, 0, "")
 
-	lineWidth := minFloat64(52, columnWidth-26)
-	leftLineX := leftColumnX + ((columnWidth - lineWidth) / 2)
-	rightLineX := rightColumnX + ((columnWidth - lineWidth) / 2)
-	signatureLineY := pdf.GetY() + 16
-	pdf.SetDrawColor(60, 60, 60)
-	pdf.Line(leftLineX, signatureLineY, leftLineX+lineWidth, signatureLineY)
-	pdf.Line(rightLineX, signatureLineY, rightLineX+lineWidth, signatureLineY)
-
-	pdf.SetFont("Arial", "B", 10)
-	pdf.SetY(signatureLineY + 2.5)
-	pdf.SetXY(leftColumnX, pdf.GetY())
-	pdf.CellFormat(columnWidth, 5, fallbackText(data.Visit.Patient.FullName), "", 0, "C", false, 0, "")
-	pdf.SetXY(rightColumnX, pdf.GetY())
-	pdf.CellFormat(columnWidth, 5, fallbackText(data.Visit.Doctor.FullName), "", 1, "C", false, 0, "")
-	pdf.SetFont("Arial", "", 9)
-	pdf.SetY(pdf.GetY() + 4)
+	nameY := boxStartY + boxH - 6.0
+	pdf.SetFont("Arial", "B", 8.6)
+	pdf.SetXY(left, nameY)
+	pdf.CellFormat(columnWidth, 4.2, "( "+fallbackText(data.Visit.Patient.FullName)+" )", "", 0, "C", false, 0, "")
+	pdf.SetXY(splitX, nameY)
+	pdf.CellFormat(columnWidth, 4.2, "( "+fallbackText(data.Visit.Doctor.FullName)+" )", "", 1, "C", false, 0, "")
+	pdf.SetFont("Arial", "", 8.2)
+	pdf.SetY(boxStartY + boxH)
 }
 
+// addInitialAssessmentSectionTitle merender bar judul seksi berbingkai menyatu penuh (gaya Resep: TELAAH RESEP / PIO).
 func addInitialAssessmentSectionTitle(pdf *gofpdf.Fpdf, title string) {
-	ensureInitialAssessmentPDFSpace(pdf, 8)
+	barH := 5.0
+	ensureInitialAssessmentPDFSpace(pdf, barH+9.0)
 	left, _, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
 	contentWidth := pageWidth - left - right
-	title = firstNonEmpty(sanitizePDFText(title), "-")
-	pdf.SetFont("Arial", "B", 11)
-	pdf.SetFillColor(220, 220, 220)
-	pdf.SetDrawColor(120, 120, 120)
-	pdf.CellFormat(contentWidth, 6.5, " "+strings.ToUpper(title), "1", 1, "L", true, 0, "")
-	pdf.SetFont("Arial", "", 9)
+	title = firstNonEmpty(sanitizePDFSingleLineText(title), "-")
+
+	y := pdf.GetY()
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.25)
+	pdf.Rect(left, y, contentWidth, barH, "D")
+	pdf.SetLineWidth(0.2)
+
+	pdf.SetXY(left+2.5, y+0.3)
+	pdf.SetFont("Arial", "B", 8.2)
+	pdf.SetTextColor(0, 0, 0)
+	pdf.CellFormat(contentWidth-5.0, barH-0.6, strings.ToUpper(title), "", 0, "C", false, 0, "")
+	pdf.SetY(y + barH)
+	pdf.SetFont("Arial", "", 8.2)
 }
 
 func addInitialAssessmentKeyValueRow(pdf *gofpdf.Fpdf, label string, value string) {
 	left, _, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
 	contentWidth := pageWidth - left - right
-	halfWidth := contentWidth / 2
-	labelWidth := resolveInitialAssessmentCompactFieldLabelWidth(halfWidth)
-	valueWidth := contentWidth - labelWidth
+	cols := resolveCompactGridColumnCount(contentWidth)
+	innerLeft := left + 2.5
+	innerWidth := contentWidth - 5.0
+	colGap := 6.0
+	colWidth := (innerWidth - float64(cols-1)*colGap) / float64(cols)
+	labelWidth := resolveInitialAssessmentCompactFieldLabelWidth(colWidth)
+	colonW := 4.0
+	valGap := 1.2
+	valueWidth := innerWidth - labelWidth - colonW - valGap - 1.0
 
 	trimmedLabel := firstNonEmpty(strings.TrimSpace(sanitizePDFText(label)), "-")
 	trimmedValue := firstNonEmpty(strings.TrimSpace(sanitizePDFText(value)), "-")
-	labelLines := pdf.SplitLines([]byte(trimmedLabel), labelWidth-4)
-	valueLines := pdf.SplitLines([]byte(trimmedValue), valueWidth-4)
+	pdf.SetFont("Arial", "", 8.2)
+	labelLines := pdf.SplitLines([]byte(trimmedLabel), labelWidth-1.0)
+	valueLines := pdf.SplitLines([]byte(trimmedValue), valueWidth)
 	lineCount := maxInt(len(labelLines), len(valueLines))
 	if lineCount == 0 {
 		lineCount = 1
 	}
-	rowHeight := float64(lineCount)*4.5 + 2
+	rowHeight := maxFloat64(4.6, float64(lineCount)*3.8+0.8)
 	ensureInitialAssessmentPDFSpace(pdf, rowHeight)
 
-	x := left
 	y := pdf.GetY()
-	pdf.SetDrawColor(120, 120, 120)
-	pdf.SetFillColor(245, 245, 245)
-	pdf.Rect(x, y, labelWidth, rowHeight, "DF")
-	pdf.Rect(x+labelWidth, y, valueWidth, rowHeight, "D")
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetXY(innerLeft, y+0.4)
+	pdf.SetFont("Arial", "", 8.2)
+	pdf.MultiCell(labelWidth-1.0, 3.8, trimmedLabel, "", "L", false)
 
-	pdf.SetXY(x+2, y+1.5)
-	pdf.SetFont("Arial", "", 9)
-	pdf.MultiCell(labelWidth-4, 4.5, trimmedLabel, "", "L", false)
-	pdf.SetXY(x+labelWidth+2, y+1.5)
-	pdf.SetFont("Arial", "", 9)
-	pdf.MultiCell(valueWidth-4, 4.5, trimmedValue, "", "L", false)
+	pdf.SetXY(innerLeft+labelWidth, y+0.4)
+	pdf.CellFormat(colonW, 3.8, ":", "", 0, "C", false, 0, "")
+
+	pdf.SetXY(innerLeft+labelWidth+colonW+valGap, y+0.4)
+	pdf.SetFont("Arial", "", 8.2)
+	pdf.MultiCell(valueWidth, 3.8, trimmedValue, "", "L", false)
 	pdf.SetXY(left, y+rowHeight)
 }
 
@@ -2261,7 +2772,7 @@ func addInitialAssessmentFullWidthRow(pdf *gofpdf.Fpdf, value string, bold bool)
 	pageWidth, _ := pdf.GetPageSize()
 	contentWidth := pageWidth - left - right
 	trimmedValue := firstNonEmpty(strings.TrimSpace(sanitizePDFText(value)), "-")
-	rowHeight := measureInitialAssessmentTextRowHeight(pdf, trimmedValue, contentWidth-4, 9, 4.5)
+	rowHeight := maxFloat64(4.8, measureInitialAssessmentTextRowHeight(pdf, trimmedValue, contentWidth-5.0, 8.2, 3.8))
 	ensureInitialAssessmentPDFSpace(pdf, rowHeight)
 
 	style := ""
@@ -2269,13 +2780,11 @@ func addInitialAssessmentFullWidthRow(pdf *gofpdf.Fpdf, value string, bold bool)
 		style = "B"
 	}
 
-	x := left
 	y := pdf.GetY()
-	pdf.SetDrawColor(120, 120, 120)
-	pdf.Rect(x, y, contentWidth, rowHeight, "D")
-	pdf.SetXY(x+2, y+1.5)
-	pdf.SetFont("Arial", style, 9)
-	pdf.MultiCell(contentWidth-4, 4.5, trimmedValue, "", "L", false)
+	pdf.SetXY(left+2.5, y+0.4)
+	pdf.SetFont("Arial", style, 8.2)
+	pdf.SetTextColor(0, 0, 0)
+	pdf.MultiCell(contentWidth-5.0, 3.8, trimmedValue, "", "L", false)
 	pdf.SetXY(left, y+rowHeight)
 }
 
@@ -2283,29 +2792,30 @@ func addInitialAssessmentPhysicalExamImageBlock(pdf *gofpdf.Fpdf, imageView init
 	left, _, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
 	contentWidth := pageWidth - left - right
-	imageColumnWidth := minFloat64(82, contentWidth*0.46)
+	imageColumnWidth := minFloat64(76, contentWidth*0.42)
 	detailColumnWidth := contentWidth - imageColumnWidth
-	imageBoxHeight := imageColumnWidth * 0.75
+	imageBoxHeight := imageColumnWidth * 0.72
 	detailRows := buildInitialAssessmentImageDetailRows(imageView)
 	detailHeight := measureInitialAssessmentDetailRowsHeight(pdf, detailRows, detailColumnWidth)
 	blockHeight := maxFloat64(imageBoxHeight, detailHeight)
 
-	ensureInitialAssessmentPDFSpace(pdf, blockHeight+2)
+	ensureInitialAssessmentPDFSpace(pdf, blockHeight+1.5)
 
 	x := left
 	y := pdf.GetY()
-	pdf.SetDrawColor(120, 120, 120)
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.2)
 	pdf.Rect(x, y, contentWidth, blockHeight, "D")
 	pdf.Line(x+imageColumnWidth, y, x+imageColumnWidth, y+blockHeight)
 
 	imageY := y + ((blockHeight - imageBoxHeight) / 2)
 	drawInitialAssessmentPhysicalExamImageBox(pdf, x, imageY, imageColumnWidth, imageBoxHeight, imageView)
 	drawInitialAssessmentDetailRows(pdf, x+imageColumnWidth, y, detailColumnWidth, detailRows)
-	pdf.SetY(y + blockHeight + 2)
+	pdf.SetY(y + blockHeight)
 }
 
-func addInitialAssessmentSectionSpacing(pdf *gofpdf.Fpdf) {
-	pdf.SetY(pdf.GetY() + 2)
+func addInitialAssessmentSectionSpacing(_ *gofpdf.Fpdf) {
+	// Zero spacing agar seluruh kotak seksi menyatu menjadi 1 bingkai besar utuh seperti Resep
 }
 
 func ensureInitialAssessmentPDFSpace(pdf *gofpdf.Fpdf, neededHeight float64) {
@@ -2373,14 +2883,14 @@ func measureInitialAssessmentTextRowHeight(pdf *gofpdf.Fpdf, value string, width
 		lineCount = 1
 	}
 
-	return float64(lineCount)*lineHeight + 2
+	return float64(lineCount)*lineHeight + 1.2
 }
 
 func measureInitialAssessmentFullWidthRowHeight(pdf *gofpdf.Fpdf, value string) float64 {
 	left, _, right, _ := pdf.GetMargins()
 	pageWidth, _ := pdf.GetPageSize()
 	contentWidth := pageWidth - left - right
-	return measureInitialAssessmentTextRowHeight(pdf, value, contentWidth-4, 9, 4.5)
+	return measureInitialAssessmentTextRowHeight(pdf, value, contentWidth-2.6, 8.0, 3.6)
 }
 
 func buildInitialAssessmentImageDetailRows(imageView initialAssessmentPrintImageView) []initialAssessmentPrintField {
@@ -2400,7 +2910,7 @@ func buildInitialAssessmentImageDetailRows(imageView initialAssessmentPrintImage
 }
 
 func measureInitialAssessmentDetailRowsHeight(pdf *gofpdf.Fpdf, fields []initialAssessmentPrintField, totalWidth float64) float64 {
-	labelWidth := minFloat64(32, totalWidth*0.36)
+	labelWidth := minFloat64(28, totalWidth*0.32)
 	valueWidth := totalWidth - labelWidth
 	totalHeight := 0.0
 	for _, field := range fields {
@@ -2413,19 +2923,20 @@ func measureInitialAssessmentDetailRowsHeight(pdf *gofpdf.Fpdf, fields []initial
 func measureInitialAssessmentKeyValueRowHeight(pdf *gofpdf.Fpdf, label string, value string, labelWidth float64, valueWidth float64) float64 {
 	trimmedLabel := firstNonEmpty(strings.TrimSpace(sanitizePDFText(label)), "-")
 	trimmedValue := firstNonEmpty(strings.TrimSpace(sanitizePDFText(value)), "-")
-	pdf.SetFont("Arial", "", 9)
-	labelLines := pdf.SplitLines([]byte(trimmedLabel), labelWidth-4)
-	valueLines := pdf.SplitLines([]byte(trimmedValue), valueWidth-4)
+	pdf.SetFont("Arial", "", 7.8)
+	labelLines := pdf.SplitLines([]byte(trimmedLabel), labelWidth-2.6)
+	pdf.SetFont("Arial", "", 8.0)
+	valueLines := pdf.SplitLines([]byte(trimmedValue), valueWidth-2.6)
 	lineCount := maxInt(len(labelLines), len(valueLines))
 	if lineCount == 0 {
 		lineCount = 1
 	}
 
-	return float64(lineCount)*4.5 + 2
+	return maxFloat64(4.8, float64(lineCount)*3.6+1.2)
 }
 
 func drawInitialAssessmentDetailRows(pdf *gofpdf.Fpdf, x float64, y float64, totalWidth float64, fields []initialAssessmentPrintField) {
-	labelWidth := minFloat64(32, totalWidth*0.36)
+	labelWidth := minFloat64(28, totalWidth*0.32)
 	valueWidth := totalWidth - labelWidth
 	currentY := y
 	for _, field := range fields {
@@ -2438,17 +2949,18 @@ func drawInitialAssessmentDetailRows(pdf *gofpdf.Fpdf, x float64, y float64, tot
 func drawInitialAssessmentKeyValueRowAt(pdf *gofpdf.Fpdf, x float64, y float64, labelWidth float64, valueWidth float64, rowHeight float64, label string, value string) {
 	trimmedLabel := firstNonEmpty(strings.TrimSpace(sanitizePDFText(label)), "-")
 	trimmedValue := firstNonEmpty(strings.TrimSpace(sanitizePDFText(value)), "-")
-	pdf.SetDrawColor(120, 120, 120)
-	pdf.SetFillColor(245, 245, 245)
-	pdf.Rect(x, y, labelWidth, rowHeight, "DF")
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetLineWidth(0.2)
+	pdf.Rect(x, y, labelWidth, rowHeight, "D")
 	pdf.Rect(x+labelWidth, y, valueWidth, rowHeight, "D")
 
-	pdf.SetXY(x+2, y+1.5)
-	pdf.SetFont("Arial", "", 9)
-	pdf.MultiCell(labelWidth-4, 4.5, trimmedLabel, "", "L", false)
-	pdf.SetXY(x+labelWidth+2, y+1.5)
-	pdf.SetFont("Arial", "", 9)
-	pdf.MultiCell(valueWidth-4, 4.5, trimmedValue, "", "L", false)
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetXY(x+1.3, y+0.6)
+	pdf.SetFont("Arial", "", 7.8)
+	pdf.MultiCell(labelWidth-2.6, 3.6, trimmedLabel, "", "L", false)
+	pdf.SetXY(x+labelWidth+1.3, y+0.6)
+	pdf.SetFont("Arial", "", 8.0)
+	pdf.MultiCell(valueWidth-2.6, 3.6, trimmedValue, "", "L", false)
 }
 
 func measureInitialAssessmentImageBlockHeight(pdf *gofpdf.Fpdf, imageView initialAssessmentPrintImageView) float64 {
@@ -2744,11 +3256,11 @@ func deduplicateAddressParts(parts []string) []string {
 func buildInitialAssessmentVisitFields(visit models.Visit) []initialAssessmentPrintField {
 	fields := []initialAssessmentPrintField{
 		{Label: "No. Kunjungan", Value: fallbackText(visit.VisitNumber)},
-		{Label: "Tanggal Kunjungan", Value: visit.VisitDate.Format("02 Jan 2006 15:04")},
+		{Label: "Tanggal Kunjungan", Value: formatVisitDateForPrint(visit.VisitDate)},
 		{Label: "Poliklinik", Value: fallbackText(visit.Polyclinic.Name)},
 		{Label: "Dokter", Value: fallbackText(visit.Doctor.FullName)},
-		{Label: "Jenis Kunjungan", Value: fallbackText(visit.VisitType)},
-		{Label: "Pembiayaan", Value: fallbackText(visit.PaymentType)},
+		{Label: "Jenis Kunjungan", Value: formatVisitTypeForPrint(visit.VisitType)},
+		{Label: "Pembiayaan", Value: formatPaymentTypeForPrint(visit.PaymentType)},
 		{Label: "Keluhan Awal", Value: fallbackText(visit.Complaint)},
 	}
 
@@ -2810,7 +3322,7 @@ func buildInitialAssessmentPhysicalExamFields(record *models.MedicalRecord) []in
 		fields = append(fields, initialAssessmentPrintField{Label: "SpO2", Value: fmt.Sprintf("%.0f%%", record.SpO2)})
 	}
 	if trimmed := strings.TrimSpace(record.Consciousness); trimmed != "" {
-		fields = append(fields, initialAssessmentPrintField{Label: "Kesadaran", Value: trimmed})
+		fields = append(fields, initialAssessmentPrintField{Label: "Kesadaran", Value: formatConsciousnessForPrint(trimmed)})
 	}
 	if record.Height > 0 {
 		fields = append(fields, initialAssessmentPrintField{Label: "Tinggi Badan", Value: fmt.Sprintf("%.0f cm", record.Height)})

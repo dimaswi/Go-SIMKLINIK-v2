@@ -22,6 +22,24 @@ func generateVisitNumber() string {
 	return fmt.Sprintf("VIS-%s-%04d", now.Format("20060102"), count+1)
 }
 
+func getNextUnifiedQueueNumber(date time.Time) int {
+	dateStr := date.Format("2006-01-02")
+	var maxTicket int
+	var maxVisitQueue int
+	database.DB.Model(&models.RegistrationQueue{}).Unscoped().
+		Where("DATE(queue_date) = ?", dateStr).
+		Select("COALESCE(MAX(ticket_number), 0)").
+		Scan(&maxTicket)
+	database.DB.Model(&models.Visit{}).Unscoped().
+		Where("DATE(visit_date) = ?", dateStr).
+		Select("COALESCE(MAX(queue_number), 0)").
+		Scan(&maxVisitQueue)
+	if maxTicket > maxVisitQueue {
+		return maxTicket + 1
+	}
+	return maxVisitQueue + 1
+}
+
 func getNextQueueNumber(polyclinicID uint, date time.Time) int {
 	dateStr := date.Format("2006-01-02")
 	var counter models.QueueCounter
@@ -183,11 +201,12 @@ func GetActiveVisitByPatient(c *gin.Context) {
 }
 
 type CreateVisitRequest struct {
-	PatientID       uint   `json:"patient_id" binding:"required"`
-	VisitDate       string `json:"visit_date" binding:"required"`
-	PolyclinicID    uint   `json:"polyclinic_id" binding:"required"`
-	DoctorID        uint   `json:"doctor_id" binding:"required"`
-	PaymentType     string `json:"payment_type" binding:"required,oneof=umum bpjs asuransi"`
+	PatientID           uint   `json:"patient_id" binding:"required"`
+	VisitDate           string `json:"visit_date" binding:"required"`
+	PolyclinicID        uint   `json:"polyclinic_id" binding:"required"`
+	DoctorID            uint   `json:"doctor_id" binding:"required"`
+	RegistrationQueueID *uint  `json:"registration_queue_id"`
+	PaymentType         string `json:"payment_type" binding:"required,oneof=umum bpjs asuransi"`
 	InsuranceNumber string `json:"insurance_number"`
 	Complaint       string `json:"complaint"`
 	VisitType       string `json:"visit_type" binding:"required,oneof=baru lama"`
@@ -245,7 +264,16 @@ func CreateVisit(c *gin.Context) {
 		priority = "normal"
 	}
 
-	queueNumber := getNextQueueNumber(req.PolyclinicID, visitDate)
+	queueNumber := 0
+	if req.RegistrationQueueID != nil && *req.RegistrationQueueID > 0 {
+		var regQueue models.RegistrationQueue
+		if err := database.DB.First(&regQueue, *req.RegistrationQueueID).Error; err == nil && regQueue.TicketNumber > 0 {
+			queueNumber = regQueue.TicketNumber
+		}
+	}
+	if queueNumber == 0 {
+		queueNumber = getNextUnifiedQueueNumber(visitDate)
+	}
 
 	visit := models.Visit{
 		VisitNumber:     generateVisitNumber(),

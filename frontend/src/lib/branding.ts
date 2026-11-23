@@ -85,6 +85,8 @@ export async function hydratePublicBranding() {
     localStorage.setItem('appSubtitle', nextAppSubtitle);
     if (nextAppLogo) {
       localStorage.setItem('appLogo', nextAppLogo);
+    } else {
+      localStorage.removeItem('appLogo');
     }
     if (nextAppFavicon) {
       localStorage.setItem('appFavicon', nextAppFavicon);
@@ -92,6 +94,7 @@ export async function hydratePublicBranding() {
 
     updateDocumentTitle(undefined, nextAppName);
     updateDocumentFavicon(nextAppFavicon);
+    window.dispatchEvent(new Event('storage'));
   } catch {
     // Keep previously stored branding when public settings are temporarily unavailable.
   }

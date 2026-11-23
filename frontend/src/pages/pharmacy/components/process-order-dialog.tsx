@@ -31,6 +31,7 @@ import {
   formatDateTime,
   getCompoundIngredientStockStatus,
   getCompoundStockStatus,
+  getMedicineRoomStock,
   isPharmacyProcessAddedPrescription,
   getPrescriptionStockStatus,
   getRecordStockIssueCount,
@@ -196,17 +197,33 @@ export function ProcessOrderDialog({
   );
 
   const medicineOptions = useMemo(
-    () => medicines.map((medicine) => ({
-      value: String(medicine.id),
-      label: `${medicine.name}${medicine.strength ? ` ${medicine.strength}` : ''} · stok ${medicine.current_stock}`,
-    })),
-    [medicines],
+    () => medicines.map((medicine) => {
+      const roomStock = getMedicineRoomStock(medicine, order?.prescription_room_id);
+      const unitName = medicine.unit?.name || '';
+      const descParts = [
+        medicine.code || `OBT${String(medicine.id).padStart(7, '0')}`,
+        medicine.form || null,
+        order?.prescription_room?.name || 'Apotek',
+      ].filter(Boolean);
+      return {
+        value: String(medicine.id),
+        label: `${medicine.name}${medicine.strength ? ` ${medicine.strength}` : ''}`,
+        description: descParts.join(' • '),
+        badge: `Stok ${roomStock}${unitName ? ` ${unitName}` : ''}`,
+        badgeClassName: roomStock > 0
+          ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+          : 'border-rose-300 bg-rose-50 text-rose-700',
+        searchText: [medicine.code, medicine.generic_name, medicine.strength, medicine.form].filter(Boolean).join(' '),
+      };
+    }),
+    [medicines, order?.prescription_room?.name, order?.prescription_room_id],
   );
 
   const stockIssueCount = useMemo(() => (order ? getRecordStockIssueCount(order) : 0), [order]);
 //   const totalPrice = useMemo(() => (order ? getRecordTotalPrice(order) : 0), [order]);
   const totalItems = useMemo(() => (order ? buildOrderLines(order).length : 0), [order]);
-  const selectedMedicineStockSafe = Boolean(selectedMedicine && (selectedMedicine.current_stock || 0) >= payload.quantity);
+  const selectedMedicineRoomStock = selectedMedicine ? getMedicineRoomStock(selectedMedicine, order?.prescription_room_id) : 0;
+  const selectedMedicineStockSafe = Boolean(selectedMedicine && selectedMedicineRoomStock >= payload.quantity);
   const selectedMedicineStockBadgeClassName = !selectedMedicine
     ? 'border-slate-300 bg-slate-50 text-slate-700'
     : selectedMedicineStockSafe
@@ -377,7 +394,7 @@ export function ProcessOrderDialog({
                         <div className="overflow-hidden border border-border/70 bg-background">
                           <div className="divide-y divide-border/70">
                             {(order.prescriptions || []).map((item) => {
-                              const stockStatus = getPrescriptionStockStatus(item);
+                              const stockStatus = getPrescriptionStockStatus(item, order.prescription_room_id);
                               const isManualItem = isPharmacyProcessAddedPrescription(order, item);
                               const detailParts = [
                                 item.instructions?.trim(),
@@ -444,7 +461,7 @@ export function ProcessOrderDialog({
                       ) : (
                         <div className="space-y-2.5">
                           {(order.prescription_compounds || []).map((compound) => {
-                            const stockStatus = getCompoundStockStatus(compound);
+                            const stockStatus = getCompoundStockStatus(compound, order.prescription_room_id);
                             const compoundDetailParts = [
                               compound.instructions?.trim(),
                               compound.notes?.trim() ? `Catatan: ${compound.notes.trim()}` : null,
@@ -504,7 +521,7 @@ export function ProcessOrderDialog({
                                       </thead>
                                       <tbody>
                                         {(compound.items || []).map((ingredient) => {
-                                          const ingredientStock = getCompoundIngredientStockStatus(ingredient);
+                                          const ingredientStock = getCompoundIngredientStockStatus(ingredient, order.prescription_room_id);
                                           const doseMatch = ingredient.notes?.match(/Dosis:\s*([^·]+)/i)?.[1]?.trim();
                                           const extraNote = ingredient.notes?.replace(/Dosis:\s*[^·]+(·\s*)?/i, '').trim();
 
@@ -527,6 +544,7 @@ export function ProcessOrderDialog({
                                               </td>
                                               <td className="px-3 py-2">
                                                 <Badge variant="outline" className={`rounded-none px-1.5 py-0 text-[9px] uppercase tracking-[0.14em] ${ingredientStock.badgeClassName}`}>{ingredientStock.label}</Badge>
+                                                <p className="mt-0.5 text-[10px] text-muted-foreground">{ingredientStock.helper}</p>
                                               </td>
                                               <td className="px-3 py-2 text-right text-sm font-medium text-foreground/95">{formatCurrency((ingredient.medicine?.selling_price || 0) * ingredient.quantity)}</td>
                                             </tr>
@@ -593,7 +611,7 @@ export function ProcessOrderDialog({
 
                     <div className="flex flex-wrap items-center gap-2 pl-14">
                       <Badge variant="outline" className={`rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.14em] ${selectedMedicineStockBadgeClassName}`}>
-                        {!selectedMedicine ? 'Belum pilih obat' : `${selectedMedicine.current_stock} tersedia`}
+                        {!selectedMedicine ? 'Belum pilih obat' : `${selectedMedicineRoomStock} tersedia`}
                       </Badge>
                       <Badge variant="outline" className="rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.14em]">
                         {formatCurrency(selectedLineTotal)}
@@ -624,16 +642,28 @@ export function ProcessOrderDialog({
                         </PanelField>
 
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <PanelField label="Jumlah">
-                            <Input
-                              type="number"
-                              min={1}
-                              value={payload.quantity}
-                              onChange={(event) => setPayload((prev) => ({ ...prev, quantity: Number(event.target.value) || 1 }))}
-                              className="rounded-none"
-                              placeholder="Qty"
-                              disabled={!canManage}
-                            />
+                          <PanelField
+                            label={selectedMedicine?.unit?.name ? `Jumlah (${selectedMedicine.unit.name} · Satuan Kecil)` : 'Jumlah (Satuan Kecil)'}
+                            helper={selectedMedicine?.large_unit?.name && (selectedMedicine.conversion_factor || 1) > 1
+                              ? `Satuan kecil: ${selectedMedicine.unit?.name || 'unit'} (1 ${selectedMedicine.large_unit.name} = ${selectedMedicine.conversion_factor} ${selectedMedicine.unit?.name || 'unit'})`
+                              : 'Input jumlah dalam satuan kecil obat'}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <Input
+                                type="number"
+                                min={1}
+                                value={payload.quantity}
+                                onChange={(event) => setPayload((prev) => ({ ...prev, quantity: Number(event.target.value) || 1 }))}
+                                className="rounded-none"
+                                placeholder="Qty"
+                                disabled={!canManage}
+                              />
+                              {selectedMedicine?.unit?.name ? (
+                                <Badge variant="outline" className="h-9 rounded-none px-2.5 text-xs bg-muted/30 shrink-0">
+                                  {selectedMedicine.unit.name}
+                                </Badge>
+                              ) : null}
+                            </div>
                           </PanelField>
                           <PanelField label="Dosis / Kekuatan">
                             <Input
@@ -719,7 +749,7 @@ export function ProcessOrderDialog({
 
                           <div className="mt-3 flex flex-wrap gap-2">
                             <Badge variant="outline" className={`rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.14em] ${selectedMedicineStockBadgeClassName}`}>
-                              {!selectedMedicine ? 'Pilih obat' : `${selectedMedicine.current_stock} tersedia`}
+                              {!selectedMedicine ? 'Pilih obat' : `${selectedMedicineRoomStock} tersedia`}
                             </Badge>
                             <Badge variant="outline" className="rounded-none px-2 py-1 text-[10px] uppercase tracking-[0.14em]">
                               {formatCurrency(selectedLineTotal)}
@@ -737,7 +767,7 @@ export function ProcessOrderDialog({
                             </div>
                             <div className="flex items-start justify-between gap-3">
                               <span className="font-medium text-muted-foreground">Ketersediaan</span>
-                              <span className="text-right text-foreground/90">{selectedMedicine ? `${selectedMedicine.current_stock} unit` : '-'}</span>
+                              <span className="text-right text-foreground/90">{selectedMedicine ? `${selectedMedicineRoomStock} unit` : '-'}</span>
                             </div>
                           </div>
                         </section>

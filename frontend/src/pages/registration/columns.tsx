@@ -1,7 +1,7 @@
 import type { ColumnDef } from '@tanstack/react-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowUpRight, Ban, FileText, UserPlus, Users } from 'lucide-react';
+import { ArrowUpRight, Ban, FileText, PhoneCall, UserPlus, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { RegistrationQueueItem } from '@/lib/api';
 
@@ -32,35 +32,28 @@ function formatTime(value?: string) {
 function ActionsCell({
   item,
   onProcess,
+  onCall,
   onCancel,
 }: {
   item: RegistrationQueueItem;
   onProcess: (item: RegistrationQueueItem, mode: 'existing' | 'new') => void;
+  onCall: (item: RegistrationQueueItem) => void;
   onCancel: (item: RegistrationQueueItem) => void;
 }) {
   const navigate = useNavigate();
 
-  if (item.status === 'waiting') {
-    return (
-      <div className="flex items-center justify-end gap-1">
-        <span className="text-[11px] text-muted-foreground">Panggil di antrian</span>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-7 w-7 p-0 rounded-none text-destructive shadow-none hover:text-destructive shrink-0"
-          onClick={() => onCancel(item)}
-          title="Batalkan Tiket Antrian"
-        >
-          <Ban className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-    );
-  }
-
-  if (item.status === 'called' || item.status === 'processing') {
+  if (item.status === 'waiting' || item.status === 'called' || item.status === 'processing') {
     return (
       <div className="flex flex-nowrap items-center justify-end gap-1 whitespace-nowrap">
+        <Button
+          type="button"
+          size="sm"
+          className="h-7 w-7 p-0 rounded-none shadow-none shrink-0"
+          onClick={() => onCall(item)}
+          title="Panggil Nomor Antrian"
+        >
+          <PhoneCall className="h-3.5 w-3.5" />
+        </Button>
         <Button
           type="button"
           variant="outline"
@@ -73,6 +66,7 @@ function ActionsCell({
         </Button>
         <Button
           type="button"
+          variant="outline"
           size="sm"
           className="h-7 w-7 p-0 rounded-none shadow-none shrink-0"
           onClick={() => onProcess(item, 'new')}
@@ -80,6 +74,18 @@ function ActionsCell({
         >
           <UserPlus className="h-3.5 w-3.5" />
         </Button>
+        {item.status === 'waiting' ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 w-7 p-0 rounded-none text-destructive shadow-none hover:text-destructive shrink-0"
+            onClick={() => onCancel(item)}
+            title="Batalkan Tiket Antrian"
+          >
+            <Ban className="h-3.5 w-3.5" />
+          </Button>
+        ) : null}
       </div>
     );
   }
@@ -116,9 +122,11 @@ function ActionsCell({
 
 export function createColumns({
   onProcess,
+  onCall,
   onCancel,
 }: {
   onProcess: (item: RegistrationQueueItem, mode: 'existing' | 'new') => void;
+  onCall: (item: RegistrationQueueItem) => void;
   onCancel: (item: RegistrationQueueItem) => void;
 }): ColumnDef<RegistrationQueueItem>[] {
   return [
@@ -227,7 +235,7 @@ export function createColumns({
         headerClassName: 'py-2 px-3 text-xs font-semibold text-right',
         cellClassName: 'py-2 px-3 align-middle text-right',
       },
-      cell: ({ row }) => <ActionsCell item={row.original} onProcess={onProcess} onCancel={onCancel} />,
+      cell: ({ row }) => <ActionsCell item={row.original} onProcess={onProcess} onCall={onCall} onCancel={onCancel} />,
     },
   ];
 }

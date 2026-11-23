@@ -31,9 +31,6 @@ export function createMedicalServiceColumns({ onView, onEdit, onDelete, hasViewP
         <div className="flex max-w-[280px] flex-col gap-0.5">
           <div className="flex items-center gap-1.5">
             <span className="truncate font-medium text-foreground">{row.original.name}</span>
-            {row.original.requires_consent && (
-              <Badge className="shrink-0 rounded-none border-0 bg-amber-600 px-1 py-0 text-[9px] uppercase tracking-wide text-white">Consent</Badge>
-            )}
           </div>
           <div className="flex items-center gap-1 truncate text-xs text-muted-foreground">
             <span className="font-mono">{row.original.code || '-'}</span>
